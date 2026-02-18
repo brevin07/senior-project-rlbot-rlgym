@@ -1,5 +1,6 @@
 # Environments
 .venv/
+.venv-wsl/
 venv/
 venv_win/
 rlbot_training/venv/
@@ -28,6 +29,7 @@ logs/
 reward_logs/
 tmp/
 temp/
+*.tmp
 
 # Training artifacts and experiment logs
 rlbot_training/data/
@@ -41,6 +43,7 @@ artifacts/checkpoints/
 Milestone_1/heuristic_analysis/analysis_pngs/
 Milestone_1/heuristic_analysis/csv_files/
 Milestone_1/heuristic_analysis/output_data.json
+Milestone_1/heuristic_analysis/complete_gameplay_data.csv
 Milestone_1/output_data.json
 Milestone_1/*.replay
 Milestone_1/*.pkl
@@ -49,6 +52,9 @@ Milestone_1/player_physics*.csv
 Milestone_1/physics_data.json
 Milestone_1/[0-9A-F]*.json
 Milestone_1/[0-9A-F]*.csv
+Milestone_1/rrrocket.exe
+Milestone_1/rrrocket-*.zip
+Milestone_1/rrrocket-*/
 
 # Tools and local binaries
 RocketSim/
@@ -57,8 +63,23 @@ rlbot_training/rlviser
 rlbot_training/rlviser.exe
 rlbot_training/rlviser-*.zip
 rlbot_training/rattletrap
+rlbot_training/rlbot_in_game_files/my_model.pt
 Milestone_1/rrrocket
 Milestone_1/rrrocket-*.tar.gz
+*.exe
+*.zip
+
+# Large local replay/debug payloads at repo root
+[0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]*.json
+[0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]*.csv
+
+# Local artifact outputs (keep pointers tracked)
+artifacts/live_sessions/
+artifacts/replay_library/
+artifacts/arena_dumper_zip/
+!artifacts/
+!artifacts/pointers/
+!artifacts/pointers/**
 
 # OS cruft
 .DS_Store

@@ -1,95 +1,155 @@
 # RLGym_Bot_Training
 
-Code-first Rocket League bot training and analysis workspace.
+Rocket League bot training and analysis workspace with two dashboards:
 
-This repository now prioritizes:
-- reproducible code workflows,
-- minimal git bloat,
-- clean separation of training, live analysis, and replay analysis,
-- external storage for heavy artifacts (models, checkpoints, replay dumps).
+- Live Analysis Dashboard (while running/attaching to a match)
+- Replay 3D Dashboard (post-game replay analysis)
 
-## Quick Start
+## What You Can Run
+
+- `scripts/bootstrap.ps1`: create venv and install dependencies
+- `scripts/train.ps1`: run training entrypoint
+- `scripts/live_analysis.ps1`: launch live analysis workflow
+- `scripts/launch_live_analysis.ps1`: one-click live launcher with dependency self-heal
+- `scripts/replay_extract.ps1`: pick a `.replay` and extract replay data
+- `scripts/replay_dashboard.ps1`: launch replay dashboard web app
+
+## Prerequisites
+
+- Windows PowerShell
+- Python 3.11 or 3.12 installed (`py` launcher recommended)
+- Rocket League installed (for live analysis mode)
+
+Notes:
+- Bootstrap prefers Python 3.11, then 3.12.
+- The project uses `venv/` (not `.venv`) for runtime scripts.
+
+## Setup
+
+From repository root:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 ```
 
-### Run Training
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/train.ps1
-```
+This will:
 
-### Run Live Analysis
+- create/rebuild `venv/` if needed
+- install `requirements/base.txt`
+- apply a `flatbuffers` compatibility override
+- verify required imports
+
+Dependency files are organized in `requirements/`:
+
+- `requirements/base.txt`: runtime dependencies
+- `requirements/dev.txt`: developer tooling
+- `requirements/tensorflow.txt`: optional isolated TensorFlow env
+
+## Run Live Analysis Dashboard
+
+Quick start:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1
 ```
 
-One-click launcher (auto-bootstrap + dependency self-heal):
+or directly use the launcher:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/launch_live_analysis.ps1
 ```
 
-### Run Replay Extraction
+Default URL:
+
+- `http://127.0.0.1:8765`
+
+Useful options:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1 -AttachOnly
+powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1 -Launcher auto
+powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1 -NoBrowser
+powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1 -NoBotMode none
+```
+
+What these do:
+
+- `-AttachOnly`: attach to an existing RL session instead of auto-starting a match
+- `-Launcher epic|steam|auto`: choose RL launcher mode
+- `-NoBrowser`: do not auto-open browser
+- `-NoBotMode tuck|none`: choose no-bot spawn behavior
+
+## Run Replay 3D Dashboard
+
+Start server:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1
+```
+
+Default URL:
+
+- `http://127.0.0.1:8775`
+
+Optional flags:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1 -Port 8776
+powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1 -NoBrowser
+```
+
+## Replay Extraction
+
+Use file picker:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/replay_extract.ps1
 ```
 
-### Run Replay 3D Dashboard
+Or pass a replay directly:
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1
+powershell -ExecutionPolicy Bypass -File scripts/replay_extract.ps1 -ReplayPath "C:\path\to\match.replay"
 ```
+
+## Training
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/train.ps1
+```
+
+## Common Troubleshooting
+
+- `Virtual environment not found`:
+  - Run `scripts/bootstrap.ps1` first.
+- Browser did not open:
+  - Open the URL manually (`8765` for live, `8775` for replay dashboard).
+- Port already in use:
+  - Pass `-Port` to the script and use a different port.
+- Live mode fails to start match:
+  - Try `-AttachOnly` and connect to an already running session.
 
 ## Repository Layout
 
 ```text
 .
-├─ artifacts/
-│  └─ pointers/                  # Metadata pointers to external models/checkpoints
-├─ configs/                      # Default YAML config stubs
-├─ data/                         # Lightweight tracked samples only
-├─ docs/
-│  ├─ architecture.md
-│  ├─ workflows.md
-│  └─ data-policy.md
-├─ scripts/                      # Stable PowerShell workflow wrappers + maintenance
-├─ src/                          # Migration scaffold for package-based layout
-├─ Milestone_1/                  # Existing replay + heuristic tooling
-└─ rlbot_training/               # Existing training/runtime code
+|-- artifacts/               # External artifact pointers and generated outputs
+|-- configs/                 # Config stubs
+|-- data/                    # Lightweight tracked data only
+|-- docs/                    # Architecture/workflow notes
+|-- scripts/                 # PowerShell workflow wrappers
+|-- src/                     # Migration scaffold
+|-- Milestone_1/             # Live/replay analysis apps and tooling
+`-- rlbot_training/          # Training/runtime code
 ```
 
 ## Artifact Policy
 
-Do not commit:
-- model binaries (`.pt`, `.pth`, etc.),
-- checkpoint folders,
-- replay dumps (`.replay`, large json/csv exports),
-- generated plots and logs (`wandb`, `reward_logs`, analysis outputs),
-- local binaries (rlviser, rattletrap, rrrocket bundles).
+Do not commit large generated artifacts:
 
-Use external storage and keep only pointer metadata in `artifacts/pointers/`.
+- model binaries/checkpoints
+- replay dumps and large json/csv exports
+- generated plots/logs
+- local tool binaries/bundles
 
-## Pre-commit Guardrails
-
-A local pre-commit config is included:
-- basic file hygiene checks,
-- staged file size gate (`scripts/check_no_large_files.py`, 10 MB limit).
-
-Install:
-```powershell
-.\.venv\Scripts\python.exe -m pip install pre-commit
-.\.venv\Scripts\pre-commit.exe install
-```
-
-## History Cleanup (Large Blob Rewrite)
-
-If needed, run:
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/history_cleanup.ps1
-```
-
-This rewrites git history locally. Coordinate with collaborators before force-pushing.
-
-## Notes
-
-- Existing entrypoints are still preserved to avoid breaking your current workflow.
-- `src/` modules are compatibility wrappers to enable gradual migration.
+Keep pointer metadata under `artifacts/pointers/` when needed.

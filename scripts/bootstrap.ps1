@@ -76,7 +76,11 @@ if ($versionLine -notin @("3.11", "3.12")) {
 & $venvPython -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed." }
 
-& $venvPython -m pip install -r requirements.txt
+$requirementsFile = ".\requirements\base.txt"
+if (!(Test-Path $requirementsFile)) {
+    $requirementsFile = ".\requirements.txt"
+}
+& $venvPython -m pip install -r $requirementsFile
 if ($LASTEXITCODE -ne 0) { throw "requirements installation failed." }
 
 # RLBot currently pins an old flatbuffers build that fails on newer Python runtimes.

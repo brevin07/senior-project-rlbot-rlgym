@@ -59,7 +59,11 @@ sys.exit(0 if not missing else 1)
             throw "Missing required packages and -SkipBootstrap was provided."
         }
         Write-Host "[launcher] Installing required packages..."
-        & $venvPython -m pip install -r ".\requirements.txt"
+        $requirementsFile = ".\requirements\base.txt"
+        if (!(Test-Path $requirementsFile)) {
+            $requirementsFile = ".\requirements.txt"
+        }
+        & $venvPython -m pip install -r $requirementsFile
         & $venvPython -m pip install "flatbuffers>=24.3.25"
     }
 

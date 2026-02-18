@@ -1,33 +1,3 @@
-# Core scientific stack
-numpy>=1.26,<2
-pandas>=2.2,<3
-matplotlib>=3.10,<4
-seaborn>=0.13,<1
-
-# RL / Rocket League
-rlbot==1.68.0
-rlgym>=2.0,<3
-rocketsim>=2.1
-git+https://github.com/AechPro/rlgym-ppo.git
-git+https://github.com/AechPro/rocket-league-gym-sim.git
-
-# ML
-torch>=2.7,<3
-
-# NOTE:
-# TensorFlow 2.20+ conflicts with RLBot's flatbuffers pin in a single environment.
-# Install TensorFlow in a separate venv when needed for isolated workflows.
-
-# Visualization / dashboards
-streamlit>=1.54,<2
-plotly>=6,<7
-pyarrow>=23,<24
-
-# Training and experiment utilities
-wandb>=0.21,<0.25
-pydantic>=2.11,<3
-python-dotenv>=1.0,<2
-websockets>=16,<17
-selenium>=4.40,<5
-webdriver-manager>=4.0,<5
-pre-commit>=4.5,<5
+# Backward-compatible entrypoint.
+# Primary dependency files now live under requirements/.
+-r requirements/base.txt

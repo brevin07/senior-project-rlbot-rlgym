@@ -1,1 +1,2 @@
-tensorflow>=2.20,<3
+# Backward-compatible entrypoint.
+-r requirements/tensorflow.txt
