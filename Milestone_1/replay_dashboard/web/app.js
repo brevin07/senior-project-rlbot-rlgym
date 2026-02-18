@@ -60,7 +60,26 @@ const recsBubbleToggle = document.getElementById("recsBubbleToggle");
 const recsBubbleBody = document.getElementById("recsBubbleBody");
 const mechanicsBubbleToggle = document.getElementById("mechanicsBubbleToggle");
 const mechanicsBubbleBody = document.getElementById("mechanicsBubbleBody");
+const tabAnalysisBtn = document.getElementById("tabAnalysisBtn");
+const tabImproveBtn = document.getElementById("tabImproveBtn");
+const tabAnalysis = document.getElementById("tabAnalysis");
+const tabImprove = document.getElementById("tabImprove");
+const progressBubbleToggle = document.getElementById("progressBubbleToggle");
+const progressBubbleBody = document.getElementById("progressBubbleBody");
+const refreshProgressBtn = document.getElementById("refreshProgressBtn");
+const progressXModeSelect = document.getElementById("progressXMode");
+const progressChart = document.getElementById("progressChart");
+const progressLegend = document.getElementById("progressLegend");
+const progressSourceMeta = document.getElementById("progressSourceMeta");
 const toastEl = document.getElementById("toast");
+const loadingOverlay = document.getElementById("loadingOverlay");
+const loadingTitle = document.getElementById("loadingTitle");
+const loadingStatus = document.getElementById("loadingStatus");
+const loadingProgressBar = document.getElementById("loadingProgressBar");
+const loadingChecklist = document.getElementById("loadingChecklist");
+const loadingActions = document.getElementById("loadingActions");
+const openDuplicateBtn = document.getElementById("openDuplicateBtn");
+const closeLoadingBtn = document.getElementById("closeLoadingBtn");
 
 const FIELD_X = 8192;
 const FIELD_Y = 10240;
@@ -70,17 +89,16 @@ const GOAL_WIDTH = 1780;
 const GOAL_HEIGHT = 640;
 const TELEPORT_DIST_THRESHOLD = 900;
 const SHOW_REPLAY_CHARTS = false;
+const DAY_S = 86400;
 
 const metricMeta = [
   ["speed", "Speed", "Current car speed. Higher speed means more momentum and faster challenge reach."],
   ["hesitation_percent", "Hesitation %", "Percent of pressured moments where movement looks indecisive."],
-  ["hesitation_score", "Hesitation Score", "0-1 moment score of indecision. Higher means more hesitation now."],
   ["boost_waste_percent", "Boost Waste %", "Boost spent in low-value situations. Lower is usually better."],
   ["supersonic_percent", "Supersonic %", "Percent of time above supersonic speed."],
   ["useful_supersonic_percent", "Useful Supersonic %", "Supersonic time spent in useful pressure/progress contexts."],
   ["pressure_percent", "Pressure %", "How often the player is actively pressuring play near ball."],
   ["whiff_rate_per_min", "Whiff Rate / min", "Estimated missed challenge/touch attempts per minute."],
-  ["approach_efficiency", "Approach Efficiency", "Ball-closing progress per boost used while approaching."],
   ["recovery_time_avg_s", "Recovery Avg (s)", "Average time to become playable after aerial/awkward states."],
 ];
 
@@ -172,6 +190,23 @@ let lastDebugUpdateMs = 0;
 let currentFps = 0;
 let sceneInitialized = false;
 let toastTimer = 0;
+let duplicateReplaySessionId = "";
+let progressPoints = [];
+let progressVisibleKeys = new Set(["overall_mechanics_score"]);
+let progressXMode = "auto_hybrid";
+let dashboardTab = "analysis";
+
+const progressLineMeta = {
+  overall_mechanics_score: { title: "Overall", color: "#8ce4ff" },
+  kickoff: { title: "Kickoff", color: "#ffd36e" },
+  shadow_defense: { title: "Shadow Defense", color: "#9df5b0" },
+  challenge: { title: "Challenge", color: "#ff9f8a" },
+  fifty_fifty_control: { title: "50/50", color: "#f6b8ff" },
+  aerial_offense: { title: "Aerial Offense", color: "#76f7f0" },
+  aerial_defense: { title: "Aerial Defense", color: "#ffb876" },
+  flicking: { title: "Flicking", color: "#b9b9ff" },
+  carrying_dribbling: { title: "Carrying", color: "#c6ff7d" },
+};
 
 function normalizePlayerKey(name) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -198,6 +233,35 @@ function showToast(text, ms = 3200) {
   }, Math.max(1000, Number(ms || 0)));
 }
 
+function setLoadingOverlayVisible(visible) {
+  if (!loadingOverlay) return;
+  loadingOverlay.classList.toggle("hidden", !visible);
+}
+
+function setLoadingChecklist(checklist) {
+  if (!loadingChecklist) return;
+  const data = checklist || {};
+  for (const li of loadingChecklist.querySelectorAll("li[data-key]")) {
+    const key = String(li.getAttribute("data-key") || "");
+    const done = !!data[key];
+    li.classList.toggle("done", done);
+  }
+}
+
+function setLoadingState({ title, status, progress, checklist, duplicateSessionId = "" }) {
+  if (loadingTitle && title !== undefined) loadingTitle.textContent = String(title || "Preparing Replay");
+  if (loadingStatus && status !== undefined) loadingStatus.textContent = String(status || "");
+  if (loadingProgressBar && progress !== undefined) {
+    const pct = Math.max(0, Math.min(100, Number(progress || 0) * 100));
+    loadingProgressBar.style.width = `${pct}%`;
+  }
+  setLoadingChecklist(checklist || {});
+  duplicateReplaySessionId = String(duplicateSessionId || "");
+  if (loadingActions) {
+    loadingActions.classList.toggle("hidden", !duplicateReplaySessionId);
+  }
+}
+
 function setDrawerOpen(open) {
   const isOpen = !!open;
   if (!libraryDrawer) return;
@@ -217,6 +281,47 @@ function restoreDrawerState() {
   }
 }
 
+function setDashboardTab(tab) {
+  const next = String(tab || "analysis") === "improvement" ? "improvement" : "analysis";
+  dashboardTab = next;
+  const isAnalysis = next === "analysis";
+  tabAnalysis?.classList.toggle("hidden", !isAnalysis);
+  tabImprove?.classList.toggle("hidden", isAnalysis);
+  tabAnalysisBtn?.classList.toggle("active", isAnalysis);
+  tabImproveBtn?.classList.toggle("active", !isAnalysis);
+  tabAnalysisBtn?.setAttribute("aria-pressed", isAnalysis ? "true" : "false");
+  tabImproveBtn?.setAttribute("aria-pressed", isAnalysis ? "false" : "true");
+  try {
+    localStorage.setItem("dashboard_tab", next);
+  } catch (_err) {}
+  if (isAnalysis) {
+    // Scene can initialize while hidden if previous tab was Improvement; force a viewport refresh.
+    setTimeout(() => {
+      refreshSceneViewport();
+    }, 0);
+  }
+}
+
+function restoreDashboardTab() {
+  let t = "analysis";
+  try {
+    const raw = localStorage.getItem("dashboard_tab");
+    if (raw === "improvement" || raw === "analysis") t = raw;
+  } catch (_err) {}
+  setDashboardTab(t);
+}
+
+function refreshSceneViewport() {
+  if (!sceneInitialized || !camera || !renderer || !sceneEl) return;
+  const w = Number(sceneEl.clientWidth || 0);
+  const h = Number(sceneEl.clientHeight || 0);
+  if (w < 2 || h < 2) return;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  needsRender = true;
+}
+
 function setBubbleOpen(toggleEl, bodyEl, open, key) {
   if (!toggleEl || !bodyEl) return;
   const isOpen = !!open;
@@ -234,8 +339,12 @@ function restoreBubbleStates() {
   const mechOpen = (() => {
     try { return localStorage.getItem("bubble_mech_open") === "1"; } catch (_e) { return false; }
   })();
+  const progOpen = (() => {
+    try { return localStorage.getItem("bubble_progress_open") === "1"; } catch (_e) { return false; }
+  })();
   setBubbleOpen(recsBubbleToggle, recsBubbleBody, recsOpen, "bubble_recs_open");
   setBubbleOpen(mechanicsBubbleToggle, mechanicsBubbleBody, mechOpen, "bubble_mech_open");
+  setBubbleOpen(progressBubbleToggle, progressBubbleBody, progOpen, "bubble_progress_open");
 }
 
 function restoreTimelineFilterMode() {
@@ -248,6 +357,21 @@ function restoreTimelineFilterMode() {
     }
   } catch (_err) {}
   timelineEventMode = String(timelineFilterMode?.value || "top10");
+}
+
+function sanitizeProgressXMode(v) {
+  const raw = String(v || "");
+  if (raw === "true_date" || raw === "replay_order" || raw === "auto_hybrid") return raw;
+  return "auto_hybrid";
+}
+
+function restoreProgressXMode() {
+  let mode = "auto_hybrid";
+  try {
+    mode = sanitizeProgressXMode(localStorage.getItem("progress_x_mode"));
+  } catch (_err) {}
+  progressXMode = mode;
+  if (progressXModeSelect) progressXModeSelect.value = mode;
 }
 
 function setNextEventExplainText(text) {
@@ -268,9 +392,9 @@ function setCoachPanelOpen(open) {
 
 function englishEventName(mid) {
   const map = {
+    kickoff: "kickoff",
     shadow_defense: "shadow defense",
     challenge: "challenge",
-    early_challenge_timing: "challenge",
     flicking: "flick",
     carrying_dribbling: "carry and dribble",
     flicking_carry_offense: "flick",
@@ -300,7 +424,7 @@ function buildFallbackAdviceText({ mechanicId, label, hints, timeS }) {
   const en = englishEventName(mechanicId || "");
   const hint1 = String((hints && hints[0]) || "kept the decision cleaner under pressure");
   const hint2 = String((hints && hints[1]) || "late, reactive movement after committing");
-  const seed = stableHashString(`${mechanicId || ""}|${Math.round(Number(timeS || 0) * 10)}|${label || ""}`);
+  const seed = stableHashString(`${mechanicId || ""}|${Math.round(Number(timeS || 0) * 10)}|${label || ""}|${hint1}|${hint2}`);
   const good = [
     `Good ${en}. You ${hint1}, and that kept your options open for the next touch.`,
     `Nice ${en}. You ${hint1}, which gave you cleaner control in that sequence.`,
@@ -348,9 +472,16 @@ function goalPauseWindowAtTime(t) {
 }
 
 function alignTimeToTimeline(t) {
-  if (!replayData?.timeline?.length) return Number(t || 0);
+  const aligned = alignEventToTimeline({ time: t });
+  return Number(aligned.__aligned_t || Number(t || 0));
+}
+
+function alignEventToTimeline(e) {
+  if (!replayData?.timeline?.length) {
+    return { __aligned_t: Number(e?.time || 0), __aligned_idx: 0 };
+  }
   const arr = replayData.timeline;
-  const target = Number(t || 0);
+  const target = Number(e?.time || 0);
   let lo = 0;
   let hi = arr.length - 1;
   while (lo <= hi) {
@@ -363,7 +494,11 @@ function alignTimeToTimeline(t) {
   const i1 = Math.max(0, Math.min(arr.length - 1, lo - 1));
   const t0 = Number(arr[i0]?.t || 0);
   const t1 = Number(arr[i1]?.t || 0);
-  return Math.abs(t0 - target) < Math.abs(t1 - target) ? t0 : t1;
+  const idx = Math.abs(t0 - target) < Math.abs(t1 - target) ? i0 : i1;
+  return {
+    __aligned_t: Number(arr[idx]?.t || target),
+    __aligned_idx: idx,
+  };
 }
 
 function mechanicEventsSorted() {
@@ -375,24 +510,24 @@ function mechanicEventsSorted() {
 function dedupeMechanicEvents(events) {
   const byKey = new Map();
   for (const e of (events || [])) {
-    const t = alignTimeToTimeline(Number(e?.time || 0));
-    const bucket = Math.round(t * 2) / 2;
-    const k = `${String(e?.mechanic_id || "mech")}|${bucket.toFixed(1)}`;
+    const aligned = alignEventToTimeline(e);
+    const idx = Number(aligned.__aligned_idx || 0);
+    const k = `${String(e?.mechanic_id || "mech")}|${idx}`;
     if (!byKey.has(k)) {
-      byKey.set(k, e);
+      byKey.set(k, { ...e, ...aligned });
       continue;
     }
     const prev = byKey.get(k);
     const prevAbs = Math.abs(Number(prev?.quality_score || 0) - 0.5);
     const curAbs = Math.abs(Number(e?.quality_score || 0) - 0.5);
-    if (curAbs > prevAbs) byKey.set(k, e);
+    if (curAbs > prevAbs) byKey.set(k, { ...e, ...aligned });
   }
   return Array.from(byKey.values());
 }
 
 function filteredMechanicEvents() {
   const raw = dedupeMechanicEvents(mechanicEventsSorted());
-  const withAligned = raw.map((e) => ({ ...e, __aligned_t: alignTimeToTimeline(Number(e?.time || 0)) }));
+  const withAligned = raw.map((e) => ({ ...e, ...alignEventToTimeline(e) }));
   if (timelineEventMode === "all") return withAligned.sort((a, b) => Number(a?.__aligned_t || 0) - Number(b?.__aligned_t || 0));
   const scored = withAligned.slice();
   if (timelineEventMode === "worst5") {
@@ -416,7 +551,7 @@ function filteredMechanicEvents() {
     .sort((a, b) => Number(b?.quality_score || 0) - Number(a?.quality_score || 0))
     .slice(0, 5);
   const merged = dedupeMechanicEvents([...worst, ...best]);
-  const mergedAligned = merged.map((e) => ({ ...e, __aligned_t: alignTimeToTimeline(Number(e?.time || 0)) }));
+  const mergedAligned = merged.map((e) => ({ ...e, ...alignEventToTimeline(e) }));
   mergedAligned.sort((a, b) => Number(a?.__aligned_t || 0) - Number(b?.__aligned_t || 0));
   return mergedAligned;
 }
@@ -627,6 +762,10 @@ function formatClock(seconds) {
   return `${m}:${rem}`;
 }
 
+function formatDurationMMSS(seconds) {
+  return formatClock(seconds);
+}
+
 function buildScoreTimeline() {
   const scoreSamples = replayData?.replay_meta?.score_samples || [];
   const out = [];
@@ -708,9 +847,11 @@ function updateHud(t) {
   orangeScoreEl.textContent = String(orange);
 
   const remain = pauseWin ? secondsRemainingAtTime(pauseWin.start) : secondsRemainingAtTime(t);
-  const inOt = remain <= 0.001 && Number.isFinite(zeroClockStartTimeS) && t > (zeroClockStartTimeS + 0.05);
+  const tieGame = blue === orange;
+  const otStart = Number(replayData?.replay_meta?.ot_start_s);
+  const inOt = (remain <= 0.001) && tieGame && Number.isFinite(otStart) && t >= otStart;
   if (inOt) {
-    const otElapsed = Math.max(0, t - zeroClockStartTimeS);
+    const otElapsed = Math.max(0, t - otStart);
     otBadgeEl.style.display = "block";
     clockTextEl.textContent = `+${formatClock(otElapsed)}`;
   } else {
@@ -837,6 +978,9 @@ function boostAtTime(player, t) {
 function setProgress(progress, label) {
   progressBar.style.width = `${Math.max(0, Math.min(100, progress * 100))}%`;
   progressLabel.textContent = label || "";
+  if (!loadingOverlay?.classList.contains("hidden")) {
+    setLoadingState({ status: label || "", progress: Number(progress || 0) });
+  }
 }
 
 function setControlsEnabled(enabled) {
@@ -1516,12 +1660,7 @@ function initScene() {
   scene.add(ballMesh);
 
   window.addEventListener("resize", () => {
-    const w = sceneEl.clientWidth;
-    const h = sceneEl.clientHeight;
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
-    needsRender = true;
+    refreshSceneViewport();
   });
 }
 
@@ -1942,9 +2081,9 @@ function renderAtTime(t) {
   if (m) {
     metricMeta.forEach(([key]) => {
       const el = document.getElementById(`val_${key}`);
-      if (el) el.textContent = fmt(m[key], key === "hesitation_score" ? 3 : 2);
+      if (el) el.textContent = fmt(m[key], 2);
     });
-    updateEventsAtTime(m.t);
+    updateEventsAtTime(currentReplayTimeS);
     timeLabel.textContent = `t=${fmt(m.t, 2)} / ${fmt(replayEndTimeS, 2)}s`;
   } else {
     timeLabel.textContent = `t=${fmt(currentReplayTimeS, 2)} / ${fmt(replayEndTimeS, 2)}s`;
@@ -1971,12 +2110,10 @@ function rebuildCharts() {
 
   drawSeries("speedChart", toSeries("speed"), "#44d2ff", tNow);
   drawSeries("hesitationChart", toSeries("hesitation_percent"), "#ff7a5c", tNow);
-  drawSeries("hesitationScoreChart", toSeries("hesitation_score"), "#ff5c96", tNow);
   drawSeries("boostChart", toSeries("boost_waste_percent"), "#f5d76e", tNow);
   drawSeries("supersonicChart", toSeries("supersonic_percent"), "#7bf1a8", tNow);
   drawSeries("pressureChart", toSeries("pressure_percent"), "#fcbf49", tNow);
   drawSeries("whiffRateChart", toSeries("whiff_rate_per_min"), "#f67280", tNow);
-  drawSeries("approachChart", toSeries("approach_efficiency"), "#9d8df1", tNow);
   drawSeries("recoveryChart", toSeries("recovery_time_avg_s"), "#73d2de", tNow);
 }
 
@@ -2080,7 +2217,6 @@ function animate(tsMs) {
   if (fpsCounter >= 30) {
     const fps = fpsCounter / Math.max(1e-6, fpsAccumMs / 1000);
     currentFps = fps;
-    if (perfStatus) perfStatus.textContent = `FPS: ${fps.toFixed(1)} | drift ${playbackDriftMs.toFixed(1)}ms`;
     // Keep >=30 FPS by reducing non-critical UI update cadence.
     if (fps < 30) {
       tagRefreshMs = 110;
@@ -2156,8 +2292,9 @@ function setProfileUi(profile) {
   if (loginGate) loginGate.classList.add("hidden");
   if (appShell) appShell.classList.remove("hidden");
   setDrawerOpen(false);
-  restoreBubbleStates();
   ensureSceneInitialized();
+  restoreDashboardTab();
+  restoreBubbleStates();
 }
 
 async function logoutProfile() {
@@ -2170,6 +2307,8 @@ async function logoutProfile() {
   renderLibrary([]);
   renderRecommendations([]);
   renderMechanics(null);
+  progressPoints = [];
+  renderProgressTracking();
   replayData = null;
   selectedPlayer = "";
   metricsReady = false;
@@ -2261,6 +2400,240 @@ function renderMechanics(payload) {
   }
 }
 
+function _progressSeriesForKey(key) {
+  const pts = [];
+  for (const p of progressPoints || []) {
+    const xReal = Number(p?.x_time_unix || 0);
+    if (!Number.isFinite(xReal) || xReal <= 0) continue;
+    let y = NaN;
+    if (key === "overall_mechanics_score") {
+      y = Number(p?.overall_mechanics_score);
+    } else {
+      y = Number((p?.mechanic_scores || {})[key]);
+    }
+    if (!Number.isFinite(y)) continue;
+    const sid = String(p?.session_id || "");
+    pts.push({ sid, xReal, y, _key: `${sid}|${xReal}` });
+  }
+  pts.sort((a, b) => (a.xReal - b.xReal) || String(a.sid).localeCompare(String(b.sid)));
+  return pts;
+}
+
+function _median(nums) {
+  const arr = (nums || []).filter((n) => Number.isFinite(n)).slice().sort((a, b) => a - b);
+  if (!arr.length) return 0;
+  const m = Math.floor(arr.length / 2);
+  if (arr.length % 2 === 1) return arr[m];
+  return (arr[m - 1] + arr[m]) / 2;
+}
+
+function buildProgressXLayout(seriesByKey, mode) {
+  const byPointKey = new Map();
+  for (const s of Object.values(seriesByKey || {})) {
+    for (const p of s || []) {
+      if (!p || !p._key) continue;
+      if (!byPointKey.has(p._key)) byPointKey.set(p._key, p);
+    }
+  }
+  const ordered = Array.from(byPointKey.values()).sort((a, b) => (a.xReal - b.xReal) || String(a.sid).localeCompare(String(b.sid)));
+  if (!ordered.length) return { xByKey: new Map(), minX: 0, maxX: 1, breaks: [] };
+  const normalizedMode = sanitizeProgressXMode(mode);
+  const xByKey = new Map();
+  const breaks = [];
+  if (normalizedMode === "replay_order") {
+    for (let i = 0; i < ordered.length; i++) xByKey.set(ordered[i]._key, i);
+    return { xByKey, minX: 0, maxX: Math.max(1, ordered.length - 1), breaks };
+  }
+  if (normalizedMode === "true_date") {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (const p of ordered) {
+      xByKey.set(p._key, p.xReal);
+      minX = Math.min(minX, p.xReal);
+      maxX = Math.max(maxX, p.xReal);
+    }
+    return { xByKey, minX, maxX: Math.max(minX + 1, maxX), breaks };
+  }
+
+  const gaps = [];
+  for (let i = 1; i < ordered.length; i++) {
+    const gap = ordered[i].xReal - ordered[i - 1].xReal;
+    if (gap > 0) gaps.push(gap);
+  }
+  const medianGap = _median(gaps);
+  const outlierThreshold = Math.max(30 * DAY_S, medianGap > 0 ? 12 * medianGap : 0);
+  const compressedCap = medianGap > 0 ? Math.max(2 * medianGap, 7 * DAY_S) : 14 * DAY_S;
+
+  xByKey.set(ordered[0]._key, 0);
+  let xDisp = 0;
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = ordered[i - 1];
+    const cur = ordered[i];
+    const gap = Math.max(0, cur.xReal - prev.xReal);
+    let addGap = gap;
+    if (gap > outlierThreshold && outlierThreshold > 0) {
+      addGap = Math.min(gap, compressedCap);
+      const omitted = Math.max(0, gap - addGap);
+      breaks.push({
+        xDisplay: xDisp + addGap * 0.5,
+        gapDays: Math.round(gap / DAY_S),
+        omittedDays: Math.round(omitted / DAY_S),
+      });
+    }
+    xDisp += addGap;
+    xByKey.set(cur._key, xDisp);
+  }
+  return { xByKey, minX: 0, maxX: Math.max(1, xDisp), breaks };
+}
+
+function renderProgressLegend() {
+  if (!progressLegend) return;
+  progressLegend.innerHTML = "";
+  for (const [key, meta] of Object.entries(progressLineMeta)) {
+    const row = document.createElement("div");
+    row.className = "library-item";
+    const dot = document.createElement("div");
+    dot.className = "legend-dot";
+    dot.style.background = meta.color;
+    const btn = document.createElement("button");
+    const active = progressVisibleKeys.has(key);
+    btn.textContent = `${active ? "Hide" : "Show"} ${meta.title}`;
+    btn.addEventListener("click", () => {
+      if (progressVisibleKeys.has(key)) progressVisibleKeys.delete(key);
+      else progressVisibleKeys.add(key);
+      renderProgressLegend();
+      drawProgressChart();
+    });
+    row.appendChild(dot);
+    row.appendChild(btn);
+    progressLegend.appendChild(row);
+  }
+}
+
+function drawProgressChart() {
+  if (!progressChart) return;
+  const ctx = progressChart.getContext("2d");
+  if (!ctx) return;
+  const w = progressChart.width;
+  const h = progressChart.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0e1623";
+  ctx.fillRect(0, 0, w, h);
+  if (!progressPoints?.length) {
+    ctx.fillStyle = "#9cb0ca";
+    ctx.font = "13px Trebuchet MS";
+    ctx.fillText("Analyze replays to build an improvement trend.", 16, 28);
+    return;
+  }
+  const keys = Array.from(progressVisibleKeys);
+  const seriesByKey = {};
+  for (const key of keys) {
+    const s = _progressSeriesForKey(key);
+    if (!s.length) continue;
+    seriesByKey[key] = s;
+  }
+  const layout = buildProgressXLayout(seriesByKey, progressXMode);
+  const minX = Number(layout.minX);
+  const maxX = Number(layout.maxX);
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Object.keys(seriesByKey).length) {
+    ctx.fillStyle = "#9cb0ca";
+    ctx.font = "13px Trebuchet MS";
+    ctx.fillText("No score points available yet.", 16, 28);
+    return;
+  }
+  const pad = { l: 40, r: 14, t: 10, b: 22 };
+  const plotW = Math.max(1, w - pad.l - pad.r);
+  const plotH = Math.max(1, h - pad.t - pad.b);
+  const xSpan = Math.max(1, maxX - minX);
+  const xOf = (x) => pad.l + ((x - minX) / xSpan) * plotW;
+  const yOf = (y) => pad.t + (1 - Math.max(0, Math.min(100, y)) / 100) * plotH;
+
+  ctx.strokeStyle = "rgba(180, 210, 245, 0.25)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, yOf(25)); ctx.lineTo(w - pad.r, yOf(25));
+  ctx.moveTo(pad.l, yOf(50)); ctx.lineTo(w - pad.r, yOf(50));
+  ctx.moveTo(pad.l, yOf(75)); ctx.lineTo(w - pad.r, yOf(75));
+  ctx.stroke();
+
+  if (Array.isArray(layout.breaks) && layout.breaks.length) {
+    ctx.strokeStyle = "rgba(255, 206, 125, 0.9)";
+    ctx.lineWidth = 1.4;
+    ctx.font = "10px Trebuchet MS";
+    ctx.fillStyle = "rgba(250, 222, 171, 0.95)";
+    for (let i = 0; i < layout.breaks.length; i++) {
+      const br = layout.breaks[i];
+      const bx = xOf(Number(br?.xDisplay || 0));
+      if (!Number.isFinite(bx) || bx < pad.l || bx > w - pad.r) continue;
+      ctx.beginPath();
+      ctx.moveTo(bx - 4, h - pad.b - 3);
+      ctx.lineTo(bx - 1, h - pad.b - 9);
+      ctx.moveTo(bx + 1, h - pad.b - 3);
+      ctx.lineTo(bx + 4, h - pad.b - 9);
+      ctx.stroke();
+      if (i < 3) {
+        const txt = `${Math.max(0, Number(br?.omittedDays || 0))}d compressed`;
+        ctx.fillText(txt, Math.max(pad.l + 2, bx - 26), h - 4);
+      }
+    }
+  }
+
+  for (const [key, s] of Object.entries(seriesByKey)) {
+    if (!s.length) continue;
+    ctx.strokeStyle = progressLineMeta[key]?.color || "#8ce4ff";
+    ctx.lineWidth = key === "overall_mechanics_score" ? 2.4 : 1.5;
+    const sorted = s
+      .map((p) => ({ ...p, xDisplay: Number(layout.xByKey.get(p._key) ?? p.xReal) }))
+      .sort((a, b) => a.xDisplay - b.xDisplay);
+    ctx.beginPath();
+    for (let i = 0; i < sorted.length; i++) {
+      const x = xOf(sorted[i].xDisplay);
+      const y = yOf(sorted[i].y);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
+function renderProgressMeta() {
+  if (!progressSourceMeta) return;
+  const modeLabel = progressXMode === "true_date"
+    ? "true date"
+    : progressXMode === "replay_order"
+      ? "replay order"
+      : "auto-compressed";
+  if (!progressPoints.length) {
+    progressSourceMeta.textContent = `Source: no sessions yet | view: ${modeLabel}`;
+    return;
+  }
+  const replayCount = progressPoints.filter((p) => String(p?.x_time_source || "") === "replay_meta").length;
+  const fallbackCount = Math.max(0, progressPoints.length - replayCount);
+  progressSourceMeta.textContent = `Source: replay dates ${replayCount}, fallback created_at ${fallbackCount} | view: ${modeLabel}`;
+}
+
+function renderProgressTracking() {
+  renderProgressMeta();
+  renderProgressLegend();
+  drawProgressChart();
+}
+
+async function loadProfileProgress() {
+  if (!currentProfile || !currentProfile.id) {
+    progressPoints = [];
+    renderProgressTracking();
+    return;
+  }
+  const res = await fetchJson("/api/profile/progress");
+  if (!res?.ok) {
+    progressPoints = [];
+    renderProgressTracking();
+    return;
+  }
+  progressPoints = Array.isArray(res?.data?.points) ? res.data.points : [];
+  renderProgressTracking();
+}
+
 async function loadCurrentMechanics() {
   const res = await fetchJson("/api/mechanics/current");
   if (!res?.ok) {
@@ -2289,13 +2662,11 @@ function renderTimelineEventMarkers() {
   timelineEvents.innerHTML = "";
   const mechEvents = filteredMechanicEvents();
   if (!mechEvents.length) return;
-  const t0 = Number(replayStartTimeS || 0);
-  const t1 = Number(replayEndTimeS || 0);
-  const span = Math.max(1e-6, t1 - t0);
+  const maxIdx = Math.max(1, Number(replayData?.timeline?.length || 1) - 1);
   for (const e of mechEvents) {
-    const t = Number(e?.__aligned_t || e?.time);
-    if (!Number.isFinite(t)) continue;
-    const leftPct = clamp(((t - t0) / span) * 100, 0, 100);
+    const idx = Number(e?.__aligned_idx);
+    if (!Number.isFinite(idx)) continue;
+    const leftPct = clamp((idx / maxIdx) * 100, 0, 100);
     const marker = document.createElement("div");
     const q = String(e?.quality_label || "neutral").toLowerCase();
     marker.className = `timeline-event-marker ${q === "good" || q === "bad" ? q : "neutral"}`;
@@ -2303,7 +2674,8 @@ function renderTimelineEventMarkers() {
     const shortLabel = String(e?.short || "MECH").slice(0, 6);
     const mid = String(e?.mechanic_id || "mechanic");
     const reason = String(e?.reason || "");
-    marker.title = `${mid} @ ${fmt(t, 2)}s${reason ? ` | ${reason}` : ""}`;
+    const et = Number(e?.__aligned_t || e?.time || 0);
+    marker.title = `${mid} @ ${fmt(et, 2)}s${reason ? ` | ${reason}` : ""}`;
     marker.innerHTML = `<div class="timeline-event-line"></div><div class="timeline-event-label">${shortLabel}</div>`;
     timelineEvents.appendChild(marker);
   }
@@ -2344,6 +2716,7 @@ async function loginProfile() {
   setProfileUi(res.profile || null);
   statusText.textContent = `Welcome, ${username}.`;
   await loadCurrentRecommendations();
+  await loadProfileProgress();
 }
 
 function renderLibrary(sessions) {
@@ -2360,10 +2733,24 @@ function renderLibrary(sessions) {
     const row = document.createElement("div");
     row.className = "library-item";
     const info = document.createElement("div");
-    info.innerHTML = `<div>${s.replay_name || s.session_id}</div><div class="library-item-meta">${s.source_type || "replay"} | ${s.map_name || "soccar"} | ${(Number(s.duration_s || 0)).toFixed(1)}s</div>`;
+    info.innerHTML = `<div>${s.replay_name || s.session_id}</div><div class="library-item-meta">${s.source_type || "replay"} | ${s.map_name || "soccar"} | ${formatDurationMMSS(Number(s.duration_s || 0))}</div>`;
     const btn = document.createElement("button");
     btn.textContent = "Open";
     btn.addEventListener("click", async () => {
+      setLoadingOverlayVisible(true);
+      setLoadingState({
+        title: "Opening Saved Replay",
+        status: "Loading replay from library...",
+        progress: 0.05,
+        checklist: {
+          upload_received: true,
+          replay_parsed: false,
+          timeline_ready: false,
+          analysis_ready: false,
+          dashboard_ready: false,
+        },
+        duplicateSessionId: "",
+      });
       const res = await fetchJson("/api/replay/open_saved", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2371,11 +2758,16 @@ function renderLibrary(sessions) {
       });
       if (!res?.ok) {
         statusText.textContent = `Open saved replay failed: ${res?.error || "unknown error"}`;
+        setLoadingOverlayVisible(false);
         return;
       }
       const ok = await pollStatusUntilReady();
-      if (!ok) return;
+      if (!ok) {
+        setLoadingOverlayVisible(false);
+        return;
+      }
       await loadReplaySession();
+      setLoadingOverlayVisible(false);
       statusText.textContent = "Saved replay opened.";
     });
     row.appendChild(info);
@@ -2506,6 +2898,13 @@ async function pollStatusUntilReady() {
   while (true) {
     const status = await fetchJson("/api/replay/status");
     setProgress(status.progress || 0, status.message || "");
+    setLoadingState({
+      title: "Preparing Replay",
+      status: status.message || "",
+      progress: Number(status.progress || 0),
+      checklist: status.checklist || {},
+      duplicateSessionId: "",
+    });
     statusText.textContent = status.error ? `Error: ${status.error}` : status.message;
     if (status.status === "ready") return true;
     if (status.status === "error") return false;
@@ -2615,7 +3014,7 @@ async function loadReplaySession() {
   goalHoldReplayT = 0;
   goalHoldResumeReplayT = 0;
 
-  durationLabel.textContent = `Duration: ${fmt(replayEndTimeS - replayStartTimeS, 2)}s`;
+  durationLabel.textContent = `Duration: ${formatDurationMMSS(replayEndTimeS - replayStartTimeS)}`;
   timelineSlider.max = String(Math.max(0, replayData.timeline.length - 1));
 
   buildScenePlayers(replayData.players);
@@ -2658,6 +3057,19 @@ async function loadReplayDataForPlayer(player) {
   for (const key of Object.keys(metricSeriesCache)) delete metricSeriesCache[key];
   metricPollToken += 1;
   liveSeekFailureCount = 0;
+  setLoadingState({
+    title: "Analyzing Replay",
+    status: `Running full-game analysis for ${player}...`,
+    progress: 0.88,
+    checklist: {
+      upload_received: true,
+      replay_parsed: true,
+      timeline_ready: true,
+      analysis_ready: false,
+      dashboard_ready: false,
+    },
+    duplicateSessionId: "",
+  });
   statusText.textContent = `Running future-aware analysis for ${player}...`;
   await runAnalysisForSelectedPlayer(player);
   const dataRes = await fetchJson(`/api/replay/player_metrics/data?player=${encodeURIComponent(player)}`);
@@ -2670,6 +3082,20 @@ async function loadReplayDataForPlayer(player) {
   renderTimelineEventMarkers();
   rebuildCharts();
   await loadCurrentMechanics();
+  await loadProfileProgress();
+  setLoadingState({
+    title: "Replay Ready",
+    status: "Everything is loaded.",
+    progress: 1.0,
+    checklist: {
+      upload_received: true,
+      replay_parsed: true,
+      timeline_ready: true,
+      analysis_ready: true,
+      dashboard_ready: true,
+    },
+    duplicateSessionId: "",
+  });
   needsRender = true;
 }
 
@@ -2693,26 +3119,63 @@ async function uploadReplay() {
   form.append("file", file);
 
   setProgress(0.05, "Uploading replay...");
+  setLoadingOverlayVisible(true);
+  setLoadingState({
+    title: "Loading Replay",
+    status: "Uploading replay...",
+    progress: 0.05,
+    checklist: {
+      upload_received: false,
+      replay_parsed: false,
+      timeline_ready: false,
+      analysis_ready: false,
+      dashboard_ready: false,
+    },
+    duplicateSessionId: "",
+  });
   statusText.textContent = "Uploading replay...";
 
   try {
     const res = await fetchJson("/api/replay/upload", { method: "POST", body: form });
     if (!res.ok) {
+      if (res.code === "duplicate_replay" && res.existing_session_id) {
+        setLoadingState({
+          title: "Replay Already In Library",
+          status: "This replay already exists. Open the saved one?",
+          progress: 1.0,
+          checklist: {
+            upload_received: true,
+            replay_parsed: true,
+            timeline_ready: true,
+            analysis_ready: true,
+            dashboard_ready: true,
+          },
+          duplicateSessionId: String(res.existing_session_id || ""),
+        });
+        statusText.textContent = "Replay already in your library.";
+        return;
+      }
       statusText.textContent = `Upload failed: ${res.error || "unknown error"}`;
       showToast(res.error || "Upload failed.");
+      setLoadingOverlayVisible(false);
       return;
     }
 
     const ok = await pollStatusUntilReady();
-    if (!ok) return;
+    if (!ok) {
+      setLoadingOverlayVisible(false);
+      return;
+    }
 
     await loadReplaySession();
+    setLoadingOverlayVisible(false);
     if (replayData?.replay_meta?.boost_unresolved) {
       statusText.textContent = `${statusText.textContent} (boost unresolved in extracted CSV)`;
     }
   } catch (err) {
     statusText.textContent = `Replay load failed: ${err?.message || err}`;
     setControlsEnabled(false);
+    setLoadingOverlayVisible(false);
   }
 }
 
@@ -2869,8 +3332,56 @@ closeLibraryBtn?.addEventListener("click", () => {
   setDrawerOpen(false);
 });
 
+openDuplicateBtn?.addEventListener("click", async () => {
+  if (!duplicateReplaySessionId) return;
+  setLoadingState({
+    title: "Opening Existing Replay",
+    status: "Loading replay from your library...",
+    progress: 0.15,
+    checklist: {
+      upload_received: true,
+      replay_parsed: true,
+      timeline_ready: false,
+      analysis_ready: false,
+      dashboard_ready: false,
+    },
+    duplicateSessionId: "",
+  });
+  const res = await fetchJson("/api/replay/open_saved", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: duplicateReplaySessionId }),
+  });
+  if (!res?.ok) {
+    statusText.textContent = `Open saved replay failed: ${res?.error || "unknown error"}`;
+    setLoadingOverlayVisible(false);
+    return;
+  }
+  const ok = await pollStatusUntilReady();
+  if (!ok) {
+    setLoadingOverlayVisible(false);
+    return;
+  }
+  await loadReplaySession();
+  setLoadingOverlayVisible(false);
+  statusText.textContent = "Loaded existing replay from library.";
+});
+
+closeLoadingBtn?.addEventListener("click", () => {
+  duplicateReplaySessionId = "";
+  setLoadingOverlayVisible(false);
+});
+
 libraryDrawer?.addEventListener("click", (ev) => {
   if (ev.target === libraryDrawer) setDrawerOpen(false);
+});
+
+tabAnalysisBtn?.addEventListener("click", () => {
+  setDashboardTab("analysis");
+});
+
+tabImproveBtn?.addEventListener("click", () => {
+  setDashboardTab("improvement");
 });
 
 recsBubbleToggle?.addEventListener("click", () => {
@@ -2901,6 +3412,25 @@ refreshMechanicsBtn?.addEventListener("click", () => {
   });
 });
 
+progressBubbleToggle?.addEventListener("click", () => {
+  const open = progressBubbleToggle.getAttribute("aria-expanded") !== "true";
+  setBubbleOpen(progressBubbleToggle, progressBubbleBody, open, "bubble_progress_open");
+});
+
+refreshProgressBtn?.addEventListener("click", () => {
+  loadProfileProgress().catch((err) => {
+    statusText.textContent = `Progress refresh failed: ${err?.message || err}`;
+  });
+});
+
+progressXModeSelect?.addEventListener("change", () => {
+  progressXMode = sanitizeProgressXMode(progressXModeSelect.value);
+  try {
+    localStorage.setItem("progress_x_mode", progressXMode);
+  } catch (_err) {}
+  renderProgressTracking();
+});
+
 if (debugToggleBtn) {
   debugToggleBtn.addEventListener("click", () => {
     setDebugOpen(!debugOpen);
@@ -2912,6 +3442,8 @@ if (debugCloseBtn) {
 }
 setDebugOpen(false);
 restoreTimelineFilterMode();
+restoreProgressXMode();
+restoreDashboardTab();
 
 document.addEventListener("keydown", (ev) => {
   const target = ev.target;
@@ -2937,9 +3469,12 @@ initMetricCards();
 loadCurrentProfile()
   .then(() => loadCurrentRecommendations())
   .then(() => loadCurrentMechanics())
+  .then(() => loadProfileProgress())
   .catch(() => {
     setProfileUi(null);
     renderLibrary([]);
     renderRecommendations([]);
     renderMechanics(null);
+    progressPoints = [];
+    renderProgressTracking();
   });

@@ -43,7 +43,7 @@ body {
   bottom: -130px;
 }
 
-.top, .library-wrap, .controls, .progress-wrap, .layout {
+.top, .library-wrap, .controls, .progress-wrap, .layout, .tab-strip, .improvement-layout {
   width: min(1600px, 96vw);
   margin: 10px auto;
   position: relative;
@@ -239,6 +239,11 @@ body {
   color: #ffd27f;
 }
 
+#arenaStatus,
+#perfStatus {
+  display: none;
+}
+
 button, select, input[type="file"] {
   background: var(--panel2);
   border: 1px solid #2e405b;
@@ -272,6 +277,32 @@ input[type="range"] {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
   gap: 10px;
+}
+
+.improvement-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tab-strip {
+  display: flex;
+  gap: 8px;
+}
+
+.tab-btn {
+  min-width: 130px;
+  border-radius: 999px;
+  border: 1px solid #35517b;
+  background: rgba(19, 30, 47, 0.7);
+  color: #bcd6f4;
+  font-weight: 700;
+}
+
+.tab-btn.active {
+  color: #e8f6ff;
+  background: linear-gradient(180deg, #27476f, #1d3758);
+  border-color: #5ea2ef;
 }
 
 .scene-card, .metrics-card {
@@ -596,6 +627,117 @@ input[type="range"] {
 
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 1fr; }
+  .improvement-layout { grid-template-columns: 1fr; }
   #scene { height: 420px; }
   .drawer-panel { width: 100vw; }
+}
+
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: radial-gradient(circle at 25% 15%, rgba(54, 185, 255, 0.18), transparent 40%),
+              radial-gradient(circle at 80% 85%, rgba(255, 148, 70, 0.16), transparent 42%),
+              rgba(9, 14, 22, 0.88);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-card {
+  width: min(620px, 94vw);
+  background: linear-gradient(180deg, #121c2a 0%, #0f1724 100%);
+  border: 1px solid #304564;
+  border-radius: 14px;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.45);
+  padding: 18px 18px 14px;
+}
+
+.loading-card h2 {
+  margin: 0 0 6px 0;
+}
+
+#loadingStatus {
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.loading-progress-wrap {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+#loadingProgressBar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+}
+
+.loading-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.loading-checklist li {
+  font-size: 14px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #553436;
+  color: #ff9494;
+  background: rgba(120, 34, 34, 0.18);
+}
+
+.loading-checklist li.done {
+  border-color: #2f6844;
+  color: #98f0b3;
+  background: rgba(29, 107, 54, 0.18);
+}
+
+.loading-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#progressChart {
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid #2d4463;
+  border-radius: 8px;
+  background: rgba(11, 18, 28, 0.65);
+}
+
+.progress-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.progress-controls label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.progress-controls select {
+  min-width: 180px;
+}
+
+#progressLegend .library-item {
+  grid-template-columns: auto 1fr;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-top: 2px;
 }

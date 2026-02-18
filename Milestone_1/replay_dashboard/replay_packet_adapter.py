@@ -66,5 +66,12 @@ class ReplayPacketBuilder:
             num_cars=len(cars),
             game_cars=cars,
             game_ball=ball,
-            game_info=SimpleNamespace(seconds_elapsed=float(row["time"])),
+            game_info=SimpleNamespace(
+                seconds_elapsed=float(row["time"]),
+                seconds_remaining=float(row.get("seconds_remaining", 0.0)),
+                is_kickoff_pause=bool(int(row.get("is_kickoff_pause", 0) or 0)),
+                is_overtime=bool(int(row.get("is_overtime", 0) or 0)),
+                is_round_active=bool(int(row.get("active_play", 1) or 0)),
+                active_play=bool(int(row.get("active_play", 1) or 0)),
+            ),
         )

@@ -69,7 +69,7 @@
       <input id="replayFile" type="file" accept=".replay" />
       <button id="uploadBtn">Analyze Replay</button>
       <button id="openReplayFolderBtn" type="button">Open Replay Folder</button>
-      <span id="durationLabel">Duration: 0.00s</span>
+      <span id="durationLabel">Duration: 0:00</span>
     </section>
     <select id="playerSelect" class="hidden"></select>
     <button id="analyzePlayerBtn" class="hidden" type="button">Analyze</button>
@@ -79,7 +79,12 @@
       <div id="progressLabel"></div>
     </section>
 
-    <section class="layout">
+    <section class="tab-strip">
+      <button id="tabAnalysisBtn" class="tab-btn active" type="button" aria-pressed="true">Analysis</button>
+      <button id="tabImproveBtn" class="tab-btn" type="button" aria-pressed="false">Improvement</button>
+    </section>
+
+    <section id="tabAnalysis" class="layout tab-panel">
       <div class="scene-card">
         <h2>3D Replay View</h2>
         <div id="sceneWrap">
@@ -137,14 +142,28 @@
           <span id="timeLabel">t=0.00</span>
           <span id="nextEventInfo">Next event: none</span>
           <span id="nextEventExplain" class="next-event-explain">Why: --</span>
-          <span id="arenaStatus">Arena: pending</span>
-          <span id="perfStatus">FPS: --</span>
         </div>
       </div>
 
       <div class="metrics-card">
         <h2>Live Metrics on Replay</h2>
         <div id="metricCards" class="metric-grid"></div>
+        <div class="bubble-card">
+          <button id="mechanicsBubbleToggle" class="bubble-toggle" type="button" aria-expanded="false">Mechanic Grades</button>
+          <div id="mechanicsBubbleBody" class="bubble-body hidden">
+            <div class="library-head">
+              <strong>Mechanic Grades (This Replay)</strong>
+              <button id="refreshMechanicsBtn">Recompute</button>
+            </div>
+            <div id="mechanicsList" class="library-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tabImprove" class="improvement-layout tab-panel hidden">
+      <div class="metrics-card">
+        <h2>What To Work On</h2>
         <div class="bubble-card">
           <button id="recsBubbleToggle" class="bubble-toggle" type="button" aria-expanded="false">What To Work On</button>
           <div id="recsBubbleBody" class="bubble-body hidden">
@@ -155,14 +174,27 @@
             <div id="recsList" class="library-list"></div>
           </div>
         </div>
+      </div>
+      <div class="metrics-card">
+        <h2>Improvement Tracking</h2>
         <div class="bubble-card">
-          <button id="mechanicsBubbleToggle" class="bubble-toggle" type="button" aria-expanded="false">Mechanic Grades</button>
-          <div id="mechanicsBubbleBody" class="bubble-body hidden">
+          <button id="progressBubbleToggle" class="bubble-toggle" type="button" aria-expanded="false">Improvement Tracking</button>
+          <div id="progressBubbleBody" class="bubble-body hidden">
             <div class="library-head">
-              <strong>Mechanic Grades (This Replay)</strong>
-              <button id="refreshMechanicsBtn">Recompute</button>
+              <strong>Progress Over Replays</strong>
+              <button id="refreshProgressBtn">Refresh</button>
             </div>
-            <div id="mechanicsList" class="library-list"></div>
+            <div class="progress-controls">
+              <label for="progressXMode">Timeline:</label>
+              <select id="progressXMode">
+                <option value="auto_hybrid" selected>Auto (Recommended)</option>
+                <option value="true_date">True Date</option>
+                <option value="replay_order">Replay Order</option>
+              </select>
+            </div>
+            <div id="progressSourceMeta" class="library-item-meta">Source: --</div>
+            <canvas id="progressChart" width="640" height="220"></canvas>
+            <div id="progressLegend" class="library-list"></div>
           </div>
         </div>
       </div>
@@ -182,6 +214,26 @@
     </div>
   </div>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <div id="loadingOverlay" class="loading-overlay hidden" aria-live="polite" aria-busy="true">
+    <div class="loading-card">
+      <h2 id="loadingTitle">Preparing Replay</h2>
+      <div id="loadingStatus">Waiting...</div>
+      <div class="loading-progress-wrap">
+        <div id="loadingProgressBar"></div>
+      </div>
+      <ul id="loadingChecklist" class="loading-checklist">
+        <li data-key="upload_received" class="pending">Upload received</li>
+        <li data-key="replay_parsed" class="pending">Replay parsed</li>
+        <li data-key="timeline_ready" class="pending">Timeline and game-state built</li>
+        <li data-key="analysis_ready" class="pending">Full-game analysis computed</li>
+        <li data-key="dashboard_ready" class="pending">Dashboard ready</li>
+      </ul>
+      <div id="loadingActions" class="loading-actions hidden">
+        <button id="openDuplicateBtn" type="button">Open Existing Replay</button>
+        <button id="closeLoadingBtn" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/three.min.js"></script>
   <script src="/app.js"></script>

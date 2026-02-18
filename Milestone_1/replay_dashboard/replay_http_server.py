@@ -10,7 +10,7 @@ from typing import Any, Dict
 import re
 from urllib.parse import parse_qs, urlparse
 
-from replay_state_store import ReplayStateStore
+from replay_state_store import DuplicateReplayError, ReplayStateStore
 
 
 class _ReplayDashboardHandler(BaseHTTPRequestHandler):
@@ -207,6 +207,12 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True, "sessions": data.get("sessions", [])})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if path == "/api/profile/progress":
+            try:
+                data = self.store.profile_progress(limit=240)
+                return self._send_json({"ok": True, "data": data})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if path == "/api/replay/status":
             return self._send_json(self.store.status_snapshot())
         if path == "/api/replay/players":
@@ -289,6 +295,17 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                     return self._send_json({"ok": False, "error": "Please upload a .replay file."}, status=400)
                 session_id = self.store.start_processing(file_name=file_name, data=data)
                 return self._send_json({"ok": True, "session_id": session_id})
+            except DuplicateReplayError as exc:
+                return self._send_json(
+                    {
+                        "ok": False,
+                        "error": str(exc),
+                        "code": "duplicate_replay",
+                        "existing_session_id": exc.existing_session_id,
+                        "existing_replay_name": exc.existing_replay_name,
+                    },
+                    status=400,
+                )
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/replay/open_default_folder":

@@ -4,6 +4,7 @@ import json
 import os
 import urllib.request
 from typing import Any, Dict
+import hashlib
 
 
 def llm_enabled() -> bool:
@@ -44,17 +45,35 @@ def maybe_rewrite_explanation(payload: Dict[str, Any]) -> Dict[str, Any]:
                     "You are a Rocket League coach explaining one moment to a non-technical player. "
                     "Use only the provided facts. "
                     "Write in plain everyday language with no coding/data jargon. "
-                    "Output 2-3 short sentences. "
+                    "Avoid repetitive templates and avoid sounding robotic. "
+                    "Output 2-4 short sentences. "
                     "Mention one concrete observed value naturally (for example speed, distance, or time). "
+                    "Anchor the wording to this exact situation (field location, pressure, score/clock context when available). "
                     "Keep it practical: what happened, what to do next time, and one thing to avoid."
                 ),
             },
             {
                 "role": "user",
-                "content": json.dumps(prompt, ensure_ascii=True),
+                "content": json.dumps(
+                    {
+                        "style_seed": hashlib.sha1(
+                            json.dumps(
+                                {
+                                    "mid": prompt.get("mechanic", ""),
+                                    "label": prompt.get("quality_label", ""),
+                                    "observed": prompt.get("observed", {}),
+                                },
+                                ensure_ascii=True,
+                                sort_keys=True,
+                            ).encode("utf-8")
+                        ).hexdigest()[:12],
+                        "payload": prompt,
+                    },
+                    ensure_ascii=True,
+                ),
             },
         ],
-        "temperature": 0.2,
+        "temperature": 0.55,
         "max_output_tokens": 220,
     }
 

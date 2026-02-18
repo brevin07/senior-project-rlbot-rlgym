@@ -10,6 +10,7 @@ from bisect import bisect_right
 from pathlib import Path
 import os
 import sys
+from datetime import datetime
 
 HERE = Path(__file__).resolve().parent
 MILESTONE_ROOT = HERE.parent
@@ -26,6 +27,13 @@ from mechanic_grader import grade_game_mechanics, summarize_mechanic_scores, exp
 from llm_event_explainer import maybe_rewrite_explanation
 
 
+class DuplicateReplayError(RuntimeError):
+    def __init__(self, message: str, existing_session_id: str = "", existing_replay_name: str = ""):
+        super().__init__(message)
+        self.existing_session_id = str(existing_session_id or "")
+        self.existing_replay_name = str(existing_replay_name or "")
+
+
 @dataclass
 class ReplayJobState:
     session_id: str = ""
@@ -35,6 +43,17 @@ class ReplayJobState:
     error: str = ""
     replay_name: str = ""
     ready: bool = False
+    phase: str = "idle"
+    checklist: Dict[str, bool] = field(
+        default_factory=lambda: {
+            "upload_received": False,
+            "replay_parsed": False,
+            "timeline_ready": False,
+            "analysis_ready": False,
+            "dashboard_ready": False,
+        }
+    )
+    duplicate: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -159,7 +178,17 @@ class ReplayStateStore:
         return profile
 
     def _set_job(
-        self, *, session_id: str, status: str, progress: float, message: str, error: str = "", replay_name: str = ""
+        self,
+        *,
+        session_id: str,
+        status: str,
+        progress: float,
+        message: str,
+        error: str = "",
+        replay_name: str = "",
+        phase: str | None = None,
+        checklist: Dict[str, bool] | None = None,
+        duplicate: Dict[str, Any] | None = None,
     ) -> None:
         self._state.job = ReplayJobState(
             session_id=session_id,
@@ -169,6 +198,9 @@ class ReplayStateStore:
             error=error,
             replay_name=replay_name,
             ready=status == "ready",
+            phase=str(phase or status or "idle"),
+            checklist=dict(checklist or {}),
+            duplicate=dict(duplicate or {}),
         )
 
     def _replay_sha1(self, data: bytes) -> str:
@@ -184,6 +216,15 @@ class ReplayStateStore:
             if str(s.get("replay_sha1", "")).strip().lower() == target:
                 return True
         return False
+
+    def _duplicate_row_by_hash(self, *, user_id: int, replay_sha1: str) -> Dict[str, Any]:
+        rows = self._db.list_replay_sessions_detailed(user_id=int(user_id), limit=1000)
+        target = str(replay_sha1 or "").strip().lower()
+        for r in rows:
+            s = dict(r.get("summary", {}) or {})
+            if str(s.get("replay_sha1", "")).strip().lower() == target:
+                return dict(r)
+        return {}
 
     def _is_duplicate_replay_name(self, *, user_id: int, replay_name: str) -> bool:
         target = str(replay_name or "").strip().lower()
@@ -211,9 +252,20 @@ class ReplayStateStore:
                 self._state.last_duplicate_cleanup_removed = removed
         replay_sha1 = self._replay_sha1(data)
         if persist_to_library and self._is_duplicate_replay_hash(user_id=int(profile["id"]), replay_sha1=replay_sha1):
-            raise RuntimeError("This replay is already in your library.")
+            drow = self._duplicate_row_by_hash(user_id=int(profile["id"]), replay_sha1=replay_sha1)
+            raise DuplicateReplayError(
+                "This replay is already in your library.",
+                existing_session_id=str(drow.get("session_id", "")),
+                existing_replay_name=str(drow.get("replay_name", "")),
+            )
         if persist_to_library and self._is_duplicate_replay_name(user_id=int(profile["id"]), replay_name=file_name):
-            raise RuntimeError("A replay with this name already exists in your library.")
+            rows = self._db.list_replay_sessions(user_id=int(profile["id"]), limit=1000)
+            match = next((r for r in rows if str(r.get("replay_name", "")).strip().lower() == str(file_name).strip().lower()), {})
+            raise DuplicateReplayError(
+                "A replay with this name already exists in your library.",
+                existing_session_id=str(match.get("session_id", "")),
+                existing_replay_name=str(match.get("replay_name", "")),
+            )
         session_id = uuid.uuid4().hex
         with self._lock:
             self._set_job(
@@ -222,6 +274,14 @@ class ReplayStateStore:
                 progress=0.1,
                 message="Preparing replay processing...",
                 replay_name=file_name,
+                phase="uploading",
+                checklist={
+                    "upload_received": True,
+                    "replay_parsed": False,
+                    "timeline_ready": False,
+                    "analysis_ready": False,
+                    "dashboard_ready": False,
+                },
             )
             self._state.session = None
             self._state.player_metric_jobs = {}
@@ -242,6 +302,8 @@ class ReplayStateStore:
                     self._state.job.status = "parsing"
                     self._state.job.progress = 0.25
                     self._state.job.message = "Running rrrocket parser..."
+                    self._state.job.phase = "parsing"
+                    self._state.job.checklist["upload_received"] = True
 
                 session = load_replay_bytes(file_name=file_name, data=data, rrrocket_override=rrrocket_override)
                 session_id = session.session_id
@@ -249,6 +311,11 @@ class ReplayStateStore:
                 replay_dir.mkdir(parents=True, exist_ok=True)
                 replay_path = replay_dir / Path(file_name).name
                 replay_path.write_bytes(data)
+                with self._lock:
+                    self._state.job.checklist["replay_parsed"] = True
+                    self._state.job.checklist["timeline_ready"] = True
+                    self._state.job.progress = max(self._state.job.progress, 0.8)
+                    self._state.job.message = "Replay parsed and timeline built."
 
                 with self._lock:
                     target_player = ""
@@ -285,6 +352,14 @@ class ReplayStateStore:
                         progress=1.0,
                         message="Replay loaded. Ready to play.",
                         replay_name=session.replay_name,
+                        phase="ready",
+                        checklist={
+                            "upload_received": True,
+                            "replay_parsed": True,
+                            "timeline_ready": True,
+                            "analysis_ready": True,
+                            "dashboard_ready": True,
+                        },
                     )
                 tracked_name = ""
                 try:
@@ -308,6 +383,9 @@ class ReplayStateStore:
                 if session.players:
                     summary["player_count"] = len(session.players)
                 summary["replay_sha1"] = replay_sha1
+                replay_date_iso = str((session.replay_meta or {}).get("replay_date_iso", "") or "")
+                summary["replay_date_iso"] = replay_date_iso
+                summary["replay_date_source"] = "replay_meta" if replay_date_iso else "created_at_fallback"
                 if persist_to_library:
                     self._db.save_replay_session(
                         session_id=session.session_id,
@@ -332,6 +410,7 @@ class ReplayStateStore:
                         message="Replay processing failed.",
                         error=f"{exc}\n{trace}",
                         replay_name=file_name,
+                        phase="error",
                     )
 
         thread = threading.Thread(target=_run, daemon=True)
@@ -379,6 +458,9 @@ class ReplayStateStore:
                 "error": j.error,
                 "replay_name": j.replay_name,
                 "ready": j.ready,
+                "phase": j.phase,
+                "checklist": dict(j.checklist or {}),
+                "duplicate": dict(j.duplicate or {}),
                 "metrics_status": self._state.metrics_status,
                 "metrics_error": self._state.metrics_error,
                 "metrics_ready_count": self._state.metrics_ready_count,
@@ -580,6 +662,9 @@ class ReplayStateStore:
                     except Exception:
                         pass
         summary["analysis_player"] = str(player or "")
+        replay_date_iso = str((session.replay_meta or {}).get("replay_date_iso", "") or "")
+        summary["replay_date_iso"] = replay_date_iso
+        summary["replay_date_source"] = "replay_meta" if replay_date_iso else "created_at_fallback"
         summary.update(summarize_mechanic_scores(mechanics_payload or {}))
         summary["mechanic_event_count"] = len((mechanics_payload or {}).get("mechanic_events", []) or [])
         self._db.save_replay_session(
@@ -704,3 +789,48 @@ class ReplayStateStore:
                 "events": events,
                 "idx": target_idx,
             }
+
+    @staticmethod
+    def _to_unix(v: str) -> float:
+        s = str(v or "").strip()
+        if not s:
+            return 0.0
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return 0.0
+
+    def profile_progress(self, limit: int = 200) -> Dict[str, Any]:
+        profile = self._require_user()
+        rows = self._db.list_replay_sessions_detailed(user_id=int(profile["id"]), limit=max(1, int(limit)))
+        points = []
+        for r in rows:
+            summary = dict(r.get("summary", {}) or {})
+            replay_iso = str(summary.get("replay_date_iso", "") or "").strip()
+            created_at = str(r.get("created_at", "") or "").strip()
+            x_iso = replay_iso or created_at
+            if not x_iso:
+                continue
+            mech_raw = dict(summary.get("mechanic_scores", {}) or {})
+            mech_scores: Dict[str, float] = {}
+            for k, v in mech_raw.items():
+                try:
+                    mech_scores[str(k)] = float(v)
+                except Exception:
+                    continue
+            points.append(
+                {
+                    "session_id": str(r.get("session_id", "")),
+                    "replay_name": str(r.get("replay_name", "")),
+                    "x_time_iso": x_iso,
+                    "x_time_unix": float(self._to_unix(x_iso)),
+                    "x_time_source": "replay_meta" if replay_iso else "created_at",
+                    "overall_mechanics_score": float(summary.get("overall_mechanics_score", 0.0) or 0.0),
+                    "mechanic_scores": mech_scores,
+                    "whiff_rate_per_min": float(summary.get("whiff_rate_per_min", 0.0) or 0.0),
+                    "hesitation_percent": float(summary.get("hesitation_percent", 0.0) or 0.0),
+                    "recovery_time_avg_s": float(summary.get("recovery_time_avg_s", 0.0) or 0.0),
+                }
+            )
+        points.sort(key=lambda x: (float(x.get("x_time_unix", 0.0)), str(x.get("session_id", ""))))
+        return {"points": points}

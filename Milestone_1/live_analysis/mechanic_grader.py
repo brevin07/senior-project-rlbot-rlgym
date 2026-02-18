@@ -6,11 +6,11 @@ from typing import Any, Dict, List, Tuple
 
 
 MECHANIC_ALIASES = {
-    "early_challenge_timing": "challenge",
     "flicking_carry_offense": "flicking",
 }
 
 MECHANICS = [
+    "kickoff",
     "shadow_defense",
     "challenge",
     "fifty_fifty_control",
@@ -21,6 +21,7 @@ MECHANICS = [
 ]
 
 MECH_SHORT = {
+    "kickoff": "KO",
     "shadow_defense": "SHD",
     "challenge": "CHAL",
     "fifty_fifty_control": "5050",
@@ -31,6 +32,7 @@ MECH_SHORT = {
 }
 
 MECH_TITLE = {
+    "kickoff": "Kickoff",
     "shadow_defense": "Shadow Defense",
     "challenge": "Challenge",
     "fifty_fifty_control": "50/50 Control",
@@ -39,6 +41,14 @@ MECH_TITLE = {
     "flicking": "Flicks",
     "carrying_dribbling": "Carries / Dribbles",
 }
+
+KICKOFF_CENTER_MAX_DIST = 240.0
+KICKOFF_BALL_SPEED_MAX = 120.0
+KICKOFF_WINDOW_TIMEOUT = 4.0
+KICKOFF_ATTEMPT_DIST = 1800.0
+KICKOFF_ATTEMPT_CLOSING_SPEED = 900.0
+KICKOFF_ATTEMPT_SUSTAIN_S = 0.25
+KICKOFF_TOUCH_MAX_S = 2.2
 
 
 def _canonical_mid(mid: str) -> str:
@@ -291,6 +301,142 @@ def _add_event(events: List[Dict[str, Any]], mechanic: str, t: float, score: flo
     )
 
 
+def _closing_speed_toward_ball(frame: Dict[str, Any], player: str) -> float:
+    p = _player_frame(frame, player)
+    if not p:
+        return 0.0
+    b = frame.get("ball", {}) or {}
+    tx = _safe_float(b.get("x", 0.0)) - _safe_float(p.get("x", 0.0))
+    ty = _safe_float(b.get("y", 0.0)) - _safe_float(p.get("y", 0.0))
+    tz = _safe_float(b.get("z", 0.0)) - _safe_float(p.get("z", 0.0))
+    mag = max(1e-6, _norm3(tx, ty, tz))
+    ux, uy, uz = tx / mag, ty / mag, tz / mag
+    vx = _safe_float(p.get("vx", 0.0))
+    vy = _safe_float(p.get("vy", 0.0))
+    vz = _safe_float(p.get("vz", 0.0))
+    return _dot3(vx, vy, vz, ux, uy, uz)
+
+
+def _ball_center_slow(frame: Dict[str, Any]) -> bool:
+    b = frame.get("ball", {}) or {}
+    bx = _safe_float(b.get("x", 0.0))
+    by = _safe_float(b.get("y", 0.0))
+    bz = _safe_float(b.get("z", 0.0))
+    dist = _norm3(bx, by, bz - 93.0)
+    return dist <= KICKOFF_CENTER_MAX_DIST and _ball_speed(frame) <= KICKOFF_BALL_SPEED_MAX
+
+
+def _first_touch_in_window(timeline: List[Dict[str, Any]], times: List[float], start_idx: int, end_t: float) -> Tuple[int, str, float]:
+    pnames = [str(p.get("name", "")) for p in (timeline[start_idx].get("players", []) or [])]
+    for i in range(start_idx, len(timeline) - 1):
+        if times[i] > end_t:
+            break
+        fr = timeline[i]
+        fr2 = timeline[min(i + 1, len(timeline) - 1)]
+        best_player = ""
+        best_conf = 0.0
+        for pn in pnames:
+            p = _player_frame(fr, pn)
+            if not p:
+                continue
+            conf = _touch_confidence(fr, fr2, p)
+            if conf > best_conf:
+                best_conf = conf
+                best_player = pn
+        if best_player and best_conf >= 0.55:
+            return i, best_player, times[i]
+    return -1, "", 0.0
+
+
+def _attempted_kickoff_before_touch(
+    timeline: List[Dict[str, Any]],
+    times: List[float],
+    player: str,
+    start_idx: int,
+    touch_idx: int,
+) -> bool:
+    reached_proximity = False
+    sustain = 0.0
+    last_t = times[start_idx]
+    for i in range(start_idx, max(start_idx + 1, touch_idx + 1)):
+        fr = timeline[i]
+        t = times[i]
+        d = _player_ball_dist(fr, player)
+        if d <= KICKOFF_ATTEMPT_DIST:
+            reached_proximity = True
+        cs = _closing_speed_toward_ball(fr, player)
+        dt = max(0.0, t - last_t)
+        if cs >= KICKOFF_ATTEMPT_CLOSING_SPEED:
+            sustain += dt
+        else:
+            sustain = 0.0
+        if reached_proximity and sustain >= KICKOFF_ATTEMPT_SUSTAIN_S:
+            return True
+        last_t = t
+    return False
+
+
+def _detect_kickoff_events(timeline: List[Dict[str, Any]], times: List[float], player_teams: Dict[str, Any]) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    if not timeline:
+        return events
+    i = 0
+    last_kickoff_end_t = -999.0
+    while i < len(timeline):
+        fr = timeline[i]
+        t = times[i]
+        if t < last_kickoff_end_t:
+            i += 1
+            continue
+        if not _ball_center_slow(fr):
+            i += 1
+            continue
+        start_idx = i
+        start_t = t
+        end_t = min(times[-1], start_t + KICKOFF_WINDOW_TIMEOUT)
+        touch_idx, touch_player, touch_t = _first_touch_in_window(timeline, times, start_idx, end_t)
+        if touch_idx < 0:
+            i += 1
+            continue
+        players = [str(p.get("name", "")) for p in (timeline[start_idx].get("players", []) or [])]
+        attempts = {
+            pn: _attempted_kickoff_before_touch(timeline, times, pn, start_idx, touch_idx)
+            for pn in players
+            if pn
+        }
+        if not any(attempts.values()):
+            i = touch_idx + 1
+            continue
+        if (touch_t - start_t) > KICKOFF_TOUCH_MAX_S:
+            i = touch_idx + 1
+            continue
+        if not attempts.get(touch_player, False):
+            i = touch_idx + 1
+            continue
+
+        team = _team_for_player_name(touch_player, player_teams, 0)
+        j_mid = _find_next_idx_by_time(times, touch_idx, 0.65)
+        j_out = _find_next_idx_by_time(times, touch_idx, 1.20)
+        fr_mid = timeline[j_mid]
+        fr_out = timeline[j_out]
+        our_mid = _best_team_ball_dist(fr_mid, player_teams, team)
+        opp_mid = _best_team_ball_dist(fr_mid, player_teams, 1 - team)
+        our_out = _best_team_ball_dist(fr_out, player_teams, team)
+        opp_out = _best_team_ball_dist(fr_out, player_teams, 1 - team)
+        win_possession = (our_out + 120.0 < opp_out) or (our_mid + 100.0 < opp_mid)
+        safe_exit = not _ball_toward_own_goal_fast(timeline[touch_idx], fr_out, team)
+        q = 0.35 + 0.4 * (1.0 if win_possession else 0.0) + 0.25 * (1.0 if safe_exit else 0.2)
+        q = _clamp01(q)
+        reason = "kickoff won with follow-up control" if win_possession else ("kickoff neutral but safe" if safe_exit else "kickoff lost into pressure")
+        _add_event(events, "kickoff", touch_t, q, reason)
+        events[-1]["player"] = touch_player
+        events[-1]["kickoff_window_start"] = round(start_t, 3)
+        events[-1]["kickoff_window_end"] = round(min(end_t, touch_t), 3)
+        last_kickoff_end_t = touch_t
+        i = touch_idx + 1
+    return events
+
+
 def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_teams: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not timeline or not player:
         return []
@@ -316,6 +462,10 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
     carry_active = False
     carry_start_idx = 0
     carry_min_opp_dist = 99999.0
+    kickoff_events = _detect_kickoff_events(timeline, times, player_teams)
+    events.extend(kickoff_events)
+    for k in kickoff_events:
+        last_t_by_mech["kickoff"] = max(last_t_by_mech["kickoff"], _safe_float(k.get("time", -9999.0)))
 
     for i, fr in enumerate(timeline):
         t = times[i]
@@ -371,12 +521,13 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
             opp_out = _best_team_ball_dist(fr_out, player_teams, 1 - team)
             opp_had_control = opp_db + 80.0 < d_pb
             win_possession = (our_out + 120.0 < opp_out) or (our_mid + 120.0 < opp_mid)
-            force_bad_touch = opp_had_control and (opp_mid + 80.0 < our_mid) and (our_out + 120.0 < opp_out + 40.0)
+            force_bad_touch = opp_had_control and ((opp_mid - opp_db) > 140.0 or (our_mid + 120.0 < opp_mid))
             easy_counter = _ball_toward_own_goal_fast(fr, fr_out, team) and (opp_out + 180.0 < our_out)
             double_commit = _teammate_double_commit(fr, player, player_teams, team, d_pb)
             d_touch = _player_ball_dist(fr_touch, player)
             close_gain = _clamp01((d_pb - d_touch) / max(1.0, d_pb))
-            q = 0.50 + 0.30 * (1.0 if win_possession else 0.0) + 0.20 * (1.0 if force_bad_touch else 0.0)
+            success = (win_possession or force_bad_touch) and (not easy_counter)
+            q = 0.32 + 0.40 * (1.0 if success else 0.0) + 0.12 * (1.0 if win_possession else 0.0) + 0.10 * (1.0 if force_bad_touch else 0.0)
             q += 0.10 * close_gain
             if easy_counter:
                 q -= 0.40
@@ -392,7 +543,7 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
             elif force_bad_touch:
                 reason = "forced weak opponent touch"
             else:
-                reason = "challenge lost without pressure gain"
+                reason = "challenge failed to improve outcome"
             _add_event(events, "challenge", t, q, reason)
             last_t_by_mech["challenge"] = t
 
@@ -670,7 +821,21 @@ def explain_mechanic_event(
     distance_band = "close" if d_pb < 600 else ("mid" if d_pb < 1800 else "far")
     actionable_hints: List[str] = []
 
-    if mid == "challenge":
+    if mid == "kickoff":
+        start_t = _safe_float(event.get("kickoff_window_start", t))
+        touch_dt = max(0.0, t - start_t)
+        add_thr("kickoff_entry_time", "first touch arrives within kickoff window", round(touch_dt, 3), touch_dt <= KICKOFF_TOUCH_MAX_S)
+        add_thr("attempt_requirements", "approach reached contest speed and range before touch", True, True)
+        breakdown = [
+            {"component": "first_touch_execution", "weight": 0.4},
+            {"component": "post_touch_control", "weight": 0.4},
+            {"component": "defensive_safety", "weight": 0.2},
+        ]
+        actionable_hints = [
+            "Accelerate into the ball early enough to arrive in your first touch window.",
+            "If you cannot win cleanly, angle your touch so the opponent cannot launch an instant counter.",
+        ]
+    elif mid == "challenge":
         fr_out = fr2
         our_out = _best_team_ball_dist(fr_out, player_teams or {}, team)
         opp_out = _best_team_ball_dist(fr_out, player_teams or {}, 1 - team)

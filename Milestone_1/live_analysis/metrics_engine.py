@@ -513,6 +513,7 @@ class LiveMetricsEngine:
         car = packet.game_cars[player_index]
         ball = packet.game_ball
         now = float(packet.game_info.seconds_elapsed)
+        active_play = bool(getattr(packet.game_info, "active_play", getattr(packet.game_info, "is_round_active", True)))
 
         car_pos = (float(car.physics.location.x), float(car.physics.location.y), float(car.physics.location.z))
         car_vel = (float(car.physics.velocity.x), float(car.physics.velocity.y), float(car.physics.velocity.z))
@@ -539,6 +540,52 @@ class LiveMetricsEngine:
         speed_accel = (speed - self.prev_speed) / dt if self.prev_time is not None else 0.0
         closing = dist_to_ball + 4.0 < self.prev_dist_to_ball
         moving_away = dist_to_ball > self.prev_dist_to_ball + 6.0
+
+        if not active_play:
+            self.hesitation_event_active = False
+            self._clear_attack()
+            if self.samples:
+                latest = self.samples[-1]
+                self.samples.append(
+                    MetricSample(
+                        t=now,
+                        speed=latest.speed,
+                        hesitation_score=latest.hesitation_score,
+                        hesitation_pct=latest.hesitation_pct,
+                        boost_waste_pct=latest.boost_waste_pct,
+                        supersonic_pct=latest.supersonic_pct,
+                        useful_supersonic_pct=latest.useful_supersonic_pct,
+                        pressure_pct=latest.pressure_pct,
+                        whiff_rate_per_min=latest.whiff_rate_per_min,
+                        approach_efficiency=latest.approach_efficiency,
+                        recovery_time_avg_s=latest.recovery_time_avg_s,
+                    )
+                )
+            else:
+                self.samples.append(
+                    MetricSample(
+                        t=now,
+                        speed=0.0,
+                        hesitation_score=0.0,
+                        hesitation_pct=0.0,
+                        boost_waste_pct=0.0,
+                        supersonic_pct=0.0,
+                        useful_supersonic_pct=0.0,
+                        pressure_pct=0.0,
+                        whiff_rate_per_min=0.0,
+                        approach_efficiency=0.0,
+                        recovery_time_avg_s=0.0,
+                    )
+                )
+            self._prune_window(now)
+            self.prev_time = now
+            self.prev_ball_vel = ball_vel
+            self.prev_car_vel = car_vel
+            self.prev_dist_to_ball = dist_to_ball
+            self.prev_speed = speed
+            self.prev_boost = float(car.boost)
+            self.prev_has_wheel_contact = getattr(car, "has_wheel_contact", None)
+            return
 
         self.total_frames += 1
         active = speed > ACTIVE_SPEED or dist_to_ball < 2500.0

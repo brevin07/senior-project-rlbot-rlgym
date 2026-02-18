@@ -10,6 +10,7 @@ import io
 import contextlib
 import json
 from bisect import bisect_right
+from datetime import datetime
 
 import pandas as pd
 
@@ -114,6 +115,123 @@ class ReplaySession:
     events_by_player: Dict[str, List[Dict]] = field(default_factory=dict)
 
 
+def _sample_value_at_time(samples: List[Dict], t: float, key: str, default):
+    if not samples:
+        return default
+    cur = default
+    for s in samples:
+        if float(s.get("time_s", 0.0)) <= float(t):
+            cur = s.get(key, cur)
+        else:
+            break
+    return cur
+
+
+def _seconds_remaining_at_time(samples: List[Dict], t: float, default: float = 300.0) -> float:
+    try:
+        return max(0.0, float(_sample_value_at_time(samples, t, "seconds_remaining", default)))
+    except Exception:
+        return float(default)
+
+
+def _bool_at_time(samples: List[Dict], t: float, key: str, default: bool = False) -> bool:
+    return bool(_sample_value_at_time(samples, t, key, default))
+
+
+def _build_kickoff_pause_windows(
+    timeline_start_t: float,
+    timeline_end_t: float,
+    goal_pause_windows: List[Dict],
+    ball_hit_samples: List[Dict],
+    timeout_s: float = 4.0,
+) -> List[Dict]:
+    starts = [float(timeline_start_t)]
+    for w in goal_pause_windows:
+        starts.append(float(w.get("pause_end_s", 0.0)))
+    starts = sorted(set(starts))
+    kickoff_windows: List[Dict] = []
+    hit_times = sorted(float(s.get("time_s", 0.0)) for s in ball_hit_samples if bool(s.get("ball_has_been_hit", False)))
+    for ks in starts:
+        if ks > float(timeline_end_t):
+            continue
+        first_hit = None
+        for ht in hit_times:
+            if ht >= ks:
+                first_hit = ht
+                break
+        if first_hit is None:
+            ke = min(float(timeline_end_t), ks + timeout_s)
+        else:
+            ke = min(float(timeline_end_t), max(ks, first_hit))
+        if ke > ks + 1e-3:
+            kickoff_windows.append({"start_s": round(ks, 4), "end_s": round(ke, 4), "first_touch_s": round(ke, 4)})
+    return kickoff_windows
+
+
+def _build_inactive_windows(goal_pause_windows: List[Dict], kickoff_windows: List[Dict]) -> List[Dict]:
+    windows: List[Dict] = []
+    for w in goal_pause_windows:
+        windows.append({"start_s": float(w.get("pause_start_s", 0.0)), "end_s": float(w.get("pause_end_s", 0.0)), "kind": "goal_pause"})
+    for w in kickoff_windows:
+        windows.append({"start_s": float(w.get("start_s", 0.0)), "end_s": float(w.get("end_s", 0.0)), "kind": "kickoff_pause"})
+    windows.sort(key=lambda x: (x["start_s"], x["end_s"]))
+    merged: List[Dict] = []
+    for w in windows:
+        if not merged:
+            merged.append(dict(w))
+            continue
+        prev = merged[-1]
+        if w["start_s"] <= prev["end_s"] + 1e-4:
+            prev["end_s"] = max(prev["end_s"], w["end_s"])
+            prev["kind"] = "inactive"
+        else:
+            merged.append(dict(w))
+    return merged
+
+
+def _score_at_time(score_samples: List[Dict], t: float) -> Tuple[int, int]:
+    if not score_samples:
+        return 0, 0
+    blue = int(score_samples[0].get("blue", 0) or 0)
+    orange = int(score_samples[0].get("orange", 0) or 0)
+    for s in score_samples:
+        if float(s.get("time_s", 0.0)) <= float(t):
+            blue = int(s.get("blue", blue) or blue)
+            orange = int(s.get("orange", orange) or orange)
+        else:
+            break
+    return blue, orange
+
+
+def _annotate_df_game_state(df: pd.DataFrame, replay_meta: Dict) -> pd.DataFrame:
+    out = df.copy()
+    times = pd.to_numeric(out["time"], errors="coerce").fillna(0.0).to_list()
+    clock_samples = list(replay_meta.get("clock_samples", []) or [])
+    goal_windows = list(replay_meta.get("goal_pause_windows", []) or [])
+    kickoff_windows = list(replay_meta.get("kickoff_pause_windows", []) or [])
+    overtime_samples = list(replay_meta.get("overtime_samples", []) or [])
+    inactive_windows = list(replay_meta.get("inactive_windows", []) or [])
+    state_name_samples = list(replay_meta.get("state_name_samples", []) or [])
+    out["seconds_remaining"] = [float(_seconds_remaining_at_time(clock_samples, t)) for t in times]
+    out["is_overtime"] = [1 if _bool_at_time(overtime_samples, t, "is_overtime", False) else 0 for t in times]
+    out["is_goal_pause"] = [0] * len(times)
+    out["is_kickoff_pause"] = [0] * len(times)
+    out["is_inactive_phase"] = [0] * len(times)
+    for i, t in enumerate(times):
+        gp = any(float(w.get("pause_start_s", 0.0)) <= t < float(w.get("pause_end_s", 0.0)) for w in goal_windows)
+        kp = any(float(w.get("start_s", 0.0)) <= t < float(w.get("end_s", 0.0)) for w in kickoff_windows)
+        ip = any(float(w.get("start_s", 0.0)) <= t < float(w.get("end_s", 0.0)) for w in inactive_windows)
+        st = str(_sample_value_at_time(state_name_samples, t, "state_name", "") or "").lower()
+        paused_state = any(k in st for k in ("countdown", "post", "replay", "ended", "inactive", "pregame"))
+        if paused_state:
+            ip = True
+        out.at[i, "is_goal_pause"] = 1 if gp else 0
+        out.at[i, "is_kickoff_pause"] = 1 if kp else 0
+        out.at[i, "is_inactive_phase"] = 1 if ip else 0
+    out["active_play"] = ((out["is_goal_pause"] == 0) & (out["is_kickoff_pause"] == 0) & (out["is_inactive_phase"] == 0)).astype(int)
+    return out
+
+
 def _discover_players(df: pd.DataFrame) -> List[str]:
     players: List[str] = []
     for col in df.columns:
@@ -131,6 +249,12 @@ def _build_timeline(df: pd.DataFrame, players: List[str]) -> List[Dict]:
     for _, row in df.iterrows():
         frame = {
             "t": float(row["time"]),
+            "seconds_remaining": float(row.get("seconds_remaining", 0.0)),
+            "is_overtime": bool(int(row.get("is_overtime", 0) or 0)),
+            "is_goal_pause": bool(int(row.get("is_goal_pause", 0) or 0)),
+            "is_kickoff_pause": bool(int(row.get("is_kickoff_pause", 0) or 0)),
+            "is_inactive_phase": bool(int(row.get("is_inactive_phase", 0) or 0)),
+            "active_play": bool(int(row.get("active_play", 1) or 0)),
             "ball": {
                 "x": float(row["Ball_x"]),
                 "y": float(row["Ball_y"]),
@@ -184,6 +308,19 @@ def _normalize_player_name(name: str) -> str:
     return "".join(ch.lower() for ch in str(name or "").strip() if ch.isalnum())
 
 
+def _parse_replay_date_iso(v: Any) -> str:
+    raw = str(v or "").strip()
+    if not raw:
+        return ""
+    for fmt in ("%Y-%m-%d %H-%M-%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(raw, fmt)
+            return dt.isoformat()
+        except Exception:
+            continue
+    return ""
+
+
 def _extract_replay_meta(json_path: Path, timeline_start_t: float, timeline_end_t: float) -> Dict:
     try:
         with open(json_path, "r", encoding="utf-8", errors="replace") as f:
@@ -196,6 +333,15 @@ def _extract_replay_meta(json_path: Path, timeline_start_t: float, timeline_end_
             "clock_samples": [],
             "score_samples": [],
             "goal_pause_windows": [],
+            "kickoff_pause_windows": [],
+            "inactive_windows": [],
+            "overtime_samples": [],
+            "ball_hit_samples": [],
+            "match_ended_samples": [],
+            "state_name_samples": [],
+            "ot_start_s": None,
+            "replay_date_raw": "",
+            "replay_date_iso": "",
         }
 
     props = payload.get("properties", {}) or {}
@@ -232,20 +378,30 @@ def _extract_replay_meta(json_path: Path, timeline_start_t: float, timeline_end_
     # Pull authoritative countdown updates and score updates from replay frames.
     objects = payload.get("objects", []) or []
     sec_obj_id = None
-    team_score_obj_id = None
-    scored_team_obj_id = None
+    overtime_obj_id = None
+    ball_hit_obj_id = None
+    match_ended_obj_id = None
+    state_name_obj_id = None
     try:
         sec_obj_id = int(objects.index("TAGame.GameEvent_Soccar_TA:SecondsRemaining"))
     except ValueError:
         sec_obj_id = 107  # Common id in many rrrocket outputs.
     try:
-        team_score_obj_id = int(objects.index("Engine.TeamInfo:Score"))
+        overtime_obj_id = int(objects.index("TAGame.GameEvent_Soccar_TA:bOverTime"))
     except ValueError:
-        team_score_obj_id = 118
+        overtime_obj_id = 104
     try:
-        scored_team_obj_id = int(objects.index("TAGame.GameEvent_Soccar_TA:ReplicatedScoredOnTeam"))
+        ball_hit_obj_id = int(objects.index("TAGame.GameEvent_Soccar_TA:bBallHasBeenHit"))
     except ValueError:
-        scored_team_obj_id = 92
+        ball_hit_obj_id = 105
+    try:
+        match_ended_obj_id = int(objects.index("TAGame.GameEvent_Soccar_TA:bMatchEnded"))
+    except ValueError:
+        match_ended_obj_id = 101
+    try:
+        state_name_obj_id = int(objects.index("TAGame.GameEvent_TA:ReplicatedStateName"))
+    except ValueError:
+        state_name_obj_id = 73
 
     def _to_seconds(attr: dict) -> float | None:
         if not isinstance(attr, dict) or not attr:
@@ -261,6 +417,10 @@ def _extract_replay_meta(json_path: Path, timeline_start_t: float, timeline_end_
         return None
 
     clock_samples: List[Dict] = []
+    overtime_samples: List[Dict] = []
+    ball_hit_samples: List[Dict] = []
+    match_ended_samples: List[Dict] = []
+    state_name_samples: List[Dict] = []
     for fr in frames:
         t = float(fr.get("time", 0.0) or 0.0)
         for u in fr.get("updated_actors", []) or []:
@@ -273,6 +433,26 @@ def _extract_replay_meta(json_path: Path, timeline_start_t: float, timeline_end_
                     clock_samples[-1]["seconds_remaining"] = sec
                 else:
                     clock_samples.append({"time_s": t, "seconds_remaining": sec})
+                continue
+            if oid == overtime_obj_id:
+                attr = u.get("attribute", {}) or {}
+                raw = next(iter(attr.values())) if attr else False
+                overtime_samples.append({"time_s": t, "is_overtime": bool(raw)})
+                continue
+            if oid == ball_hit_obj_id:
+                attr = u.get("attribute", {}) or {}
+                raw = next(iter(attr.values())) if attr else False
+                ball_hit_samples.append({"time_s": t, "ball_has_been_hit": bool(raw)})
+                continue
+            if oid == match_ended_obj_id:
+                attr = u.get("attribute", {}) or {}
+                raw = next(iter(attr.values())) if attr else False
+                match_ended_samples.append({"time_s": t, "match_ended": bool(raw)})
+                continue
+            if oid == state_name_obj_id:
+                attr = u.get("attribute", {}) or {}
+                raw = next(iter(attr.values())) if attr else ""
+                state_name_samples.append({"time_s": t, "state_name": str(raw or "")})
                 continue
     # Build scoreboard timeline from official goal list so it only changes on goals.
     score_samples: List[Dict] = [{"time_s": float(timeline_start_t), "blue": 0, "orange": 0}]
@@ -299,6 +479,14 @@ def _extract_replay_meta(json_path: Path, timeline_start_t: float, timeline_end_
                 "orange": int(s.get("orange", 0) or 0),
             }
         )
+    kickoff_pause_windows = _build_kickoff_pause_windows(
+        timeline_start_t=float(timeline_start_t),
+        timeline_end_t=float(timeline_end_t),
+        goal_pause_windows=goal_pause_windows,
+        ball_hit_samples=ball_hit_samples,
+        timeout_s=4.0,
+    )
+    inactive_windows = _build_inactive_windows(goal_pause_windows=goal_pause_windows, kickoff_windows=kickoff_pause_windows)
 
     # Fallback for atypical replays without explicit clock updates.
     if not clock_samples:
@@ -307,6 +495,25 @@ def _extract_replay_meta(json_path: Path, timeline_start_t: float, timeline_end_
             {"time_s": float(timeline_start_t), "seconds_remaining": float(max(0.0, 300.0))},
             {"time_s": float(timeline_end_t), "seconds_remaining": float(max(0.0, 300.0 - duration))},
         ]
+
+    ot_start_s = None
+    zero_clock_t = None
+    for s in clock_samples:
+        if float(s.get("seconds_remaining", 9999.0) or 9999.0) <= 0.001:
+            zero_clock_t = float(s.get("time_s", 0.0) or 0.0)
+            break
+    tie_at_zero = False
+    if zero_clock_t is not None:
+        b0, o0 = _score_at_time(score_samples, zero_clock_t)
+        tie_at_zero = b0 == o0
+    if zero_clock_t is not None and tie_at_zero:
+        for s in overtime_samples:
+            if bool(s.get("is_overtime", False)) and float(s.get("time_s", 0.0)) >= (zero_clock_t - 1e-3):
+                ot_start_s = float(s.get("time_s", 0.0))
+                break
+
+    replay_date_raw = str(props.get("Date", "") or "")
+    replay_date_iso = _parse_replay_date_iso(replay_date_raw)
 
     return {
         "map_name": str(props.get("MapName", "")),
@@ -318,6 +525,17 @@ def _extract_replay_meta(json_path: Path, timeline_start_t: float, timeline_end_
         "clock_samples": clock_samples,
         "score_samples": score_samples,
         "goal_pause_windows": goal_pause_windows,
+        "kickoff_pause_windows": kickoff_pause_windows,
+        "inactive_windows": inactive_windows,
+        "overtime_samples": overtime_samples,
+        "ball_hit_samples": ball_hit_samples,
+        "match_ended_samples": match_ended_samples,
+        "state_name_samples": state_name_samples,
+        "ot_start_s": ot_start_s,
+        "zero_clock_t": zero_clock_t,
+        "tie_at_zero": bool(tie_at_zero),
+        "replay_date_raw": replay_date_raw,
+        "replay_date_iso": replay_date_iso,
         "player_teams": player_teams,
     }
 
@@ -714,6 +932,7 @@ def load_replay_bytes(file_name: str, data: bytes, rrrocket_override: str | None
     if not players:
         raise RuntimeError("No player position columns found in extracted replay CSV.")
 
+    df = _annotate_df_game_state(df, replay_meta)
     timeline = _build_timeline(df, players)
     duration_s = float(df["time"].iloc[-1] - df["time"].iloc[0]) if len(df) > 1 else 0.0
 
