@@ -1,0 +1,4 @@
+entrypoint: rlbot_training/rlbot_starting_code.py
+log_dir: reward_logs
+wandb: false
+render: true

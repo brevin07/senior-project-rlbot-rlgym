@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rocket League Replay Dashboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-bg-orb app-bg-orb-a"></div>
+  <div class="app-bg-orb app-bg-orb-b"></div>
+  <header class="top">
+    <h1>Rocket League Replay Dashboard</h1>
+    <div id="statusText">Log in to start replay analysis.</div>
+  </header>
+
+  <section id="loginGate" class="login-gate">
+    <div class="login-card">
+      <h2>Welcome Back</h2>
+      <p>Log in to load your profile, replay history, and improvement tracking.</p>
+      <label for="usernameInput">Primary Username</label>
+      <input id="usernameInput" type="text" placeholder="Your RL username" />
+      <label for="aliasesInput">Other Usernames (optional)</label>
+      <input id="aliasesInput" type="text" placeholder="Comma-separated past usernames" />
+      <label for="rankSelect">Current Rank</label>
+      <select id="rankSelect">
+        <option value="bronze_1">Bronze 1</option>
+        <option value="bronze_2">Bronze 2</option>
+        <option value="bronze_3">Bronze 3</option>
+        <option value="silver_1">Silver 1</option>
+        <option value="silver_2">Silver 2</option>
+        <option value="silver_3">Silver 3</option>
+        <option value="gold_1">Gold 1</option>
+        <option value="gold_2">Gold 2</option>
+        <option value="gold_3">Gold 3</option>
+        <option value="platinum_1">Platinum 1</option>
+        <option value="platinum_2">Platinum 2</option>
+        <option value="platinum_3">Platinum 3</option>
+        <option value="diamond_1">Diamond 1</option>
+        <option value="diamond_2">Diamond 2</option>
+        <option value="diamond_3">Diamond 3</option>
+        <option value="champion_1">Champion 1</option>
+        <option value="champion_2">Champion 2</option>
+        <option value="champion_3">Champion 3</option>
+        <option value="grand_champion_1">Grand Champion 1</option>
+        <option value="grand_champion_2">Grand Champion 2</option>
+        <option value="grand_champion_3">Grand Champion 3</option>
+        <option value="ssl">SSL</option>
+      </select>
+      <label for="platformSelect">Platform</label>
+      <select id="platformSelect">
+        <option value="epic">Epic</option>
+        <option value="steam">Steam</option>
+      </select>
+      <button id="loginBtn">Enter Dashboard</button>
+    </div>
+  </section>
+
+  <div id="appShell" class="app-shell hidden">
+    <section class="profile-pill">
+      <span id="profileStatus">Not logged in.</span>
+      <div class="profile-actions">
+        <button id="openLibraryBtn" type="button">Open Replay Library</button>
+        <button id="logoutBtn" type="button">Log Out</button>
+      </div>
+    </section>
+
+    <section class="controls">
+      <input id="replayFile" type="file" accept=".replay" />
+      <button id="uploadBtn">Analyze Replay</button>
+      <button id="openReplayFolderBtn" type="button">Open Replay Folder</button>
+      <span id="durationLabel">Duration: 0.00s</span>
+    </section>
+    <select id="playerSelect" class="hidden"></select>
+    <button id="analyzePlayerBtn" class="hidden" type="button">Analyze</button>
+
+    <section class="progress-wrap">
+      <div id="progressBar"></div>
+      <div id="progressLabel"></div>
+    </section>
+
+    <section class="layout">
+      <div class="scene-card">
+        <h2>3D Replay View</h2>
+        <div id="sceneWrap">
+          <div id="scene"></div>
+          <div id="hudBar">
+            <div id="blueScore" class="team-score blue">0</div>
+            <div id="clockWrap">
+              <div id="clockText">5:00</div>
+              <div id="otBadge">OT</div>
+            </div>
+            <div id="orangeScore" class="team-score orange">0</div>
+          </div>
+          <button id="debugToggle" class="debug-toggle" type="button">Debug</button>
+          <div id="debugBubble" class="debug-bubble closed">
+            <div class="debug-head">
+              <strong>Visualizer Debug</strong>
+              <button id="debugClose" type="button">x</button>
+            </div>
+            <div id="debugBody" class="debug-body"></div>
+          </div>
+          <div id="labelLayer"></div>
+          <div id="eventCoachPanel" class="event-coach-panel hidden">
+            <div class="event-coach-head">
+              <strong id="eventCoachTitle">Event Coach</strong>
+              <button id="eventCoachClose" type="button">x</button>
+            </div>
+            <div id="eventCoachScore" class="event-coach-score">Score: --</div>
+            <div id="eventCoachBody" class="event-coach-body">Advice will appear when an event happens.</div>
+          </div>
+        </div>
+        <input id="timelineSlider" type="range" min="0" max="0" value="0" step="1" />
+        <div class="timeline-filter">
+          <label for="timelineFilterMode">Event Markers</label>
+          <select id="timelineFilterMode">
+            <option value="top10" selected>Top 5 Worst + 5 Best</option>
+            <option value="worst5">Worst 5</option>
+            <option value="best5">Best 5</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div id="timelineEvents" class="timeline-events"></div>
+        <div class="playback-tools">
+          <button id="prevEventBtn" type="button">< Prev Event</button>
+          <button id="playBtn">Play</button>
+          <button id="pauseBtn">Pause</button>
+          <button id="nextEventBtn" type="button">Next Event ></button>
+          <label for="speedSelect">Speed</label>
+          <select id="speedSelect">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+          </select>
+          <label for="zoomRange">Zoom</label>
+          <input id="zoomRange" type="range" min="0.6" max="2.0" step="0.05" value="1.0" />
+          <span id="timeLabel">t=0.00</span>
+          <span id="nextEventInfo">Next event: none</span>
+          <span id="nextEventExplain" class="next-event-explain">Why: --</span>
+          <span id="arenaStatus">Arena: pending</span>
+          <span id="perfStatus">FPS: --</span>
+        </div>
+      </div>
+
+      <div class="metrics-card">
+        <h2>Live Metrics on Replay</h2>
+        <div id="metricCards" class="metric-grid"></div>
+        <div class="bubble-card">
+          <button id="recsBubbleToggle" class="bubble-toggle" type="button" aria-expanded="false">What To Work On</button>
+          <div id="recsBubbleBody" class="bubble-body hidden">
+            <div class="library-head">
+              <strong>Recommendations</strong>
+              <button id="refreshRecsBtn">Refresh</button>
+            </div>
+            <div id="recsList" class="library-list"></div>
+          </div>
+        </div>
+        <div class="bubble-card">
+          <button id="mechanicsBubbleToggle" class="bubble-toggle" type="button" aria-expanded="false">Mechanic Grades</button>
+          <div id="mechanicsBubbleBody" class="bubble-body hidden">
+            <div class="library-head">
+              <strong>Mechanic Grades (This Replay)</strong>
+              <button id="refreshMechanicsBtn">Recompute</button>
+            </div>
+            <div id="mechanicsList" class="library-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="libraryDrawer" class="drawer hidden" aria-hidden="true">
+      <div class="drawer-panel">
+        <div class="library-head">
+          <strong>Your Replay Library</strong>
+          <div class="profile-actions">
+            <button id="refreshLibraryBtn">Refresh</button>
+            <button id="closeLibraryBtn" type="button">Close</button>
+          </div>
+        </div>
+        <div id="libraryList" class="library-list"></div>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script src="/three.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

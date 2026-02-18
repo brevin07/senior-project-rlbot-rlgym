@@ -142,33 +142,40 @@ def build_rlgym_v2_env(log_dir="reward_logs"):
     termination_condition = GoalCondition()
     truncation_condition = TimeoutCondition(timeout_seconds=300)
 
-    # --- THE OVERNIGHT "COMPLETE PLAYER" CONFIG ---
     reward_fn = CombinedReward(
         # 1. SCORING (The King)
-        # Keeps the main focus on winning.
+        # Unchanged. Scoring is the only thing that matters in the end.
         (ManualGoalReward(), 10.0),
 
         # 2. DEFENSE (The Queen)
-        # Teaches rotation. If they aren't attacking, they must be between ball and goal.
+        # Unchanged. Good rotation is non-negotiable.
         (DefensivePositionReward(), 2.0),
 
         # 3. OFFENSE (The Driver)
-        # Replaces "ShootTowardsGoal". Rewarded for moving ball to opponent net.
+        # Unchanged. We still want the ball moving toward their net.
         (VelocityBallToGoalReward(), 1.0),
 
-        # 4. MECHANICS (The Teacher)
-        # Replaces standard "TouchReward".
-        # Ground touch = 1.0 * 1.5 = 1.5 pts
-        # Air touch = 2.0 * 1.5 = 3.0 pts (Incentivizes aerials)
-        (HighTouchReward(min_height=150, aerial_multiplier=2.0), 1.5),
+        # 4. PRECISION (The Sniper) -- NEW!
+        # Replaces "FaceBallReward".
+        # Teaches the bot to get BEHIND the ball relative to the goal.
+        (AlignmentReward(), 0.5),
 
-        # 5. ENGAGEMENT (The Helper)
-        # Lower weight. Just keeps them moving if they are far away.
+        # 5. CONTROL (The Glue) -- NEW!
+        # Teaches the bot to stay close to the ball (dribbling/air dragging).
+        (PossessionReward(), 0.3),
+
+        # 6. MECHANICS (The Teacher)
+        # LOWERED WEIGHT (1.5 -> 0.5).
+        # We lowered this so the bot stops just "hitting it to hit it."
+        # It now only gets big points if it hits it AND aligns it (Reward #4).
+        (HighTouchReward(min_height=150, aerial_multiplier=2.0), 0.5),
+
+        # 7. ENGAGEMENT (The Helper)
         (SpeedTowardBallReward(), 0.1),
 
-        # 6. FUNDAMENTALS
-        (FaceBallReward(), 0.05),
-        (SaveBoostReward(), 0.001),  # Tiny weight so they don't fear using boost
+        # 8. FUNDAMENTALS
+        # "SaveBoost" is good, but keep it tiny so they don't starve themselves.
+        (SaveBoostReward(), 0.001),
 
         log_dir=log_dir
     )
@@ -245,7 +252,7 @@ if __name__ == "__main__":
         save_every_ts=1_000_000,
         timestep_limit=5_000_000_000,
         log_to_wandb=False,
-        render=False,  # Sends visualization to RocketSimVis on Windows
+        render=True,  # Sends visualization to RocketSimVis on Windows
 
        checkpoint_load_folder="D:\\PycharmProjects\\RLGym_Bot_Training\\rlbot\\data\\checkpoints\\rlgym-ppo-run-1769157999478113400\\2245131382"
     )

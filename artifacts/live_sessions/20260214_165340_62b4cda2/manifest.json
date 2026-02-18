@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "session_id": "20260214_165340_62b4cda2",
+  "created_at": "2026-02-15T00:57:03.796480+00:00",
+  "tick_rate": 30.0,
+  "tracked_player_index": 0,
+  "players": [
+    "Player",
+    "Tusk"
+  ],
+  "player_teams": {
+    "Player": 0,
+    "Tusk": 1
+  },
+  "frame_count": 5569,
+  "duration_s": 167.76666259765625,
+  "files": {
+    "frames": "frames.jsonl.gz",
+    "events": "events.json",
+    "labels": "labels.json",
+    "metrics_timeline": "metrics_timeline.json.gz"
+  }
+}

@@ -1,0 +1,19 @@
+[project]
+name = "rlgym-bot-training"
+version = "0.1.0"
+description = "Rocket League bot training, live analysis, and replay analysis utilities."
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pre-commit>=3.7.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"

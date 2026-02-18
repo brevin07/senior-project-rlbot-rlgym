@@ -1,0 +1,815 @@
+[
+  {
+    "event_id": "evt_00001",
+    "source": "model",
+    "time": 22.333,
+    "frame_idx": 624,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.826,
+    "distance": 498.37,
+    "opportunity_score": 0.826,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00002",
+    "source": "model",
+    "time": 38.825,
+    "frame_idx": 1084,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.742,
+    "distance": 253.15,
+    "opportunity_score": 0.483,
+    "context": []
+  },
+  {
+    "event_id": "evt_00003",
+    "source": "model",
+    "time": 66.625,
+    "frame_idx": 1857,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.852,
+    "distance": 363.47,
+    "opportunity_score": 0.704,
+    "context": []
+  },
+  {
+    "event_id": "evt_00004",
+    "source": "model",
+    "time": 67.092,
+    "frame_idx": 1870,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.735,
+    "distance": 223.06,
+    "opportunity_score": 0.735,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00005",
+    "source": "model",
+    "time": 79.625,
+    "frame_idx": 2219,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.729,
+    "distance": 324.3,
+    "opportunity_score": 0.729,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00006",
+    "source": "model",
+    "time": 91.3,
+    "frame_idx": 2544,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.919,
+    "distance": 317.67,
+    "opportunity_score": 0.838,
+    "context": []
+  },
+  {
+    "event_id": "evt_00007",
+    "source": "model",
+    "time": 91.3,
+    "frame_idx": 2544,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.745,
+    "distance": 322.37,
+    "opportunity_score": 0.745,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00008",
+    "source": "model",
+    "time": 92.342,
+    "frame_idx": 2573,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.771,
+    "distance": 411.91,
+    "opportunity_score": 0.771,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00009",
+    "source": "model",
+    "time": 104.083,
+    "frame_idx": 2899,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.726,
+    "distance": 700.23,
+    "opportunity_score": 0.726,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00010",
+    "source": "model",
+    "time": 104.658,
+    "frame_idx": 2915,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.759,
+    "distance": 1081.59,
+    "opportunity_score": 0.759,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00011",
+    "source": "model",
+    "time": 112.025,
+    "frame_idx": 3119,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.749,
+    "distance": 548.7,
+    "opportunity_score": 0.749,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00012",
+    "source": "model",
+    "time": 119.292,
+    "frame_idx": 3321,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.767,
+    "distance": 391.9,
+    "opportunity_score": 0.533,
+    "context": []
+  },
+  {
+    "event_id": "evt_00013",
+    "source": "model",
+    "time": 131.542,
+    "frame_idx": 3661,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.993,
+    "distance": 218.02,
+    "opportunity_score": 0.986,
+    "context": []
+  },
+  {
+    "event_id": "evt_00014",
+    "source": "model",
+    "time": 141.392,
+    "frame_idx": 3934,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.759,
+    "distance": 990.5,
+    "opportunity_score": 0.759,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00015",
+    "source": "model",
+    "time": 142.575,
+    "frame_idx": 3967,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.783,
+    "distance": 544.39,
+    "opportunity_score": 0.783,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00016",
+    "source": "model",
+    "time": 145.6,
+    "frame_idx": 4051,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.818,
+    "distance": 167.72,
+    "opportunity_score": 0.818,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00017",
+    "source": "model",
+    "time": 165.283,
+    "frame_idx": 4597,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.933,
+    "distance": 208.41,
+    "opportunity_score": 0.867,
+    "context": [
+      "airborne"
+    ]
+  },
+  {
+    "event_id": "evt_00018",
+    "source": "model",
+    "time": 180.3,
+    "frame_idx": 5014,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.767,
+    "distance": 337.57,
+    "opportunity_score": 0.533,
+    "context": []
+  },
+  {
+    "event_id": "evt_00019",
+    "source": "model",
+    "time": 191.5,
+    "frame_idx": 5325,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.741,
+    "distance": 1166.19,
+    "opportunity_score": 0.741,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00020",
+    "source": "model",
+    "time": 199.25,
+    "frame_idx": 5540,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.917,
+    "distance": 381.04,
+    "opportunity_score": 0.833,
+    "context": []
+  },
+  {
+    "event_id": "evt_00021",
+    "source": "model",
+    "time": 202.1,
+    "frame_idx": 5619,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.82,
+    "distance": 313.78,
+    "opportunity_score": 0.639,
+    "context": []
+  },
+  {
+    "event_id": "evt_00022",
+    "source": "model",
+    "time": 204.85,
+    "frame_idx": 5695,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.79,
+    "distance": 317.32,
+    "opportunity_score": 0.79,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00023",
+    "source": "model",
+    "time": 206.7,
+    "frame_idx": 5746,
+    "type": "whiff",
+    "reason": "slow_control_miss",
+    "confidence": 0.792,
+    "distance": 341.41,
+    "opportunity_score": 0.583,
+    "context": []
+  },
+  {
+    "event_id": "evt_00024",
+    "source": "model",
+    "time": 206.875,
+    "frame_idx": 5751,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.786,
+    "distance": 510.45,
+    "opportunity_score": 0.786,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00025",
+    "source": "model",
+    "time": 212.6,
+    "frame_idx": 5910,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.763,
+    "distance": 436.49,
+    "opportunity_score": 0.763,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00026",
+    "source": "model",
+    "time": 219.142,
+    "frame_idx": 6091,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.8,
+    "distance": 239.46,
+    "opportunity_score": 0.6,
+    "context": []
+  },
+  {
+    "event_id": "evt_00027",
+    "source": "model",
+    "time": 222.392,
+    "frame_idx": 6181,
+    "type": "whiff",
+    "reason": "drive_miss",
+    "confidence": 0.886,
+    "distance": 373.52,
+    "opportunity_score": 0.772,
+    "context": []
+  },
+  {
+    "event_id": "evt_00028",
+    "source": "model",
+    "time": 222.642,
+    "frame_idx": 6188,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.762,
+    "distance": 510.15,
+    "opportunity_score": 0.762,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00029",
+    "source": "model",
+    "time": 224.8,
+    "frame_idx": 6248,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.721,
+    "distance": 685.14,
+    "opportunity_score": 0.721,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00030",
+    "source": "model",
+    "time": 225.233,
+    "frame_idx": 6260,
+    "type": "whiff",
+    "reason": "slow_control_miss",
+    "confidence": 0.733,
+    "distance": 390.61,
+    "opportunity_score": 0.467,
+    "context": [
+      "airborne"
+    ]
+  },
+  {
+    "event_id": "evt_00031",
+    "source": "model",
+    "time": 228.342,
+    "frame_idx": 6346,
+    "type": "whiff",
+    "reason": "drive_miss",
+    "confidence": 0.874,
+    "distance": 289.66,
+    "opportunity_score": 0.748,
+    "context": [
+      "contested_clear_miss"
+    ]
+  },
+  {
+    "event_id": "evt_00032",
+    "source": "model",
+    "time": 231.375,
+    "frame_idx": 6430,
+    "type": "whiff",
+    "reason": "drive_miss",
+    "confidence": 0.838,
+    "distance": 272.96,
+    "opportunity_score": 0.676,
+    "context": []
+  },
+  {
+    "event_id": "evt_00033",
+    "source": "model",
+    "time": 238.417,
+    "frame_idx": 6625,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.92,
+    "distance": 345.02,
+    "opportunity_score": 0.92,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00034",
+    "source": "model",
+    "time": 251.008,
+    "frame_idx": 6974,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.733,
+    "distance": 376.54,
+    "opportunity_score": 0.467,
+    "context": [
+      "airborne"
+    ]
+  },
+  {
+    "event_id": "evt_00035",
+    "source": "model",
+    "time": 282.575,
+    "frame_idx": 7848,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.75,
+    "distance": 295.18,
+    "opportunity_score": 0.5,
+    "context": []
+  },
+  {
+    "event_id": "evt_00036",
+    "source": "model",
+    "time": 285.142,
+    "frame_idx": 7919,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.907,
+    "distance": 246.56,
+    "opportunity_score": 0.907,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00037",
+    "source": "model",
+    "time": 291.758,
+    "frame_idx": 8102,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.803,
+    "distance": 578.13,
+    "opportunity_score": 0.803,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00038",
+    "source": "model",
+    "time": 298.158,
+    "frame_idx": 8279,
+    "type": "whiff",
+    "reason": "drive_miss",
+    "confidence": 0.825,
+    "distance": 204.12,
+    "opportunity_score": 0.65,
+    "context": []
+  },
+  {
+    "event_id": "evt_00039",
+    "source": "model",
+    "time": 328.567,
+    "frame_idx": 9122,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.825,
+    "distance": 202.99,
+    "opportunity_score": 0.65,
+    "context": [
+      "contested_clear_miss"
+    ]
+  },
+  {
+    "event_id": "evt_00040",
+    "source": "model",
+    "time": 334.525,
+    "frame_idx": 9287,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.825,
+    "distance": 227.79,
+    "opportunity_score": 0.65,
+    "context": []
+  },
+  {
+    "event_id": "evt_00041",
+    "source": "model",
+    "time": 346.683,
+    "frame_idx": 9624,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.743,
+    "distance": 658.64,
+    "opportunity_score": 0.743,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00042",
+    "source": "model",
+    "time": 352.358,
+    "frame_idx": 9781,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.863,
+    "distance": 304.68,
+    "opportunity_score": 0.727,
+    "context": [
+      "low_speed",
+      "contested_clear_miss"
+    ]
+  },
+  {
+    "event_id": "evt_00043",
+    "source": "model",
+    "time": 358.067,
+    "frame_idx": 9939,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.742,
+    "distance": 399.92,
+    "opportunity_score": 0.483,
+    "context": [
+      "low_speed"
+    ]
+  },
+  {
+    "event_id": "evt_00044",
+    "source": "model",
+    "time": 367.292,
+    "frame_idx": 10195,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.96,
+    "distance": 138.55,
+    "opportunity_score": 0.96,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00045",
+    "source": "model",
+    "time": 371.492,
+    "frame_idx": 10311,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.758,
+    "distance": 365.5,
+    "opportunity_score": 0.517,
+    "context": []
+  },
+  {
+    "event_id": "evt_00046",
+    "source": "model",
+    "time": 379.967,
+    "frame_idx": 10546,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.825,
+    "distance": 282.24,
+    "opportunity_score": 0.65,
+    "context": []
+  },
+  {
+    "event_id": "evt_00047",
+    "source": "model",
+    "time": 380.183,
+    "frame_idx": 10552,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.838,
+    "distance": 612.88,
+    "opportunity_score": 0.838,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00048",
+    "source": "model",
+    "time": 381.233,
+    "frame_idx": 10581,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.722,
+    "distance": 1242.64,
+    "opportunity_score": 0.722,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00049",
+    "source": "model",
+    "time": 386.692,
+    "frame_idx": 10732,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.791,
+    "distance": 345.79,
+    "opportunity_score": 0.582,
+    "context": [
+      "airborne"
+    ]
+  },
+  {
+    "event_id": "evt_00050",
+    "source": "model",
+    "time": 392.842,
+    "frame_idx": 10902,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.75,
+    "distance": 343.2,
+    "opportunity_score": 0.5,
+    "context": []
+  },
+  {
+    "event_id": "evt_00051",
+    "source": "model",
+    "time": 392.908,
+    "frame_idx": 10904,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.83,
+    "distance": 683.95,
+    "opportunity_score": 0.83,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00052",
+    "source": "model",
+    "time": 407.775,
+    "frame_idx": 11315,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.735,
+    "distance": 843.89,
+    "opportunity_score": 0.735,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00053",
+    "source": "model",
+    "time": 422.533,
+    "frame_idx": 11723,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.805,
+    "distance": 340.54,
+    "opportunity_score": 0.609,
+    "context": [
+      "airborne"
+    ]
+  },
+  {
+    "event_id": "evt_00054",
+    "source": "model",
+    "time": 439.708,
+    "frame_idx": 12198,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.731,
+    "distance": 496.93,
+    "opportunity_score": 0.731,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00055",
+    "source": "model",
+    "time": 439.742,
+    "frame_idx": 12199,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.783,
+    "distance": 225.34,
+    "opportunity_score": 0.567,
+    "context": [
+      "low_speed"
+    ]
+  },
+  {
+    "event_id": "evt_00056",
+    "source": "model",
+    "time": 448.025,
+    "frame_idx": 12428,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.8,
+    "distance": 276.74,
+    "opportunity_score": 0.6,
+    "context": []
+  },
+  {
+    "event_id": "evt_00057",
+    "source": "model",
+    "time": 454.167,
+    "frame_idx": 12598,
+    "type": "whiff",
+    "reason": "flip_miss",
+    "confidence": 0.93,
+    "distance": 266.57,
+    "opportunity_score": 0.859,
+    "context": []
+  },
+  {
+    "event_id": "evt_00058",
+    "source": "model",
+    "time": 456.733,
+    "frame_idx": 12669,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.772,
+    "distance": 863.59,
+    "opportunity_score": 0.772,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00059",
+    "source": "model",
+    "time": 457.025,
+    "frame_idx": 12677,
+    "type": "whiff",
+    "reason": "slow_control_miss",
+    "confidence": 0.742,
+    "distance": 306.9,
+    "opportunity_score": 0.483,
+    "context": []
+  },
+  {
+    "event_id": "evt_00060",
+    "source": "model",
+    "time": 475.067,
+    "frame_idx": 13176,
+    "type": "hesitation",
+    "reason": "indecision_under_pressure",
+    "confidence": 0.764,
+    "distance": 223.49,
+    "opportunity_score": 0.764,
+    "context": [
+      "pressure"
+    ]
+  },
+  {
+    "event_id": "evt_00061",
+    "source": "model",
+    "time": 477.675,
+    "frame_idx": 13248,
+    "type": "whiff",
+    "reason": "slow_control_miss",
+    "confidence": 0.825,
+    "distance": 230.97,
+    "opportunity_score": 0.65,
+    "context": [
+      "airborne"
+    ]
+  }
+]

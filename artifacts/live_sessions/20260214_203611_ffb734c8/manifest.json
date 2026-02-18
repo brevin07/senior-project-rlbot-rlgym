@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "session_id": "20260214_203611_ffb734c8",
+  "created_at": "2026-02-15T04:48:18.229325+00:00",
+  "map_name": "soccar",
+  "tick_rate": 30.0,
+  "tracked_player_index": 0,
+  "tracked_player_name": "what_the_shigma",
+  "players": [
+    "what_the_shigma",
+    "Jester"
+  ],
+  "player_teams": {
+    "what_the_shigma": 0,
+    "Jester": 1
+  },
+  "frame_count": 20079,
+  "duration_s": 720.8250244259834,
+  "files": {
+    "frames": "frames.jsonl.gz",
+    "events": "events.json",
+    "labels": "labels.json",
+    "metrics_timeline": "metrics_timeline.json.gz"
+  }
+}

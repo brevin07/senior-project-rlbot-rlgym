@@ -1,42 +1,33 @@
-numpy~=1.26.4
-pip~=25.1.1
-protobuf~=6.31.1
-Jinja2~=3.1.6
-filelock~=3.18.0
-pyrr~=0.10.3
-multipledispatch~=1.0.0
-cmeel~=0.57.3
-setuptools~=80.9.0
-charset-normalizer~=3.4.2
-rlgym~=2.0.1
-rocketsim~=2.1.1.post4
-PyWavefront~=1.3.3
-GitPython~=3.1.44
-gitdb~=4.0.12
-gym~=0.26.2
-gym-notices~=0.0.8
-PyYAML~=6.0.2
-typing_extensions~=4.14.1
-smmap~=5.0.2
-sympy~=1.14.0
-mpmath~=1.3.0
-torch~=2.7.1
-triton~=3.3.1
-packaging~=25.0
-urllib3~=2.5.0
-fsspec~=2025.7.0
-click~=8.2.1
-wandb~=0.21.0
-pydantic~=2.11.7
-requests~=2.32.4
-platformdirs~=4.3.8
-pydantic_core~=2.33.2
-MarkupSafe~=3.0.2
-certifi~=2025.7.14
-networkx~=3.5
-annotated-types~=0.7.0
-idna~=3.10
-sentry-sdk~=2.33.0
-cloudpickle~=3.1.1
-typing_extensions~=4.14.1
-pydantic_core~=2.33.2
+# Core scientific stack
+numpy>=1.26,<2
+pandas>=2.2,<3
+matplotlib>=3.10,<4
+seaborn>=0.13,<1
+
+# RL / Rocket League
+rlbot==1.68.0
+rlgym>=2.0,<3
+rocketsim>=2.1
+git+https://github.com/AechPro/rlgym-ppo.git
+git+https://github.com/AechPro/rocket-league-gym-sim.git
+
+# ML
+torch>=2.7,<3
+
+# NOTE:
+# TensorFlow 2.20+ conflicts with RLBot's flatbuffers pin in a single environment.
+# Install TensorFlow in a separate venv when needed for isolated workflows.
+
+# Visualization / dashboards
+streamlit>=1.54,<2
+plotly>=6,<7
+pyarrow>=23,<24
+
+# Training and experiment utilities
+wandb>=0.21,<0.25
+pydantic>=2.11,<3
+python-dotenv>=1.0,<2
+websockets>=16,<17
+selenium>=4.40,<5
+webdriver-manager>=4.0,<5
+pre-commit>=4.5,<5

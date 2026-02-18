@@ -1822,3 +1822,53 @@ class FaceBallReward(RewardFunction):
             ball_vec = state.ball.position - car.physics.position
             rewards[agent] = cosine_similarity(car_fwd, ball_vec)
         return rewards
+
+from rlgym.utils.reward_functions import RewardFunction
+from rlgym.utils.gamestates import PlayerData, GameState
+from rlgym.utils.common_values import BLUE_TEAM, ORANGE_TEAM, BACK_WALL_Y
+
+class AlignmentReward(RewardFunction):
+    def reset(self, initial_state: GameState):
+        pass
+
+    def get_reward(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> float:
+        # 1. Determine target goal (opponent's goal)
+        if player.team_num == BLUE_TEAM:
+            goal_pos = np.array([0, BACK_WALL_Y, 0])
+        else:
+            goal_pos = np.array([0, -BACK_WALL_Y, 0])
+
+        # 2. Vector Car -> Ball
+        car_to_ball = state.ball.position - player.car_data.position
+        car_to_ball_norm = car_to_ball / np.linalg.norm(car_to_ball)
+
+        # 3. Vector Ball -> Goal
+        ball_to_goal = goal_pos - state.ball.position
+        ball_to_goal_norm = ball_to_goal / np.linalg.norm(ball_to_goal)
+
+        # 4. Cosine Similarity (Alignment)
+        # 1.0 = Perfectly behind ball aimed at goal
+        # 0.0 = 90 degrees (bad angle)
+        align = np.dot(car_to_ball_norm, ball_to_goal_norm)
+
+        # Only reward good angles
+        return max(0, align)
+
+
+class PossessionReward(RewardFunction):
+    def reset(self, initial_state: GameState):
+        pass
+
+    def get_reward(self, player: PlayerData, state: GameState, previous_action: np.ndarray) -> float:
+        # 1. Distance check
+        dist = np.linalg.norm(state.ball.position - player.car_data.position)
+
+        # If too far (e.g. > 200 units, about 2 car lengths), no possession reward
+        if dist > 200:
+            return 0.0
+
+        # 2. Velocity matching (Dribble logic)
+        vel_diff = np.linalg.norm(state.ball.linear_velocity - player.car_data.linear_velocity)
+
+        # Returns close to 1.0 if speeds match, drops as difference increases
+        return 1.0 / (1.0 + 0.05 * vel_diff)

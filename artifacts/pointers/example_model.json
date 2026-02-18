@@ -1,0 +1,9 @@
+{
+  "name": "example_policy",
+  "version": "v1",
+  "uri": "https://example.com/artifacts/example_policy.pt",
+  "sha256": "replace-with-real-sha256",
+  "source_commit": "replace-with-git-sha",
+  "created_at": "2026-02-12T00:00:00Z",
+  "notes": "Example pointer metadata only."
+}

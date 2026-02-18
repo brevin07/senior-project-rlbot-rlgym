@@ -1,0 +1,65 @@
+# Environments
+.venv/
+venv/
+venv_win/
+rlbot_training/venv/
+rlbot_training/venv_win/
+
+# IDE / editor
+.idea/
+.vscode/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+
+# Local secrets / env
+.env
+.env.*
+!.env.example
+
+# Logs / runtime outputs
+*.log
+logs/
+reward_logs/
+tmp/
+temp/
+
+# Training artifacts and experiment logs
+rlbot_training/data/
+rlbot_training/wandb/
+wandb/
+checkpoints/
+artifacts/models/
+artifacts/checkpoints/
+
+# Replay and analysis generated artifacts
+Milestone_1/heuristic_analysis/analysis_pngs/
+Milestone_1/heuristic_analysis/csv_files/
+Milestone_1/heuristic_analysis/output_data.json
+Milestone_1/output_data.json
+Milestone_1/*.replay
+Milestone_1/*.pkl
+Milestone_1/raw_*.csv
+Milestone_1/player_physics*.csv
+Milestone_1/physics_data.json
+Milestone_1/[0-9A-F]*.json
+Milestone_1/[0-9A-F]*.csv
+
+# Tools and local binaries
+RocketSim/
+RocketSimVis/
+rlbot_training/rlviser
+rlbot_training/rlviser.exe
+rlbot_training/rlviser-*.zip
+rlbot_training/rattletrap
+Milestone_1/rrrocket
+Milestone_1/rrrocket-*.tar.gz
+
+# OS cruft
+.DS_Store
+Thumbs.db

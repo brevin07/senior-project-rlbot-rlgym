@@ -1,0 +1,3 @@
+entrypoint: Milestone_1/heuristic_analysis/live_dashboard.py
+player_index: 0
+refresh_hz: 30
