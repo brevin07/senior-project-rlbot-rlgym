@@ -136,6 +136,14 @@ class ReplayStateStore:
             self._state.last_duplicate_cleanup_removed = removed
         return profile
 
+    def set_current_user(self, profile: Dict[str, Any] | None) -> None:
+        with self._lock:
+            self._state.current_user = dict(profile or {})
+
+    def clear_current_user(self) -> None:
+        with self._lock:
+            self._state.current_user = {}
+
     def logout_profile(self) -> None:
         self._db.clear_active_user()
         with self._lock:

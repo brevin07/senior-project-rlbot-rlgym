@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import threading
@@ -17,6 +18,41 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
     store: ReplayStateStore = None
     web_dir: Path = None
     collision_mesh_dir: Path = None
+    session_cookie = "rlcoach_session"
+
+    def _get_session_id(self) -> str:
+        raw = self.headers.get("Cookie", "")
+        if not raw:
+            return ""
+        cookie = SimpleCookie()
+        cookie.load(raw)
+        if self.session_cookie in cookie:
+            return str(cookie[self.session_cookie].value or "")
+        return ""
+
+    def _set_session_cookie(self, session_id: str) -> None:
+        cookie = SimpleCookie()
+        cookie[self.session_cookie] = str(session_id)
+        cookie[self.session_cookie]["path"] = "/"
+        cookie[self.session_cookie]["httponly"] = True
+        self.send_header("Set-Cookie", cookie.output(header="").strip())
+
+    def _clear_session_cookie(self) -> None:
+        cookie = SimpleCookie()
+        cookie[self.session_cookie] = ""
+        cookie[self.session_cookie]["path"] = "/"
+        cookie[self.session_cookie]["expires"] = "Thu, 01 Jan 1970 00:00:00 GMT"
+        cookie[self.session_cookie]["httponly"] = True
+        self.send_header("Set-Cookie", cookie.output(header="").strip())
+
+    def _require_auth(self) -> Dict[str, Any]:
+        sid = self._get_session_id()
+        auth = self.store._db.get_auth_user_by_session(session_id=sid) if sid else None
+        if not auth:
+            raise RuntimeError("Please log in first.")
+        profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
+        self.store.set_current_user(profile)
+        return {"auth": auth, "profile": profile}
 
     @staticmethod
     def _discover_replay_folder() -> Path:
@@ -106,6 +142,15 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
         raise RuntimeError("Missing 'file' field in upload.")
 
     def do_GET(self):
+        try:
+            sid = self._get_session_id()
+            if sid:
+                auth = self.store._db.get_auth_user_by_session(session_id=sid)
+                if auth:
+                    profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
+                    self.store.set_current_user(profile)
+        except Exception:
+            pass
         parsed = urlparse(self.path)
         path = parsed.path
         qs = parse_qs(parsed.query)
@@ -171,10 +216,27 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
 
         if path == "/api/health":
             return self._send_json({"ok": True})
+        if path == "/api/auth/me":
+            try:
+                sid = self._get_session_id()
+                auth = self.store._db.get_auth_user_by_session(session_id=sid) if sid else None
+                if not auth:
+                    return self._send_json({"ok": False, "auth": None, "profile": None})
+                profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
+                self.store.set_current_user(profile)
+                return self._send_json({"ok": True, "auth": auth, "profile": profile})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if path == "/api/profile":
+            try:
+                ctx = self._require_auth()
+                return self._send_json({"ok": True, "profile": ctx.get("profile") or {}})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if path == "/api/profile/current":
             try:
-                profile = self.store.current_profile()
-                return self._send_json({"ok": True, "profile": profile})
+                ctx = self._require_auth()
+                return self._send_json({"ok": True, "profile": ctx.get("profile") or {}})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if path == "/api/replay/library":
@@ -288,6 +350,121 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self):
+        try:
+            sid = self._get_session_id()
+            if sid:
+                auth = self.store._db.get_auth_user_by_session(session_id=sid)
+                if auth:
+                    profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
+                    self.store.set_current_user(profile)
+        except Exception:
+            pass
+        if self.path == "/api/auth/signup":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                email = str(body.get("email", "")).strip()
+                password = str(body.get("password", "")).strip()
+                auth = self.store._db.create_auth_user(email=email, password=password)
+                sid = self.store._db.create_session(user_id=int(auth["id"]))
+                profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
+                self.send_response(HTTPStatus.OK)
+                self._set_session_cookie(sid)
+                self.send_header("Content-Type", "application/json")
+                payload = json.dumps({"ok": True, "auth": auth, "profile": profile}).encode("utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path == "/api/auth/login":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                auth = self.store._db.authenticate(
+                    email=str(body.get("email", "")).strip(),
+                    password=str(body.get("password", "")).strip(),
+                )
+                sid = self.store._db.create_session(user_id=int(auth["id"]))
+                profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
+                self.store.set_current_user(profile)
+                self.send_response(HTTPStatus.OK)
+                self._set_session_cookie(sid)
+                self.send_header("Content-Type", "application/json")
+                payload = json.dumps({"ok": True, "auth": auth, "profile": profile}).encode("utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path == "/api/auth/logout":
+            sid = self._get_session_id()
+            if sid:
+                try:
+                    self.store._db.delete_session(session_id=sid)
+                except Exception:
+                    pass
+            self.send_response(HTTPStatus.OK)
+            self._clear_session_cookie()
+            self.send_header("Content-Type", "application/json")
+            payload = json.dumps({"ok": True}).encode("utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        if self.path == "/api/profile/setup":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                ctx = self._require_auth()
+                auth = ctx["auth"]
+                profile = self.store._db.upsert_user(
+                    username=str(body.get("username", "")).strip(),
+                    rank_tier=str(body.get("rank_tier", "")).strip(),
+                    platform=str(body.get("platform", "")).strip(),
+                    aliases=[str(x) for x in (body.get("aliases", []) or [])] if isinstance(body.get("aliases", []), list) else [],
+                    auth_user_id=int(auth["id"]),
+                )
+                self.store.set_current_user(profile)
+                return self._send_json({"ok": True, "profile": profile})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path == "/api/profile/update":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                ctx = self._require_auth()
+                auth = ctx["auth"]
+                profile = self.store._db.upsert_user(
+                    username=str(body.get("username", "")).strip(),
+                    rank_tier=str(body.get("rank_tier", "")).strip(),
+                    platform=str(body.get("platform", "")).strip(),
+                    aliases=[str(x) for x in (body.get("aliases", []) or [])] if isinstance(body.get("aliases", []), list) else [],
+                    auth_user_id=int(auth["id"]),
+                )
+                self.store.set_current_user(profile)
+                return self._send_json({"ok": True, "profile": profile})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+
         if self.path == "/api/replay/upload":
             try:
                 file_name, data = self._parse_upload()
@@ -324,19 +501,12 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
             try:
-                profile = self.store.login_profile(
-                    username=str(body.get("username", "")).strip(),
-                    rank_tier=str(body.get("rank_tier", "")).strip(),
-                    platform=str(body.get("platform", "")).strip(),
-                    aliases=[str(x) for x in (body.get("aliases", []) or [])] if isinstance(body.get("aliases", []), list) else [],
-                )
-                return self._send_json({"ok": True, "profile": profile})
+                return self._send_json({"ok": False, "error": "Use /api/auth/login and /api/profile/setup instead."}, status=400)
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/profile/logout":
             try:
-                self.store.logout_profile()
-                return self._send_json({"ok": True})
+                return self._send_json({"ok": False, "error": "Use /api/auth/logout instead."}, status=400)
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/recommendations/refresh":

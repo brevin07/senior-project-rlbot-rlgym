@@ -2,6 +2,7 @@
 
 import json
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import threading
@@ -20,6 +21,22 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     web_dir: Path = None
     collision_mesh_dir: Path = None
     db = None
+
+    def _get_session_id(self) -> str:
+        raw = self.headers.get("Cookie", "")
+        if not raw:
+            return ""
+        cookie = SimpleCookie()
+        cookie.load(raw)
+        if "rlcoach_session" in cookie:
+            return str(cookie["rlcoach_session"].value or "")
+        return ""
+
+    def _current_profile(self) -> Dict[str, Any]:
+        sid = self._get_session_id()
+        if not sid or self.db is None:
+            return {}
+        return self.db.current_user_for_session(session_id=sid) or {}
 
     def _compute_review_mechanics(self) -> Dict[str, Any]:
         data = self.review_store.session_data()
@@ -113,14 +130,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return self._send_json({"ok": True})
         if path == "/api/profile/current":
             try:
-                profile = self.db.current_user() if self.db is not None else {}
+                profile = self._current_profile()
                 self.store.set_current_user(profile or {})
                 return self._send_json({"ok": True, "profile": profile or {}})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if path == "/api/profile/history":
             try:
-                profile = self.db.current_user() if self.db is not None else {}
+                profile = self._current_profile()
                 if not profile:
                     return self._send_json({"ok": True, "sessions": []})
                 sessions = self.db.list_replay_sessions(user_id=int(profile["id"]), limit=300)
@@ -129,7 +146,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if path == "/api/profile/progress":
             try:
-                profile = self.db.current_user() if self.db is not None else {}
+                profile = self._current_profile()
                 if not profile:
                     return self._send_json({"ok": True, "data": {"points": []}})
                 rows = self.db.list_replay_sessions_detailed(user_id=int(profile["id"]), limit=120)
@@ -266,21 +283,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             if self.db is None:
                 return self._send_json({"ok": False, "error": "DB not configured"}, status=500)
             try:
-                profile = self.db.upsert_user(
-                    username=str(body.get("username", "")).strip(),
-                    rank_tier=str(body.get("rank_tier", "")).strip(),
-                    platform=str(body.get("platform", "")).strip(),
-                    aliases=[str(x) for x in (body.get("aliases", []) or [])] if isinstance(body.get("aliases", []), list) else [],
-                )
-                self.store.set_current_user(profile)
-                return self._send_json({"ok": True, "profile": profile})
+                return self._send_json({"ok": False, "error": "Use /api/auth/login and /api/profile/setup instead."}, status=400)
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/recommendations/refresh":
             if self.db is None:
                 return self._send_json({"ok": False, "error": "DB not configured"}, status=500)
             try:
-                profile = self.db.current_user() or {}
+                profile = self._current_profile()
                 if not profile:
                     return self._send_json({"ok": False, "error": "Please log in first."}, status=400)
                 payload = compute_recommendations(self.db, int(profile["id"]), window_size=5)

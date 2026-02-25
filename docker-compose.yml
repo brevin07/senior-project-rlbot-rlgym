@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  replay:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: python Milestone_1/replay_dashboard/run_replay_dashboard.py --host 0.0.0.0 --port 8775 --no-browser
+    ports:
+      - "8775:8775"
+
+  gateway:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: python Milestone_1/dashboard_gateway/gateway_server.py --host 0.0.0.0 --port 8888 --replay http://replay:8775 --live http://host.docker.internal:8765
+    ports:
+      - "8888:8888"

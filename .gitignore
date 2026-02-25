@@ -84,3 +84,7 @@ artifacts/arena_dumper_zip/
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Frontend
+frontend/dashboard/node_modules/
+frontend/dashboard/dist/

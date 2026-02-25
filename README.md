@@ -129,6 +129,43 @@ powershell -ExecutionPolicy Bypass -File scripts/train.ps1
 - Live mode fails to start match:
   - Try `-AttachOnly` and connect to an already running session.
 
+## React + Gateway (Public ngrok)
+
+This repo now includes a React frontend and a gateway server that proxies the existing
+live/replay APIs behind a single URL.
+
+Folder:
+- `frontend/dashboard`: Vite + React + TypeScript app.
+
+Gateway server:
+- `Milestone_1/dashboard_gateway/gateway_server.py`
+
+Build the React app:
+
+```powershell
+cd frontend\dashboard
+npm install
+npm run build
+cd ..\..
+```
+
+Run the gateway (starts live + replay dashboards + gateway):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_gateway.ps1
+```
+
+Default URLs:
+- Gateway: `http://127.0.0.1:8888`
+- React routes: `/live` and `/replay`
+- Legacy UIs: `/legacy/live/` and `/legacy/replay/`
+
+Expose via ngrok:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\ngrok_dashboard.ps1 -Port 8888
+```
+
 ## Repository Layout
 
 ```text

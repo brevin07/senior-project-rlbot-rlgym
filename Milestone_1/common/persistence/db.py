@@ -1,15 +1,22 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import json
 import os
 import sqlite3
+import hashlib
+import hmac
+import secrets
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _email_norm(email: str) -> str:
+    return str(email or "").strip().lower()
 
 
 def _norm_username(username: str) -> str:
@@ -78,6 +85,23 @@ class AppDB:
         with self._connect() as conn:
             conn.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS auth_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL,
+                    email_norm TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES auth_users(id)
+                );
+
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
@@ -150,6 +174,11 @@ class AppDB:
             col_names = {str(r["name"]) for r in cols}
             if "replay_blob" not in col_names:
                 conn.execute("ALTER TABLE replay_sessions ADD COLUMN replay_blob BLOB")
+            user_cols = conn.execute("PRAGMA table_info(users)").fetchall()
+            user_col_names = {str(r["name"]) for r in user_cols}
+            if "auth_user_id" not in user_col_names:
+                conn.execute("ALTER TABLE users ADD COLUMN auth_user_id INTEGER")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_users_auth_user ON users(auth_user_id)")
 
     @staticmethod
     def _row_to_user(row: sqlite3.Row | None) -> Dict[str, Any] | None:
@@ -162,7 +191,125 @@ class AppDB:
             "platform": str(row["platform"]),
             "created_at": str(row["created_at"]),
             "updated_at": str(row["updated_at"]),
+            "auth_user_id": int(row["auth_user_id"]) if row["auth_user_id"] is not None else None,
         }
+
+    @staticmethod
+    def _hash_password(password: str) -> str:
+        pw = str(password or "")
+        if not pw:
+            raise RuntimeError("password is required")
+        salt = secrets.token_bytes(16)
+        dk = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 120000)
+        return f"pbkdf2_sha256${salt.hex()}${dk.hex()}"
+
+    @staticmethod
+    def _verify_password(password: str, stored: str) -> bool:
+        try:
+            algo, salt_hex, hash_hex = str(stored).split("$", 2)
+        except Exception:
+            return False
+        if algo != "pbkdf2_sha256":
+            return False
+        try:
+            salt = bytes.fromhex(salt_hex)
+            expected = bytes.fromhex(hash_hex)
+        except Exception:
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", str(password or "").encode("utf-8"), salt, 120000)
+        return hmac.compare_digest(dk, expected)
+
+    def create_auth_user(self, *, email: str, password: str) -> Dict[str, Any]:
+        email = str(email or "").strip()
+        if not email:
+            raise RuntimeError("email is required")
+        email_norm = _email_norm(email)
+        now = _utc_now_iso()
+        pwh = self._hash_password(password)
+        with self._connect() as conn:
+            row = conn.execute("SELECT id FROM auth_users WHERE email_norm = ?", (email_norm,)).fetchone()
+            if row:
+                raise RuntimeError("Email already registered.")
+            conn.execute(
+                "INSERT INTO auth_users (email, email_norm, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (email, email_norm, pwh, now, now),
+            )
+            out = conn.execute("SELECT * FROM auth_users WHERE email_norm = ?", (email_norm,)).fetchone()
+        return {
+            "id": int(out["id"]),
+            "email": str(out["email"]),
+            "created_at": str(out["created_at"]),
+            "updated_at": str(out["updated_at"]),
+        }
+
+    def authenticate(self, *, email: str, password: str) -> Dict[str, Any]:
+        email_norm = _email_norm(email)
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM auth_users WHERE email_norm = ?", (email_norm,)).fetchone()
+            if not row:
+                raise RuntimeError("Invalid email or password.")
+            if not self._verify_password(password, str(row["password_hash"])):
+                raise RuntimeError("Invalid email or password.")
+            return {
+                "id": int(row["id"]),
+                "email": str(row["email"]),
+                "created_at": str(row["created_at"]),
+                "updated_at": str(row["updated_at"]),
+            }
+
+    def create_session(self, *, user_id: int, hours: int = 24 * 7) -> str:
+        sid = secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+        exp = now + timedelta(hours=int(hours))
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO auth_sessions (session_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                (sid, int(user_id), now.isoformat(), exp.isoformat()),
+            )
+        return sid
+
+    def delete_session(self, *, session_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM auth_sessions WHERE session_id = ?", (str(session_id),))
+
+    def get_auth_user_by_session(self, *, session_id: str) -> Dict[str, Any] | None:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT au.* , s.expires_at
+                FROM auth_sessions s
+                JOIN auth_users au ON au.id = s.user_id
+                WHERE s.session_id = ?
+                """,
+                (sid,),
+            ).fetchone()
+            if not row:
+                return None
+            try:
+                exp = datetime.fromisoformat(str(row["expires_at"]))
+                if exp < datetime.now(timezone.utc):
+                    conn.execute("DELETE FROM auth_sessions WHERE session_id = ?", (sid,))
+                    return None
+            except Exception:
+                pass
+            return {
+                "id": int(row["id"]),
+                "email": str(row["email"]),
+                "created_at": str(row["created_at"]),
+                "updated_at": str(row["updated_at"]),
+            }
+
+    def get_profile_by_auth_user(self, *, auth_user_id: int) -> Dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM users WHERE auth_user_id = ?", (int(auth_user_id),)).fetchone()
+            user = self._row_to_user(row)
+            if not user:
+                return None
+            user["aliases"] = self._read_aliases(conn, int(user["id"]))
+            return user
 
     def _aliases_key(self, user_id: int) -> str:
         return f"user_aliases_{int(user_id)}"
@@ -194,7 +341,13 @@ class AppDB:
         )
 
     def upsert_user(
-        self, *, username: str, rank_tier: str, platform: str, aliases: Optional[List[str]] = None
+        self,
+        *,
+        username: str,
+        rank_tier: str,
+        platform: str,
+        aliases: Optional[List[str]] = None,
+        auth_user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         username = str(username or "").strip()
         if not username:
@@ -210,15 +363,17 @@ class AppDB:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM users WHERE username_norm = ?", (username_norm,)).fetchone()
             if row:
+                if auth_user_id is not None and row["auth_user_id"] not in (None, int(auth_user_id)):
+                    raise RuntimeError("username is already in use")
                 conn.execute(
-                    "UPDATE users SET username = ?, rank_tier = ?, platform = ?, updated_at = ? WHERE id = ?",
-                    (username, rank_tier, platform, now, int(row["id"])),
+                    "UPDATE users SET username = ?, rank_tier = ?, platform = ?, updated_at = ?, auth_user_id = COALESCE(auth_user_id, ?) WHERE id = ?",
+                    (username, rank_tier, platform, now, auth_user_id, int(row["id"])),
                 )
                 out = conn.execute("SELECT * FROM users WHERE id = ?", (int(row["id"]),)).fetchone()
             else:
                 conn.execute(
-                    "INSERT INTO users (username, username_norm, rank_tier, platform, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (username, username_norm, rank_tier, platform, now, now),
+                    "INSERT INTO users (username, username_norm, rank_tier, platform, created_at, updated_at, auth_user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (username, username_norm, rank_tier, platform, now, now, auth_user_id),
                 )
                 out = conn.execute("SELECT * FROM users WHERE username_norm = ?", (username_norm,)).fetchone()
             conn.execute(
@@ -256,6 +411,12 @@ class AppDB:
                 return None
             user["aliases"] = self._read_aliases(conn, user_id)
             return user
+
+    def current_user_for_session(self, *, session_id: str) -> Dict[str, Any] | None:
+        auth = self.get_auth_user_by_session(session_id=session_id)
+        if not auth:
+            return None
+        return self.get_profile_by_auth_user(auth_user_id=int(auth["id"]))
 
     def set_active_user(self, user_id: int) -> None:
         with self._connect() as conn:
