@@ -2,7 +2,8 @@
 import { useAuth } from "./app/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import ProfileSetupPage from "./pages/ProfileSetupPage";
-import DashboardPage from "./pages/DashboardPage";
+import ReplayDashboardPage from "./pages/ReplayDashboardPage";
+import LiveDashboardPage from "./pages/LiveDashboardPage";
 import AccountPage from "./pages/AccountPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -45,7 +46,27 @@ export default function App() {
           element={
             <RequireAuth>
               <RequireProfile>
-                <DashboardPage />
+                <ReplayDashboardPage />
+              </RequireProfile>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/replay"
+          element={
+            <RequireAuth>
+              <RequireProfile>
+                <ReplayDashboardPage />
+              </RequireProfile>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/live"
+          element={
+            <RequireAuth>
+              <RequireProfile>
+                <LiveDashboardPage />
               </RequireProfile>
             </RequireAuth>
           }

@@ -1,11 +1,13 @@
-﻿param(
+param(
     [string]$BindHost = "127.0.0.1",
     [int]$LivePort = 8765,
     [int]$ReplayPort = 8775,
     [int]$GatewayPort = 8888,
     [switch]$NoBrowser,
     [switch]$AttachOnly,
-    [switch]$NoNewWindow
+    [switch]$NoNewWindow,
+    [switch]$StartLive,
+    [switch]$StartReplay
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,34 +25,39 @@ function Resolve-VenvPython([string]$root) {
 
 Push-Location $repoRoot
 try {
-    $liveArgs = @(
-        "-ExecutionPolicy", "Bypass",
-        "-File", (Join-Path $repoRoot "scripts\launch_live_analysis.ps1"),
-        "-BindHost", $BindHost,
-        "-Port", "$LivePort"
-    )
-    if ($AttachOnly) {
+    if ($StartLive) {
+        $liveArgs = @(
+            "-ExecutionPolicy", "Bypass",
+            "-File", (Join-Path $repoRoot "scripts\launch_live_analysis.ps1"),
+            "-BindHost", $BindHost,
+            "-Port", "$LivePort"
+        )
+        # Always attach-only to avoid launching Rocket League automatically.
         $liveArgs += "-AttachOnly"
-    } else {
-        # Default to attach-only to avoid launching Rocket League automatically.
-        $liveArgs += "-AttachOnly"
+        if ($AttachOnly) { $liveArgs += "-AttachOnly" }
+        if ($NoBrowser) { $liveArgs += "-NoBrowser" }
+
+        if ($NoNewWindow) {
+            Start-Process -FilePath powershell -ArgumentList $liveArgs -WindowStyle Normal
+        } else {
+            Start-Process -FilePath powershell -ArgumentList $liveArgs
+        }
     }
-    if ($NoBrowser) { $liveArgs += "-NoBrowser" }
 
-    $replayArgs = @(
-        "-ExecutionPolicy", "Bypass",
-        "-File", (Join-Path $repoRoot "scripts\replay_dashboard.ps1"),
-        "-BindHost", $BindHost,
-        "-Port", "$ReplayPort"
-    )
-    if ($NoBrowser) { $replayArgs += "-NoBrowser" }
+    if ($StartReplay) {
+        $replayArgs = @(
+            "-ExecutionPolicy", "Bypass",
+            "-File", (Join-Path $repoRoot "scripts\replay_dashboard.ps1"),
+            "-BindHost", $BindHost,
+            "-Port", "$ReplayPort"
+        )
+        if ($NoBrowser) { $replayArgs += "-NoBrowser" }
 
-    if ($NoNewWindow) {
-        Start-Process -FilePath powershell -ArgumentList $liveArgs -WindowStyle Normal
-        Start-Process -FilePath powershell -ArgumentList $replayArgs -WindowStyle Normal
-    } else {
-        Start-Process -FilePath powershell -ArgumentList $liveArgs
-        Start-Process -FilePath powershell -ArgumentList $replayArgs
+        if ($NoNewWindow) {
+            Start-Process -FilePath powershell -ArgumentList $replayArgs -WindowStyle Normal
+        } else {
+            Start-Process -FilePath powershell -ArgumentList $replayArgs
+        }
     }
 
     $venvPython = Resolve-VenvPython $repoRoot

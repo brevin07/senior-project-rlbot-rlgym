@@ -1,5 +1,5 @@
 ﻿import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
 
 const ranks = [
@@ -16,6 +16,7 @@ const ranks = [
 export default function AccountPage() {
   const { profile, updateProfile, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [username, setUsername] = useState(profile?.username ?? "");
   const [rank, setRank] = useState(profile?.rank_tier ?? "diamond_1");
   const [platform, setPlatform] = useState(profile?.platform ?? "epic");
@@ -53,7 +54,10 @@ export default function AccountPage() {
   return (
     <div className="profile">
       <div className="profile__panel">
-        <h1>Account</h1>
+        <div className="account-header">
+          <Link className="back-link" to={(location.state as { from?: string } | null)?.from || "/dashboard"}>←</Link>
+          <h1>Account</h1>
+        </div>
         <p>Update your player profile and aliases.</p>
         <div className="profile__form">
           <label>

@@ -46,7 +46,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
     def _proxy(self, target_base: str, target_path: str) -> None:
         try:
             parsed = urlparse(target_base)
-            conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=10)
+            # Replay analysis can take a while; use a longer upstream timeout.
+            conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=120)
             headers = {k: v for k, v in self.headers.items() if k.lower() not in {"host", "content-length"}}
             headers["Accept-Encoding"] = "identity"
 
@@ -99,6 +100,9 @@ class GatewayHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/api/health":
             self._send_text(HTTPStatus.OK, "ok")
+            return
+        if self.path.startswith("/collision_meshes/"):
+            self._proxy(self.replay_base, self.path)
             return
         if self._handle_api("/api/live", self.live_base):
             return
