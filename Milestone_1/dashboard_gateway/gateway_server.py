@@ -3,6 +3,7 @@
 import argparse
 import http.client
 import mimetypes
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,32 +45,43 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _proxy(self, target_base: str, target_path: str) -> None:
-        try:
-            parsed = urlparse(target_base)
-            # Replay analysis can take a while; use a longer upstream timeout.
-            conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=120)
-            headers = {k: v for k, v in self.headers.items() if k.lower() not in {"host", "content-length"}}
-            headers["Accept-Encoding"] = "identity"
+        parsed = urlparse(target_base)
+        headers = {k: v for k, v in self.headers.items() if k.lower() not in {"host", "content-length"}}
+        headers["Accept-Encoding"] = "identity"
 
-            body = None
-            if self.command in {"POST", "PUT", "PATCH"}:
-                length = int(self.headers.get("Content-Length", "0"))
-                body = self.rfile.read(length) if length > 0 else b""
+        body = None
+        if self.command in {"POST", "PUT", "PATCH"}:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length) if length > 0 else b""
 
-            conn.request(self.command, target_path, body=body, headers=headers)
-            resp = conn.getresponse()
-            data = resp.read()
+        is_replay = parsed.hostname == "replay"
+        attempts = 4 if is_replay else 1
+        last_exc: Exception | None = None
 
-            self.send_response(resp.status)
-            for key, value in resp.getheaders():
-                if key.lower() in {"transfer-encoding", "content-encoding", "connection"}:
-                    continue
-                self.send_header(key, value)
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-        except Exception as exc:
-            self._send_text(HTTPStatus.BAD_GATEWAY, f"Upstream error: {exc}")
+        for idx in range(attempts):
+            try:
+                # Replay analysis can take a while; use a longer upstream timeout.
+                conn = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=120)
+                conn.request(self.command, target_path, body=body, headers=headers)
+                resp = conn.getresponse()
+                data = resp.read()
+
+                self.send_response(resp.status)
+                for key, value in resp.getheaders():
+                    if key.lower() in {"transfer-encoding", "content-encoding", "connection"}:
+                        continue
+                    self.send_header(key, value)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            except Exception as exc:
+                last_exc = exc
+                if idx >= attempts - 1:
+                    break
+                time.sleep(0.45 * (idx + 1))
+
+        self._send_text(HTTPStatus.BAD_GATEWAY, f"Upstream error: {last_exc}")
 
     def _handle_api(self, prefix: str, base: str) -> bool:
         if not self.path.startswith(prefix):

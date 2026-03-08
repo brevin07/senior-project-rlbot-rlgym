@@ -1,17 +1,21 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
 
-const ranks = [
-  "bronze_1","bronze_2","bronze_3",
-  "silver_1","silver_2","silver_3",
-  "gold_1","gold_2","gold_3",
-  "platinum_1","platinum_2","platinum_3",
-  "diamond_1","diamond_2","diamond_3",
-  "champion_1","champion_2","champion_3",
-  "grand_champion_1","grand_champion_2","grand_champion_3",
-  "ssl"
+const rankGroups = [
+  { label: "Bronze", values: ["bronze_1", "bronze_2", "bronze_3"] },
+  { label: "Silver", values: ["silver_1", "silver_2", "silver_3"] },
+  { label: "Gold", values: ["gold_1", "gold_2", "gold_3"] },
+  { label: "Platinum", values: ["platinum_1", "platinum_2", "platinum_3"] },
+  { label: "Diamond", values: ["diamond_1", "diamond_2", "diamond_3"] },
+  { label: "Champion", values: ["champion_1", "champion_2", "champion_3"] },
+  { label: "Grand Champion", values: ["grand_champion_1", "grand_champion_2", "grand_champion_3"] },
+  { label: "Supersonic Legend", values: ["ssl"] },
 ];
+
+function rankLabel(v: string) {
+  return v.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
 
 export default function ProfileSetupPage() {
   const { profile, setupProfile } = useAuth();
@@ -47,10 +51,10 @@ export default function ProfileSetupPage() {
   };
 
   return (
-    <div className="profile">
-      <div className="profile__panel">
-        <h1>Player Profile</h1>
-        <p>Tell us who you are in Rocket League so we can match your replays and stats.</p>
+    <div className="profile profile--setup">
+      <div className="profile__panel profile__panel--setup">
+        <h1>Set Up Your Profile</h1>
+        <p>Enter the in-game account shown in your replays so RocketCoach can match analysis to your player.</p>
         <div className="profile__form">
           <label>
             In-game username
@@ -58,11 +62,25 @@ export default function ProfileSetupPage() {
           </label>
           <label>
             Rank tier
-            <select value={rank} onChange={(e) => setRank(e.target.value)}>
-              {ranks.map((r) => (
-                <option key={r} value={r}>{r.replace(/_/g, " ")}</option>
+            <div className="rank-selector">
+              {rankGroups.map((g) => (
+                <div key={g.label} className="rank-group">
+                  <div className="rank-group-label">{g.label}</div>
+                  <div className="rank-options">
+                    {g.values.map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        className={`rank-option ${rank === r ? "selected" : ""}`}
+                        onClick={() => setRank(r)}
+                      >
+                        {r.split("_")[1] ? r.split("_")[1].toUpperCase() : "SSL"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
-            </select>
+            </div>
           </label>
           <label>
             Platform

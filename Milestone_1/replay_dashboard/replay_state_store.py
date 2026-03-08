@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 import threading
 import uuid
 import traceback
 import hashlib
+import gzip
+import json
+import time
 from bisect import bisect_right
 from pathlib import Path
 import os
 import sys
 from datetime import datetime
+import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 MILESTONE_ROOT = HERE.parent
@@ -24,7 +28,7 @@ from replay_loader import DEBUG_METRIC_KEYS, METRIC_KEYS, ReplaySession, ensure_
 from common.persistence import AppDB
 from recommendation_engine import compute_recommendations
 from mechanic_grader import grade_game_mechanics, summarize_mechanic_scores, explain_mechanic_event
-from llm_event_explainer import maybe_rewrite_explanation
+from llm_event_explainer import maybe_rewrite_explanation, maybe_rewrite_explanations_batch
 
 
 class DuplicateReplayError(RuntimeError):
@@ -73,6 +77,8 @@ class ReplaySharedState:
     recommendations: Dict[str, Any] = field(default_factory=dict)
     mechanics: Dict[str, Any] = field(default_factory=dict)
     last_duplicate_cleanup_removed: int = 0
+    explain_progress: Dict[str, Any] = field(default_factory=dict)
+    explain_background_session_id: str = ""
 
 
 class ReplayStateStore:
@@ -128,6 +134,128 @@ class ReplayStateStore:
                 continue
         return None
 
+    @staticmethod
+    def _norm_player_name(v: str) -> str:
+        return "".join(ch.lower() for ch in str(v or "") if ch.isalnum() or ch in ("_", "-"))
+
+    def _match_profile_player(self, *, players: List[str], profile: Dict[str, Any]) -> str:
+        names = [str(profile.get("username", "") or "")]
+        names.extend([str(x or "") for x in (profile.get("aliases", []) or [])])
+        acceptable = {self._norm_player_name(n) for n in names if str(n or "").strip()}
+        if not acceptable:
+            return ""
+        for p in players or []:
+            if self._norm_player_name(str(p)) in acceptable:
+                return str(p)
+        return ""
+
+    @staticmethod
+    def _timed(stage: str, started_at: float) -> None:
+        dt = max(0.0, time.time() - float(started_at or time.time()))
+        print(f"[replay_perf] {stage} {dt:.3f}s")
+
+    @staticmethod
+    def _serialize_prepared_payload(payload: Dict[str, Any]) -> bytes:
+        raw = json.dumps(payload, ensure_ascii=True).encode("utf-8")
+        return gzip.compress(raw, compresslevel=6)
+
+    @staticmethod
+    def _deserialize_prepared_payload(blob: bytes) -> Dict[str, Any]:
+        if not blob:
+            return {}
+        try:
+            raw = gzip.decompress(bytes(blob))
+            return dict(json.loads(raw.decode("utf-8")))
+        except Exception:
+            return {}
+
+    def _persist_prepared_replay(self, *, session: ReplaySession, player: str, mechanics_payload: Dict[str, Any]) -> None:
+        profile = self.current_profile()
+        if not profile:
+            return
+        row = self._db.get_replay_session(session_id=session.session_id, user_id=int(profile["id"])) or {}
+        prepared = {
+            "schema_version": 1,
+            "analysis_player": str(player or ""),
+            "replay_name": str(session.replay_name or ""),
+            "players": [str(p) for p in (session.players or [])],
+            "duration_s": float(session.duration_s or 0.0),
+            "timeline": list(session.timeline or []),
+            "boost_pads": list(session.boost_pads or []),
+            "replay_meta": dict(session.replay_meta or {}),
+            "metrics_by_player": dict(session.metrics_by_player or {}),
+            "events_by_player": dict(session.events_by_player or {}),
+            "mechanics": dict(mechanics_payload or {}),
+        }
+        payload_blob = self._serialize_prepared_payload(prepared)
+        self._db.save_replay_session(
+            session_id=session.session_id,
+            user_id=int(profile["id"]),
+            source_type=str((row.get("source_type", "") or "replay_upload")),
+            replay_name=str((row.get("replay_name", "") or session.replay_name)),
+            map_name=str((row.get("map_name", "") or (session.replay_meta or {}).get("map_name", "soccar"))),
+            duration_s=float(row.get("duration_s", session.duration_s or 0.0) or 0.0),
+            tracked_player_name=str((row.get("tracked_player_name", "") or player)),
+            tracked_player_index=int(row.get("tracked_player_index", 0) or 0),
+            artifact_manifest=dict(row.get("artifact_manifest", {}) or {}),
+            prepared_payload=payload_blob,
+            summary=dict(row.get("summary", {}) or {}),
+            created_at=str(row.get("created_at", "")) or None,
+        )
+
+    def _load_prepared_replay_into_state(self, *, row: Dict[str, Any]) -> bool:
+        payload = self._deserialize_prepared_payload(bytes(row.get("prepared_payload", b"") or b""))
+        if not payload:
+            return False
+        try:
+            session = ReplaySession(
+                session_id=str(row.get("session_id", "")),
+                replay_name=str(payload.get("replay_name", row.get("replay_name", "")) or ""),
+                players=[str(p) for p in (payload.get("players", []) or [])],
+                timeline=list(payload.get("timeline", []) or []),
+                boost_pads=list(payload.get("boost_pads", []) or []),
+                replay_meta=dict(payload.get("replay_meta", {}) or {}),
+                df=pd.DataFrame(),
+                duration_s=float(payload.get("duration_s", row.get("duration_s", 0.0)) or 0.0),
+                metrics_by_player=dict(payload.get("metrics_by_player", {}) or {}),
+                events_by_player=dict(payload.get("events_by_player", {}) or {}),
+            )
+            analysis_player = str(payload.get("analysis_player", "") or "")
+            mechanics = dict(payload.get("mechanics", {}) or {})
+            with self._lock:
+                self._state.session = session
+                self._state.analysis_player = analysis_player
+                self._state.analysis_locked = bool(analysis_player)
+                self._state.analysis_ready = bool(analysis_player)
+                self._state.analysis_error = ""
+                self._state.metrics_status = "ready" if analysis_player else "idle"
+                self._state.metrics_error = ""
+                self._state.metrics_ready_count = 1 if analysis_player else 0
+                self._state.metrics_total_count = 1 if analysis_player else 0
+                self._state.mechanics = mechanics
+                self._state.player_metric_jobs = {
+                    p: {"status": "ready" if p == analysis_player else "idle", "message": "Metrics ready." if p == analysis_player else "Not selected.", "error": ""}
+                    for p in (session.players or [])
+                }
+                self._set_job(
+                    session_id=str(session.session_id or ""),
+                    status="ready",
+                    progress=1.0,
+                    message="Replay loaded from cache. Ready to play.",
+                    replay_name=str(session.replay_name or ""),
+                    phase="ready",
+                    checklist={
+                        "upload_received": True,
+                        "replay_parsed": True,
+                        "timeline_ready": True,
+                        "analysis_ready": bool(analysis_player),
+                        "dashboard_ready": True,
+                    },
+                )
+            return True
+        except Exception:
+            return False
+
     def login_profile(self, *, username: str, rank_tier: str, platform: str, aliases: list[str] | None = None) -> Dict[str, Any]:
         profile = self._db.upsert_user(username=username, rank_tier=rank_tier, platform=platform, aliases=aliases)
         removed = int(self._db.prune_duplicate_replay_names(user_id=int(profile["id"])) or 0)
@@ -144,12 +272,45 @@ class ReplayStateStore:
         with self._lock:
             self._state.current_user = {}
 
+    def clear_current_replay(self) -> None:
+        with self._lock:
+            self._state.session = None
+            self._state.player_metric_jobs = {}
+            self._state.metrics_status = "idle"
+            self._state.metrics_error = ""
+            self._state.metrics_ready_count = 0
+            self._state.metrics_total_count = 0
+            self._state.analysis_player = ""
+            self._state.analysis_locked = False
+            self._state.analysis_ready = False
+            self._state.analysis_error = ""
+            self._state.mechanics = {}
+            self._state.explain_progress = {}
+            self._state.explain_background_session_id = ""
+            self._set_job(
+                session_id="",
+                status="idle",
+                progress=0.0,
+                message="No replay loaded.",
+                replay_name="",
+                phase="idle",
+                checklist={
+                    "upload_received": False,
+                    "replay_parsed": False,
+                    "timeline_ready": False,
+                    "analysis_ready": False,
+                    "dashboard_ready": False,
+                },
+            )
+
     def logout_profile(self) -> None:
         self._db.clear_active_user()
         with self._lock:
             self._state.current_user = {}
             self._state.recommendations = {}
             self._state.mechanics = {}
+            self._state.explain_progress = {}
+            self._state.explain_background_session_id = ""
 
     def refresh_recommendations(self) -> Dict[str, Any]:
         profile = self._require_user()
@@ -253,6 +414,8 @@ class ReplayStateStore:
         persist_to_library: bool = True,
     ) -> str:
         profile = self._require_user()
+        # Keep DB/library aligned: if not visible in library (no blob), it should not remain saved.
+        self._db.delete_replay_sessions_without_blob(user_id=int(profile["id"]))
         # Cleanup legacy duplicates before enforcing current constraints.
         if persist_to_library:
             removed = int(self._db.prune_duplicate_replay_names(user_id=int(profile["id"])) or 0)
@@ -302,9 +465,12 @@ class ReplayStateStore:
             self._state.analysis_ready = False
             self._state.analysis_error = ""
             self._state.mechanics = {}
+            self._state.explain_progress = {}
+            self._state.explain_background_session_id = ""
 
         def _run():
             nonlocal session_id
+            t_all = time.time()
             try:
                 with self._lock:
                     self._state.job.status = "parsing"
@@ -313,8 +479,39 @@ class ReplayStateStore:
                     self._state.job.phase = "parsing"
                     self._state.job.checklist["upload_received"] = True
 
+                t_parse = time.time()
                 session = load_replay_bytes(file_name=file_name, data=data, rrrocket_override=rrrocket_override)
+                self._timed("parse_replay_bytes", t_parse)
                 session_id = session.session_id
+                tracked_name = self._match_profile_player(players=[str(p) for p in (session.players or [])], profile=profile)
+                if not tracked_name:
+                    wanted = str(profile.get("username", "") or "your account")
+                    msg = f"No player with name '{wanted}' found in this replay. Please try another replay."
+                    with self._lock:
+                        self._state.session = None
+                        self._state.player_metric_jobs = {}
+                        self._state.analysis_player = ""
+                        self._state.analysis_locked = False
+                        self._state.analysis_ready = False
+                        self._state.mechanics = {}
+                        self._set_job(
+                            session_id=session_id,
+                            status="error",
+                            progress=1.0,
+                            message=msg,
+                            error=msg,
+                            replay_name=file_name,
+                            phase="error",
+                            checklist={
+                                "upload_received": True,
+                                "replay_parsed": True,
+                                "timeline_ready": False,
+                                "analysis_ready": False,
+                                "dashboard_ready": False,
+                            },
+                        )
+                    return
+
                 replay_dir = self._artifact_root / session_id
                 replay_dir.mkdir(parents=True, exist_ok=True)
                 replay_path = replay_dir / Path(file_name).name
@@ -326,22 +523,6 @@ class ReplayStateStore:
                     self._state.job.message = "Replay parsed and timeline built."
 
                 with self._lock:
-                    target_player = ""
-                    try:
-                        names = [str(profile.get("username", "") or "")]
-                        names.extend([str(x or "") for x in (profile.get("aliases", []) or [])])
-                        acceptable = set(
-                            "".join(ch.lower() for ch in n if ch.isalnum() or ch in ("_", "-"))
-                            for n in names
-                            if n
-                        )
-                        for p in session.players:
-                            p_norm = "".join(ch.lower() for ch in str(p) if ch.isalnum() or ch in ("_", "-"))
-                            if p_norm and p_norm in acceptable:
-                                target_player = str(p)
-                                break
-                    except Exception:
-                        target_player = ""
                     self._state.session = session
                     self._state.player_metric_jobs = {
                         p: {"status": "idle", "message": "Select player and run analysis.", "error": ""} for p in session.players
@@ -350,8 +531,8 @@ class ReplayStateStore:
                     self._state.metrics_error = ""
                     self._state.metrics_ready_count = 0
                     self._state.metrics_total_count = 1 if session.players else 0
-                    self._state.analysis_player = target_player
-                    self._state.analysis_locked = bool(target_player)
+                    self._state.analysis_player = tracked_name
+                    self._state.analysis_locked = True
                     self._state.analysis_ready = False
                     self._state.analysis_error = ""
                     self._set_job(
@@ -369,24 +550,6 @@ class ReplayStateStore:
                             "dashboard_ready": True,
                         },
                     )
-                tracked_name = ""
-                try:
-                    names = [str(profile.get("username", "") or "")]
-                    names.extend([str(x or "") for x in (profile.get("aliases", []) or [])])
-                    acceptable = set(
-                        "".join(ch.lower() for ch in n if ch.isalnum() or ch in ("_", "-"))
-                        for n in names
-                        if n
-                    )
-                    for p in session.players:
-                        k = "".join(ch.lower() for ch in str(p) if ch.isalnum() or ch in ("_", "-"))
-                        if k and k in acceptable:
-                            tracked_name = p
-                            break
-                except Exception:
-                    tracked_name = ""
-                if not tracked_name and session.players:
-                    tracked_name = str(session.players[0])
                 summary = {}
                 if session.players:
                     summary["player_count"] = len(session.players)
@@ -395,6 +558,7 @@ class ReplayStateStore:
                 summary["replay_date_iso"] = replay_date_iso
                 summary["replay_date_source"] = "replay_meta" if replay_date_iso else "created_at_fallback"
                 if persist_to_library:
+                    t_save = time.time()
                     self._db.save_replay_session(
                         session_id=session.session_id,
                         user_id=int(profile["id"]),
@@ -408,6 +572,11 @@ class ReplayStateStore:
                         replay_blob=data,
                         summary=summary,
                     )
+                    self._timed("save_replay_session_blob", t_save)
+                    saved = self._db.get_replay_session(session_id=session.session_id, user_id=int(profile["id"])) or {}
+                    if not bool(saved.get("has_replay_blob", False)):
+                        raise RuntimeError("Replay upload was parsed but could not be persisted to DB blob storage.")
+                self._timed("start_processing_total", t_all)
             except Exception as exc:
                 trace = traceback.format_exc()
                 with self._lock:
@@ -427,32 +596,70 @@ class ReplayStateStore:
 
     def library_sessions(self) -> Dict[str, Any]:
         profile = self._require_user()
+        self._db.delete_replay_sessions_without_blob(user_id=int(profile["id"]))
         removed = int(self._db.prune_duplicate_replay_names(user_id=int(profile["id"])) or 0)
+        sessions = self._db.list_replay_sessions(user_id=int(profile["id"]), limit=300)
         with self._lock:
             self._state.last_duplicate_cleanup_removed = removed
         return {
             "profile": profile,
-            "sessions": self._db.list_replay_sessions(user_id=int(profile["id"]), limit=300),
+            "sessions": sessions,
             "cleanup": {"duplicate_names_removed": removed},
         }
 
-    def open_saved_replay(self, session_id: str) -> str:
+    def open_saved_replay(self, session_id: str) -> Dict[str, Any]:
         profile = self._require_user()
         row = self._db.get_replay_session(session_id=session_id, user_id=int(profile["id"]))
         if not row:
             raise RuntimeError("Saved replay not found.")
+        t_open = time.time()
+        if bool(row.get("has_prepared_payload", False)) and row.get("prepared_payload", None):
+            if self._load_prepared_replay_into_state(row=row):
+                self._timed("open_saved_prepared_payload", t_open)
+                sid = str(row.get("session_id", "") or session_id)
+                return {
+                    "session_id": sid,
+                    "opened_from_prepared_cache": True,
+                    "opened_from_replay_blob": False,
+                    "requires_reanalysis": False,
+                    "open_mode": "prepared_cache",
+                }
+        blob = row.get("replay_blob", None)
+        replay_name = str(row.get("replay_name", "") or "")
+        if isinstance(blob, (bytes, bytearray)) and len(blob) > 0:
+            fallback_name = replay_name or f"{session_id}.replay"
+            sid = self.start_processing(file_name=Path(fallback_name).name, data=bytes(blob), persist_to_library=False)
+            return {
+                "session_id": str(sid or ""),
+                "opened_from_prepared_cache": False,
+                "opened_from_replay_blob": True,
+                "requires_reanalysis": True,
+                "open_mode": "replay_blob",
+            }
         manifest = row.get("artifact_manifest", {}) or {}
         replay_file = Path(str(manifest.get("replay_file", "")))
         if replay_file.exists() and replay_file.is_file():
-            return self.start_processing(file_name=replay_file.name, data=replay_file.read_bytes(), persist_to_library=False)
-        replay_name = str(row.get("replay_name", "") or replay_file.name or "")
+            sid = self.start_processing(file_name=replay_file.name, data=replay_file.read_bytes(), persist_to_library=False)
+            return {
+                "session_id": str(sid or ""),
+                "opened_from_prepared_cache": False,
+                "opened_from_replay_blob": False,
+                "requires_reanalysis": True,
+                "open_mode": "artifact_file",
+            }
+        replay_name = str(replay_name or replay_file.name or "")
         alt = self._find_replay_in_folders(replay_name)
         if alt and alt.exists() and alt.is_file():
-            return self.start_processing(file_name=alt.name, data=alt.read_bytes(), persist_to_library=False)
-        blob = row.get("replay_blob", None)
-        if isinstance(blob, (bytes, bytearray)) and len(blob) > 0:
-            fallback_name = replay_name or f"{session_id}.replay"
-            return self.start_processing(file_name=Path(fallback_name).name, data=bytes(blob), persist_to_library=False)
+            sid = self.start_processing(file_name=alt.name, data=alt.read_bytes(), persist_to_library=False)
+            return {
+                "session_id": str(sid or ""),
+                "opened_from_prepared_cache": False,
+                "opened_from_replay_blob": False,
+                "requires_reanalysis": True,
+                "open_mode": "replay_folder",
+            }
+        # Stale entry (old non-blob save); remove it to prevent repeated failures.
+        self._db.delete_replay_session(session_id=str(session_id), user_id=int(profile["id"]))
         raise RuntimeError("Saved replay not found in artifact path, replay folders, or DB backup.")
 
     def status_snapshot(self) -> Dict[str, Any]:
@@ -521,6 +728,7 @@ class ReplayStateStore:
                 self._state.player_metric_jobs[player] = {"status": "idle", "message": "Not started.", "error": ""}
 
     def run_selected_analysis(self) -> None:
+        t_analysis = time.time()
         with self._lock:
             session = self._state.session
             if not session:
@@ -554,6 +762,8 @@ class ReplayStateStore:
         with self._lock:
             self._state.mechanics = mech_payload
         self._persist_analysis_summary(session, player, mech_payload)
+        self._persist_prepared_replay(session=session, player=player, mechanics_payload=mech_payload)
+        self._timed("run_selected_analysis_total", t_analysis)
 
     def analysis_status(self) -> Dict[str, Any]:
         with self._lock:
@@ -760,6 +970,355 @@ class ReplayStateStore:
             "deterministic": det,
             "llm": llm,
         }
+
+    @staticmethod
+    def _event_hash_for_cache(*, mechanic_id: str, time_s: float, quality_label: str, score: float, reason: str) -> str:
+        payload = {
+            "mechanic_id": str(mechanic_id or ""),
+            "time_s": float(time_s or 0.0),
+            "quality_label": str(quality_label or ""),
+            "score": float(score or 0.0),
+            "reason": str(reason or ""),
+        }
+        return hashlib.sha1(str(payload).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _replay_fingerprint_for_events(events: List[Dict[str, Any]]) -> str:
+        slim = []
+        for e in events:
+            slim.append(
+                {
+                    "key": str(e.get("key", "") or ""),
+                    "event_hash": str(e.get("event_hash", "") or ""),
+                }
+            )
+        return hashlib.sha1(str(slim).encode("utf-8")).hexdigest()
+
+    def explain_progress(self) -> Dict[str, Any]:
+        with self._lock:
+            return dict(self._state.explain_progress or {})
+
+    def _maybe_start_explain_background(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        replay_fingerprint: str,
+        model_id: str,
+        prompt_version: str,
+        remaining_inputs: List[Dict[str, Any]],
+    ) -> bool:
+        if not remaining_inputs:
+            return False
+
+        with self._lock:
+            running = bool((self._state.explain_progress or {}).get("running"))
+            same_session = str(self._state.explain_background_session_id or "") == str(session_id or "")
+            if running and same_session:
+                return False
+            self._state.explain_background_session_id = str(session_id or "")
+            self._state.explain_progress = {
+                "session_id": str(session_id or ""),
+                "running": True,
+                "complete": False,
+                "generated_count": 0,
+                "cached_count": 0,
+                "pending_count": len(remaining_inputs),
+                "total_count": len(remaining_inputs),
+                "message": "Generating remaining event explanations in background...",
+                "updated_at": datetime.utcnow().isoformat() + "Z",
+            }
+
+        def _run():
+            generated = 0
+            pending = len(remaining_inputs)
+            try:
+                chunk_size = 25
+                for i in range(0, len(remaining_inputs), chunk_size):
+                    chunk = remaining_inputs[i:i + chunk_size]
+                    req_inputs = [
+                        {
+                            "key": str(it.get("key", "") or ""),
+                            "mechanic": str(it.get("mechanic", "") or ""),
+                            "time_s": float(it.get("time_s", 0.0) or 0.0),
+                            "quality_label": str(it.get("quality_label", "") or "neutral"),
+                            "score": float(it.get("score", 0.0) or 0.0),
+                            "reason": str(it.get("reason", "") or ""),
+                        }
+                        for it in chunk
+                    ]
+                    llm_map = maybe_rewrite_explanations_batch(req_inputs)
+                    writes = []
+                    for it in chunk:
+                        key = str(it.get("key", "") or "")
+                        txt = str(llm_map.get(key, "") or "").strip()
+                        if not key or not txt:
+                            continue
+                        writes.append(
+                            {
+                                "event_key": key,
+                                "mechanic_id": str(it.get("mechanic", "") or ""),
+                                "event_time_s": float(it.get("time_s", 0.0) or 0.0),
+                                "event_hash": str(it.get("event_hash", "") or ""),
+                                "title": str(it.get("title", "") or ""),
+                                "body": txt,
+                            }
+                        )
+                    if writes:
+                        self._db.upsert_llm_event_explanations(
+                            user_id=int(user_id),
+                            replay_fingerprint=str(replay_fingerprint or ""),
+                            model_id=str(model_id or ""),
+                            prompt_version=str(prompt_version or ""),
+                            rows=writes,
+                        )
+                        generated += len(writes)
+                    pending = max(0, pending - len(chunk))
+                    with self._lock:
+                        self._state.explain_progress = {
+                            "session_id": str(session_id or ""),
+                            "running": True,
+                            "complete": False,
+                            "generated_count": generated,
+                            "cached_count": 0,
+                            "pending_count": pending,
+                            "total_count": len(remaining_inputs),
+                            "message": f"Generating remaining event explanations... ({generated}/{len(remaining_inputs)})",
+                            "updated_at": datetime.utcnow().isoformat() + "Z",
+                        }
+            finally:
+                with self._lock:
+                    self._state.explain_progress = {
+                        "session_id": str(session_id or ""),
+                        "running": False,
+                        "complete": True,
+                        "generated_count": generated,
+                        "cached_count": 0,
+                        "pending_count": 0,
+                        "total_count": len(remaining_inputs),
+                        "message": "Background explanation generation complete.",
+                        "updated_at": datetime.utcnow().isoformat() + "Z",
+                    }
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        return True
+
+    def explain_mechanic_events_batch(
+        self,
+        *,
+        include_llm: bool = True,
+        mode: str = "hybrid",
+        time_budget_s: float = 20.0,
+        preload_limit: int = 20,
+    ) -> Dict[str, Any]:
+        t_batch = time.time()
+        with self._lock:
+            session = self._state.session
+            ready = self._state.analysis_ready
+            player = self._state.analysis_player
+        if not session or not ready or not player:
+            raise RuntimeError("Run analysis for the selected player first.")
+        profile = self.current_profile() or {}
+        if not profile:
+            raise RuntimeError("Please log in first.")
+
+        payload = self.current_mechanics() or {}
+        evs = list(payload.get("mechanic_events", []) or [])
+        if not evs:
+            out = {
+                "items": [],
+                "complete": True,
+                "generated_count": 0,
+                "cached_count": 0,
+                "pending_count": 0,
+                "background_started": False,
+            }
+            self._timed("explain_mechanic_events_batch", t_batch)
+            return out
+
+        uniq: Dict[str, Dict[str, Any]] = {}
+        for e in evs:
+            key = f"{str(e.get('mechanic_id', '')).strip()}|{float(e.get('time', 0.0) or 0.0):.3f}"
+            if key not in uniq:
+                uniq[key] = dict(e or {})
+        ordered = sorted(uniq.items(), key=lambda kv: float(kv[1].get("time", 0.0) or 0.0))
+
+        model_id = str(os.environ.get("RLBOT_LLM_MODEL", "gpt-4o-mini") or "gpt-4o-mini")
+        prompt_version = str(os.environ.get("RLBOT_LLM_PROMPT_VERSION", "v1") or "v1")
+        mode_norm = str(mode or "hybrid").strip().lower()
+        if mode_norm not in {"hybrid", "full"}:
+            mode_norm = "hybrid"
+        budget_s = max(0.0, float(time_budget_s or 0.0))
+        preload_n = max(1, int(preload_limit or 1))
+
+        items: List[Dict[str, Any]] = []
+        items_by_key: Dict[str, Dict[str, Any]] = {}
+        llm_inputs: List[Dict[str, Any]] = []
+        for key, e in ordered:
+            t = float(e.get("time", 0.0) or 0.0)
+            mid = str(e.get("mechanic_id", "") or "")
+            q = str(e.get("quality_label", "") or "neutral")
+            score = float(e.get("score", e.get("quality_score", 0.0)) or 0.0)
+            reason = str(e.get("reason", "") or "")
+            event_hash = self._event_hash_for_cache(mechanic_id=mid, time_s=t, quality_label=q, score=score, reason=reason)
+            title = f"{mid or 'mechanic'} @ {t:.2f}s"
+            body = (
+                f"At {t:.2f}s, {mid or 'this mechanic'} was {q} ({score:.1f}/100). "
+                f"{reason if reason else 'Focus on cleaner setup and faster recovery on the next attempt.'}"
+            )
+            item = {
+                "key": key,
+                "time": t,
+                "mechanic_id": mid,
+                "quality_label": q,
+                "score": score,
+                "reason": reason,
+                "title": title,
+                "body": body,
+                "event_hash": event_hash,
+            }
+            items.append(item)
+            items_by_key[key] = item
+            llm_inputs.append(
+                {
+                    "key": key,
+                    "mechanic": mid,
+                    "time_s": t,
+                    "quality_label": q,
+                    "score": score,
+                    "reason": reason,
+                    "title": title,
+                    "event_hash": event_hash,
+                }
+            )
+
+        replay_fingerprint = self._replay_fingerprint_for_events(llm_inputs)
+        cached = self._db.list_llm_event_explanations(
+            user_id=int(profile["id"]),
+            replay_fingerprint=replay_fingerprint,
+            model_id=model_id,
+            prompt_version=prompt_version,
+        )
+        cached_count = 0
+        for key, row in cached.items():
+            item = items_by_key.get(key)
+            if not item:
+                continue
+            if str(row.get("event_hash", "")) != str(item.get("event_hash", "")):
+                continue
+            text = str(row.get("body", "") or "").strip()
+            if not text:
+                continue
+            item["body"] = text
+            item["title"] = str(row.get("title", "") or item["title"])
+            cached_count += 1
+
+        missing = [x for x in llm_inputs if str(x.get("key", "")) not in {k for k, v in items_by_key.items() if str(v.get("body", "")).strip() != "" and str(v.get("event_hash", "")) == str((cached.get(k) or {}).get("event_hash", ""))}]
+        # Remove items already filled from cache by exact event hash.
+        missing = [x for x in missing if not (cached.get(str(x.get("key", ""))) and str((cached.get(str(x.get("key", ""))) or {}).get("event_hash", "")) == str(x.get("event_hash", "")))]
+
+        generated_count = 0
+        background_started = False
+
+        if include_llm and missing:
+            def _quality_rank(inp: Dict[str, Any]) -> int:
+                q = str(inp.get("quality_label", "") or "").lower()
+                if q.startswith("bad"):
+                    return 0
+                if q.startswith("neutral"):
+                    return 1
+                return 2
+
+            prioritized = sorted(
+                missing,
+                key=lambda x: (
+                    _quality_rank(x),
+                    float(x.get("score", 0.0) or 0.0),
+                    float(x.get("time_s", 0.0) or 0.0),
+                ),
+            )
+            upfront = prioritized if mode_norm == "full" else prioritized[:preload_n]
+            upfront_keys = {str(x.get("key", "")) for x in upfront}
+            start_ts = datetime.utcnow().timestamp()
+            if upfront and (budget_s <= 0.0 or (datetime.utcnow().timestamp() - start_ts) <= budget_s):
+                req_inputs = [
+                    {
+                        "key": str(it.get("key", "") or ""),
+                        "mechanic": str(it.get("mechanic", "") or ""),
+                        "time_s": float(it.get("time_s", 0.0) or 0.0),
+                        "quality_label": str(it.get("quality_label", "") or "neutral"),
+                        "score": float(it.get("score", 0.0) or 0.0),
+                        "reason": str(it.get("reason", "") or ""),
+                    }
+                    for it in upfront
+                ]
+                llm_map = maybe_rewrite_explanations_batch(req_inputs)
+                writes = []
+                for it in upfront:
+                    key = str(it.get("key", "") or "")
+                    txt = str(llm_map.get(key, "") or "").strip()
+                    if not key or not txt:
+                        continue
+                    item = items_by_key.get(key)
+                    if not item:
+                        continue
+                    item["body"] = txt
+                    writes.append(
+                        {
+                            "event_key": key,
+                            "mechanic_id": str(it.get("mechanic", "") or ""),
+                            "event_time_s": float(it.get("time_s", 0.0) or 0.0),
+                            "event_hash": str(it.get("event_hash", "") or ""),
+                            "title": str(item.get("title", "") or ""),
+                            "body": txt,
+                        }
+                    )
+                if writes:
+                    self._db.upsert_llm_event_explanations(
+                        user_id=int(profile["id"]),
+                        replay_fingerprint=replay_fingerprint,
+                        model_id=model_id,
+                        prompt_version=prompt_version,
+                        rows=writes,
+                    )
+                    generated_count += len(writes)
+
+            if mode_norm == "hybrid":
+                remaining = [x for x in missing if str(x.get("key", "")) not in upfront_keys]
+                background_started = self._maybe_start_explain_background(
+                    session_id=str(session.session_id or ""),
+                    user_id=int(profile["id"]),
+                    replay_fingerprint=replay_fingerprint,
+                    model_id=model_id,
+                    prompt_version=prompt_version,
+                    remaining_inputs=remaining,
+                )
+
+        progress = self.explain_progress()
+        pending_count = max(0, int(progress.get("pending_count", 0) or 0))
+        complete = not bool(progress.get("running")) and pending_count == 0 and (cached_count + generated_count) >= len(llm_inputs)
+        if mode_norm == "full":
+            pending_count = 0
+            complete = True
+            background_started = False
+
+        clean_items = []
+        for it in items:
+            row = dict(it)
+            row.pop("event_hash", None)
+            clean_items.append(row)
+
+        out = {
+            "items": clean_items,
+            "complete": bool(complete),
+            "generated_count": int(generated_count),
+            "cached_count": int(cached_count),
+            "pending_count": int(max(0, pending_count)),
+            "background_started": bool(background_started),
+        }
+        self._timed("explain_mechanic_events_batch", t_batch)
+        return out
 
     def metrics_capabilities(self) -> Dict[str, Any]:
         with self._lock:

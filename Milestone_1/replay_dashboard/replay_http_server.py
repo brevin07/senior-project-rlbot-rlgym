@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -10,6 +11,12 @@ import threading
 from typing import Any, Dict
 import re
 from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
+
+try:
+    import jwt
+except Exception:  # pragma: no cover - optional import guard
+    jwt = None
 
 from replay_state_store import DuplicateReplayError, ReplayStateStore
 
@@ -19,6 +26,10 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
     web_dir: Path = None
     collision_mesh_dir: Path = None
     session_cookie = "rlcoach_session"
+    cognito_issuer: str = os.environ.get("COGNITO_ISSUER", "https://cognito-idp.us-east-2.amazonaws.com/us-east-2_5hkzGscoV")
+    cognito_client_id: str = os.environ.get("COGNITO_CLIENT_ID", "63i8m61hqnkapc5s401grl144p")
+    cognito_jwt_leeway_seconds: int = int(os.environ.get("COGNITO_JWT_LEEWAY_SECONDS", "120") or "120")
+    _jwks_cache: Dict[str, Any] = {"exp": 0.0, "keys": {}}
 
     def _get_session_id(self) -> str:
         raw = self.headers.get("Cookie", "")
@@ -53,6 +64,54 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
         profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
         self.store.set_current_user(profile)
         return {"auth": auth, "profile": profile}
+
+    @classmethod
+    def _jwks_uri(cls) -> str:
+        base = str(cls.cognito_issuer or "").rstrip("/")
+        return f"{base}/.well-known/jwks.json"
+
+    @classmethod
+    def _load_jwks(cls) -> Dict[str, Any]:
+        now = time.time()
+        if cls._jwks_cache.get("keys") and float(cls._jwks_cache.get("exp", 0.0)) > now:
+            return cls._jwks_cache["keys"]
+        with urlopen(cls._jwks_uri(), timeout=8) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        keys = {str(k.get("kid")): k for k in (payload.get("keys") or []) if k.get("kid")}
+        cls._jwks_cache = {"exp": now + 3600.0, "keys": keys}
+        return keys
+
+    @classmethod
+    def _verify_cognito_id_token(cls, token: str) -> Dict[str, Any]:
+        if jwt is None:
+            raise RuntimeError("Missing dependency: PyJWT. Install requirements/base.txt.")
+        if not token:
+            raise RuntimeError("Missing id_token")
+        header = jwt.get_unverified_header(token)
+        kid = str(header.get("kid") or "")
+        if not kid:
+            raise RuntimeError("Invalid token header")
+        keys = cls._load_jwks()
+        jwk = keys.get(kid)
+        if not jwk:
+            cls._jwks_cache = {"exp": 0.0, "keys": {}}
+            keys = cls._load_jwks()
+            jwk = keys.get(kid)
+            if not jwk:
+                raise RuntimeError("Unable to verify token signature (unknown key id)")
+        key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
+        claims = jwt.decode(
+            token,
+            key=key,
+            algorithms=["RS256"],
+            audience=str(cls.cognito_client_id or ""),
+            issuer=str(cls.cognito_issuer or ""),
+            leeway=max(0, int(cls.cognito_jwt_leeway_seconds)),
+        )
+        token_use = str(claims.get("token_use") or "")
+        if token_use and token_use != "id":
+            raise RuntimeError("Expected Cognito ID token")
+        return claims
 
     @staticmethod
     def _discover_replay_folder() -> Path:
@@ -263,6 +322,12 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True, "events": data})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if path == "/api/mechanics/explain_progress":
+            try:
+                data = self.store.explain_progress()
+                return self._send_json({"ok": True, "data": data})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if path == "/api/profile/history":
             try:
                 data = self.store.library_sessions()
@@ -359,6 +424,33 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                     self.store.set_current_user(profile)
         except Exception:
             pass
+        if self.path == "/api/auth/cognito/login":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                claims = self._verify_cognito_id_token(str(body.get("id_token", "")).strip())
+                auth = self.store._db.upsert_auth_user_from_cognito(
+                    cognito_sub=str(claims.get("sub", "")).strip(),
+                    email=str(claims.get("email", "")).strip(),
+                )
+                sid = self.store._db.create_session(user_id=int(auth["id"]))
+                profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
+                self.store.set_current_user(profile)
+                self.store.clear_current_replay()
+                self.send_response(HTTPStatus.OK)
+                self._set_session_cookie(sid)
+                self.send_header("Content-Type", "application/json")
+                payload = json.dumps({"ok": True, "auth": auth, "profile": profile}).encode("utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=401)
         if self.path == "/api/auth/signup":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length) if length > 0 else b"{}"
@@ -372,6 +464,7 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                 auth = self.store._db.create_auth_user(email=email, password=password)
                 sid = self.store._db.create_session(user_id=int(auth["id"]))
                 profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
+                self.store.clear_current_replay()
                 self.send_response(HTTPStatus.OK)
                 self._set_session_cookie(sid)
                 self.send_header("Content-Type", "application/json")
@@ -397,6 +490,7 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                 sid = self.store._db.create_session(user_id=int(auth["id"]))
                 profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
                 self.store.set_current_user(profile)
+                self.store.clear_current_replay()
                 self.send_response(HTTPStatus.OK)
                 self._set_session_cookie(sid)
                 self.send_header("Content-Type", "application/json")
@@ -440,6 +534,7 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                     auth_user_id=int(auth["id"]),
                 )
                 self.store.set_current_user(profile)
+                self.store.clear_current_replay()
                 return self._send_json({"ok": True, "profile": profile})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
@@ -483,6 +578,12 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                     },
                     status=400,
                 )
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path == "/api/replay/clear_current":
+            try:
+                self.store.clear_current_replay()
+                return self._send_json({"ok": True})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/replay/open_default_folder":
@@ -536,6 +637,27 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True, "data": data})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path == "/api/mechanics/explain_batch":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                include_llm = bool(body.get("include_llm", True))
+                mode = str(body.get("mode", "hybrid") or "hybrid")
+                time_budget_s = float(body.get("time_budget_s", 20.0) or 20.0)
+                preload_limit = int(body.get("preload_limit", 20) or 20)
+                data = self.store.explain_mechanic_events_batch(
+                    include_llm=include_llm,
+                    mode=mode,
+                    time_budget_s=time_budget_s,
+                    preload_limit=preload_limit,
+                )
+                return self._send_json({"ok": True, "data": data})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/replay/open_saved":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length) if length > 0 else b"{}"
@@ -547,8 +669,8 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
             if not sid:
                 return self._send_json({"ok": False, "error": "Missing session_id"}, status=400)
             try:
-                new_sid = self.store.open_saved_replay(sid)
-                return self._send_json({"ok": True, "session_id": new_sid})
+                result = self.store.open_saved_replay(sid)
+                return self._send_json({"ok": True, **dict(result or {})})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
 

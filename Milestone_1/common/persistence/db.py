@@ -89,6 +89,7 @@ class AppDB:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     email TEXT NOT NULL,
                     email_norm TEXT NOT NULL UNIQUE,
+                    cognito_sub TEXT UNIQUE,
                     password_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -129,6 +130,7 @@ class AppDB:
                     created_at TEXT NOT NULL,
                     artifact_manifest_json TEXT NOT NULL,
                     replay_blob BLOB,
+                    prepared_payload BLOB,
                     summary_json TEXT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(id)
                 );
@@ -168,17 +170,48 @@ class AppDB:
                     outcome_json TEXT NOT NULL DEFAULT '{}',
                     FOREIGN KEY(user_id) REFERENCES users(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS llm_event_explanations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    replay_fingerprint TEXT NOT NULL,
+                    event_key TEXT NOT NULL,
+                    mechanic_id TEXT NOT NULL,
+                    event_time_s REAL NOT NULL,
+                    event_hash TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    prompt_version TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(user_id, replay_fingerprint, event_key, model_id, prompt_version, event_hash),
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_llm_event_explanations_lookup
+                ON llm_event_explanations(user_id, replay_fingerprint, model_id, prompt_version, updated_at DESC);
                 """
             )
             cols = conn.execute("PRAGMA table_info(replay_sessions)").fetchall()
             col_names = {str(r["name"]) for r in cols}
             if "replay_blob" not in col_names:
                 conn.execute("ALTER TABLE replay_sessions ADD COLUMN replay_blob BLOB")
+            if "prepared_payload" not in col_names:
+                conn.execute("ALTER TABLE replay_sessions ADD COLUMN prepared_payload BLOB")
             user_cols = conn.execute("PRAGMA table_info(users)").fetchall()
             user_col_names = {str(r["name"]) for r in user_cols}
             if "auth_user_id" not in user_col_names:
                 conn.execute("ALTER TABLE users ADD COLUMN auth_user_id INTEGER")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_users_auth_user ON users(auth_user_id)")
+            auth_cols = conn.execute("PRAGMA table_info(auth_users)").fetchall()
+            auth_col_names = {str(r["name"]) for r in auth_cols}
+            if "cognito_sub" not in auth_col_names:
+                conn.execute("ALTER TABLE auth_users ADD COLUMN cognito_sub TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_cognito_sub ON auth_users(cognito_sub)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_llm_event_explanations_lookup "
+                "ON llm_event_explanations(user_id, replay_fingerprint, model_id, prompt_version, updated_at DESC)"
+            )
 
     @staticmethod
     def _row_to_user(row: sqlite3.Row | None) -> Dict[str, Any] | None:
@@ -255,6 +288,59 @@ class AppDB:
                 "email": str(row["email"]),
                 "created_at": str(row["created_at"]),
                 "updated_at": str(row["updated_at"]),
+            }
+
+    def upsert_auth_user_from_cognito(self, *, cognito_sub: str, email: str) -> Dict[str, Any]:
+        sub = str(cognito_sub or "").strip()
+        if not sub:
+            raise RuntimeError("cognito_sub is required")
+        clean_email = str(email or "").strip()
+        email_norm = _email_norm(clean_email)
+        now = _utc_now_iso()
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM auth_users WHERE cognito_sub = ?", (sub,)).fetchone()
+            if row:
+                if clean_email:
+                    conn.execute(
+                        "UPDATE auth_users SET email = ?, email_norm = ?, updated_at = ? WHERE id = ?",
+                        (clean_email, email_norm, now, int(row["id"])),
+                    )
+                out = conn.execute("SELECT * FROM auth_users WHERE id = ?", (int(row["id"]),)).fetchone()
+                return {
+                    "id": int(out["id"]),
+                    "email": str(out["email"]),
+                    "created_at": str(out["created_at"]),
+                    "updated_at": str(out["updated_at"]),
+                }
+
+            if clean_email:
+                row = conn.execute("SELECT * FROM auth_users WHERE email_norm = ?", (email_norm,)).fetchone()
+                if row:
+                    conn.execute(
+                        "UPDATE auth_users SET cognito_sub = ?, email = ?, updated_at = ? WHERE id = ?",
+                        (sub, clean_email, now, int(row["id"])),
+                    )
+                    out = conn.execute("SELECT * FROM auth_users WHERE id = ?", (int(row["id"]),)).fetchone()
+                    return {
+                        "id": int(out["id"]),
+                        "email": str(out["email"]),
+                        "created_at": str(out["created_at"]),
+                        "updated_at": str(out["updated_at"]),
+                    }
+            if not clean_email:
+                clean_email = f"{sub}@cognito.local"
+                email_norm = _email_norm(clean_email)
+            pw = self._hash_password(secrets.token_urlsafe(32))
+            conn.execute(
+                "INSERT INTO auth_users (email, email_norm, cognito_sub, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (clean_email, email_norm, sub, pw, now, now),
+            )
+            out = conn.execute("SELECT * FROM auth_users WHERE cognito_sub = ?", (sub,)).fetchone()
+            return {
+                "id": int(out["id"]),
+                "email": str(out["email"]),
+                "created_at": str(out["created_at"]),
+                "updated_at": str(out["updated_at"]),
             }
 
     def create_session(self, *, user_id: int, hours: int = 24 * 7) -> str:
@@ -443,6 +529,7 @@ class AppDB:
         tracked_player_index: int,
         artifact_manifest: Dict[str, Any],
         replay_blob: bytes | None = None,
+        prepared_payload: bytes | None = None,
         summary: Dict[str, Any],
         created_at: str | None = None,
     ) -> None:
@@ -455,8 +542,8 @@ class AppDB:
                 INSERT INTO replay_sessions (
                     id, user_id, source_type, replay_name, map_name, duration_s,
                     tracked_player_name, tracked_player_index, created_at,
-                    artifact_manifest_json, replay_blob, summary_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    artifact_manifest_json, replay_blob, prepared_payload, summary_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     user_id=excluded.user_id,
                     source_type=excluded.source_type,
@@ -467,6 +554,7 @@ class AppDB:
                     tracked_player_index=excluded.tracked_player_index,
                     artifact_manifest_json=excluded.artifact_manifest_json,
                     replay_blob=COALESCE(excluded.replay_blob, replay_sessions.replay_blob),
+                    prepared_payload=COALESCE(excluded.prepared_payload, replay_sessions.prepared_payload),
                     summary_json=excluded.summary_json
                 """,
                 (
@@ -481,6 +569,7 @@ class AppDB:
                     str(created_at or _utc_now_iso()),
                     json.dumps(artifact_manifest or {}, ensure_ascii=True),
                     replay_blob,
+                    prepared_payload,
                     json.dumps(summary or {}, ensure_ascii=True),
                 ),
             )
@@ -533,7 +622,7 @@ class AppDB:
             rows = conn.execute(
                 """
                 SELECT id, source_type, replay_name, map_name, duration_s, tracked_player_name,
-                       tracked_player_index, created_at, summary_json, replay_blob
+                       tracked_player_index, created_at, summary_json, replay_blob, prepared_payload
                 FROM replay_sessions
                 WHERE user_id = ?
                 ORDER BY created_at DESC
@@ -558,6 +647,7 @@ class AppDB:
                         "tracked_player_index": int(r["tracked_player_index"] or 0),
                         "created_at": str(r["created_at"]),
                         "has_replay_blob": bool(r["replay_blob"]),
+                        "has_prepared_payload": bool(r["prepared_payload"]),
                         "summary": summary,
                     }
                 )
@@ -597,6 +687,7 @@ class AppDB:
                         "tracked_player_index": int(r["tracked_player_index"] or 0),
                         "created_at": str(r["created_at"]),
                         "has_replay_blob": bool(r["replay_blob"]),
+                        "has_prepared_payload": bool(r["prepared_payload"]),
                         "artifact_manifest": artifact_manifest,
                         "summary": summary,
                     }
@@ -633,10 +724,30 @@ class AppDB:
                 "tracked_player_index": int(r["tracked_player_index"] or 0),
                 "created_at": str(r["created_at"]),
                 "has_replay_blob": bool(r["replay_blob"]),
+                "has_prepared_payload": bool(r["prepared_payload"]),
                 "replay_blob": bytes(r["replay_blob"]) if r["replay_blob"] is not None else None,
+                "prepared_payload": bytes(r["prepared_payload"]) if r["prepared_payload"] is not None else None,
                 "artifact_manifest": artifact_manifest,
                 "summary": summary,
             }
+
+    def delete_replay_session(self, *, session_id: str, user_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM replay_sessions WHERE id = ? AND user_id = ?",
+                (str(session_id), int(user_id)),
+            )
+
+    def delete_replay_sessions_without_blob(self, *, user_id: int) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM replay_sessions WHERE user_id = ? AND replay_blob IS NULL",
+                (int(user_id),),
+            )
+            try:
+                return int(cur.rowcount or 0)
+            except Exception:
+                return 0
 
     def upsert_event_label(
         self, *, session_id: str, event_id: str, label: str, note: str = "", author: str = "user"
@@ -669,3 +780,81 @@ class AppDB:
                     "author": str(r["author"] or "user"),
                 }
             return out
+
+    def list_llm_event_explanations(
+        self,
+        *,
+        user_id: int,
+        replay_fingerprint: str,
+        model_id: str,
+        prompt_version: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        fp = str(replay_fingerprint or "").strip()
+        if not fp:
+            return {}
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT event_key, event_hash, title, body, updated_at
+                FROM llm_event_explanations
+                WHERE user_id = ? AND replay_fingerprint = ? AND model_id = ? AND prompt_version = ?
+                ORDER BY updated_at DESC, id DESC
+                """,
+                (int(user_id), fp, str(model_id or ""), str(prompt_version or "")),
+            ).fetchall()
+            out: Dict[str, Dict[str, Any]] = {}
+            for r in rows:
+                k = str(r["event_key"] or "").strip()
+                if not k or k in out:
+                    continue
+                out[k] = {
+                    "event_hash": str(r["event_hash"] or ""),
+                    "title": str(r["title"] or ""),
+                    "body": str(r["body"] or ""),
+                    "updated_at": str(r["updated_at"] or ""),
+                }
+            return out
+
+    def upsert_llm_event_explanations(
+        self,
+        *,
+        user_id: int,
+        replay_fingerprint: str,
+        model_id: str,
+        prompt_version: str,
+        rows: List[Dict[str, Any]],
+    ) -> None:
+        fp = str(replay_fingerprint or "").strip()
+        if not fp or not rows:
+            return
+        now = _utc_now_iso()
+        with self._connect() as conn:
+            for row in rows:
+                event_key = str(row.get("event_key", "") or "").strip()
+                if not event_key:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO llm_event_explanations (
+                        user_id, replay_fingerprint, event_key, mechanic_id, event_time_s,
+                        event_hash, model_id, prompt_version, title, body, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, replay_fingerprint, event_key, model_id, prompt_version, event_hash) DO UPDATE SET
+                        title=excluded.title,
+                        body=excluded.body,
+                        updated_at=excluded.updated_at
+                    """,
+                    (
+                        int(user_id),
+                        fp,
+                        event_key,
+                        str(row.get("mechanic_id", "") or ""),
+                        float(row.get("event_time_s", 0.0) or 0.0),
+                        str(row.get("event_hash", "") or ""),
+                        str(model_id or ""),
+                        str(prompt_version or ""),
+                        str(row.get("title", "") or ""),
+                        str(row.get("body", "") or ""),
+                        now,
+                    ),
+                )

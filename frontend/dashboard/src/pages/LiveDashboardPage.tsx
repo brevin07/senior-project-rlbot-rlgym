@@ -32,7 +32,6 @@ const metricMeta = [
   { key: "useful_supersonic_percent", label: "Useful Supersonic %" },
   { key: "pressure_percent", label: "Pressure %" },
   { key: "whiff_rate_per_min", label: "Whiff Rate / min" },
-  { key: "approach_efficiency", label: "Approach Efficiency" },
   { key: "recovery_time_avg_s", label: "Recovery Avg (s)" },
 ];
 
@@ -101,7 +100,7 @@ export default function LiveDashboardPage() {
     <div className="live-dashboard">
       <header className="top">
         <div>
-          <h1>Live Scenario Analysis</h1>
+          <h1>Test Mechanic Events & Live Metrics</h1>
           <div className="status-text">Welcome, {profile?.username ?? "Pilot"}</div>
         </div>
         <div className="top-actions">
@@ -112,6 +111,14 @@ export default function LiveDashboardPage() {
       </header>
 
       {error && <div className="alert">{error}</div>}
+
+      <section className="profile-pill">
+        <span>
+          This page is ready now. If live services are offline, start later with:
+          {" "}
+          <code>powershell -ExecutionPolicy Bypass -File scripts\launch_live_analysis.ps1 -AttachOnly</code>
+        </span>
+      </section>
 
       <section className="controls">
         <label htmlFor="scenarioSelect">Scenario</label>

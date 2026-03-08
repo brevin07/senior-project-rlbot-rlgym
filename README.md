@@ -166,6 +166,38 @@ Expose via ngrok:
 powershell -ExecutionPolicy Bypass -File scripts\ngrok_dashboard.ps1 -Port 8888
 ```
 
+One-step RLCoach startup (loads `.env`, starts Docker replay+gateway, then ngrok):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_rlcoach_app.ps1 -BuildReact
+```
+
+Notes:
+- `-BuildReact` is optional and only needed when you want to rebuild frontend assets.
+- Live analysis is not auto-started. Run it later when needed:
+  - `powershell -ExecutionPolicy Bypass -File scripts\launch_live_analysis.ps1 -AttachOnly`
+- Legacy startup script names are still available as wrappers:
+  - `scripts\start_ngrok_replay.ps1`
+  - `scripts\start_rlcoach.ps1`
+
+### Cognito Sign-In (React)
+
+The React login page now performs direct Cognito User Pool API authentication
+(email/password) from the app UI, then exchanges the ID token with the backend
+via `/api/replay/auth/cognito/login`.
+
+Set frontend env values before running `npm run dev` or `npm run build`:
+
+- `VITE_COGNITO_AUTHORITY` (for example `https://cognito-idp.us-east-2.amazonaws.com/us-east-2_5hkzGscoV`)
+- `VITE_COGNITO_USER_POOL_ID` (for example `us-east-2_5hkzGscoV`)
+- `VITE_COGNITO_CLIENT_ID`
+- `VITE_COGNITO_SCOPE` (keep as `openid` unless you enable more on the app client)
+
+Backend token verification expects:
+
+- `COGNITO_ISSUER`
+- `COGNITO_CLIENT_ID`
+
 ## Repository Layout
 
 ```text

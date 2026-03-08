@@ -75,6 +75,8 @@ type ReplayVisualizerProps = {
   selectedPlayer: string;
   boostPads: BoostPad[];
   onTimeChange?: (timeS: number, frameIdx: number) => void;
+  onAutoEventPause?: (payload: { time: number; mechanicId: string; qualityLabel: string; reason: string; score: number }) => void;
+  eventPopup?: React.ReactNode;
   seekTime?: number | null;
 };
 
@@ -509,7 +511,17 @@ function dampedSpringStep(pos: THREE.Vector3, vel: THREE.Vector3, target: THREE.
   pos.add(vel.clone().multiplyScalar(dt));
 }
 
-export default function ReplayVisualizer({ timeline, replayMeta, events, selectedPlayer, boostPads, onTimeChange, seekTime }: ReplayVisualizerProps) {
+export default function ReplayVisualizer({
+  timeline,
+  replayMeta,
+  events,
+  selectedPlayer,
+  boostPads,
+  onTimeChange,
+  onAutoEventPause,
+  eventPopup,
+  seekTime
+}: ReplayVisualizerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const labelLayerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -566,7 +578,7 @@ export default function ReplayVisualizer({ timeline, replayMeta, events, selecte
   const [zoom, setZoom] = useState(1);
   const [debugOpen, setDebugOpen] = useState(false);
   const [arenaStatus, setArenaStatus] = useState("Arena: procedural fallback");
-  const [timelineEventMode, setTimelineEventMode] = useState<"top10" | "worst5" | "best5" | "all">("top10");
+  const [timelineEventMode, setTimelineEventMode] = useState<"top10" | "worst5" | "best5" | "all">("all");
 
   const maxFrame = Math.max(0, (timeline?.length ?? 1) - 1);
   const currentTimeS = timeline?.[currentFrame]?.t ?? 0;
@@ -600,7 +612,7 @@ export default function ReplayVisualizer({ timeline, replayMeta, events, selecte
     camPosVelRef.current.set(0, 0, 0);
     camLookRef.current = null;
     camLookVelRef.current.set(0, 0, 0);
-    reviewOrbitEnabledRef.current = false;
+    reviewOrbitEnabledRef.current = true;
     reviewOrbitYawRef.current = 0;
     reviewOrbitPitchRef.current = 0;
     reviewOrbitDraggingRef.current = false;
@@ -758,16 +770,24 @@ export default function ReplayVisualizer({ timeline, replayMeta, events, selecte
       renderer.domElement.releasePointerCapture?.(ev.pointerId);
     };
 
+    const onWheel = (ev: WheelEvent) => {
+      ev.preventDefault();
+      const delta = ev.deltaY > 0 ? -0.1 : 0.1;
+      setZoom((prev) => Math.max(0.6, Math.min(2.0, prev + delta)));
+    };
+
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointermove", onPointerMove);
     renderer.domElement.addEventListener("pointerup", stopOrbitDrag);
     renderer.domElement.addEventListener("pointercancel", stopOrbitDrag);
+    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
       renderer.domElement.removeEventListener("pointerup", stopOrbitDrag);
       renderer.domElement.removeEventListener("pointercancel", stopOrbitDrag);
+      renderer.domElement.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", onResize);
       ro.disconnect();
       renderer.dispose();
@@ -1473,6 +1493,13 @@ export default function ReplayVisualizer({ timeline, replayMeta, events, selecte
             lastAutoPausedEventKeyRef.current = key;
             setPlaying(false);
             playingRef.current = false;
+            onAutoEventPause?.({
+              time: Number((hit as any).__aligned_t || hit?.time || targetReplayT),
+              mechanicId: String(hit?.mechanic_id || ""),
+              qualityLabel: String(hit?.quality_label || ""),
+              reason: String((hit as any)?.reason || ""),
+              score: Number(hit?.score ?? (hit as any)?.quality_score ?? 0),
+            });
           }
         }
       }
@@ -1500,7 +1527,7 @@ export default function ReplayVisualizer({ timeline, replayMeta, events, selecte
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-  }, [timeline, selectedPlayer, onTimeChange, events, timelineEventMode]);
+  }, [timeline, selectedPlayer, onTimeChange, onAutoEventPause, events, timelineEventMode]);
 
   const nextEvent = useMemo(() => {
     if (!displayMarkers.length) return null;
@@ -1536,6 +1563,20 @@ export default function ReplayVisualizer({ timeline, replayMeta, events, selecte
     if (!prev) return;
     playToEventTargetRef.current = prev.t;
     setPlaying(true);
+  };
+
+  const toggleFullscreen = async () => {
+    const el = containerRef.current?.parentElement;
+    if (!el) return;
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // ignore fullscreen errors
+    }
   };
 
   const toggleOrbit = () => {
@@ -1576,6 +1617,7 @@ export default function ReplayVisualizer({ timeline, replayMeta, events, selecte
           </div>
         </div>
         <div className="label-layer" ref={labelLayerRef} />
+        {eventPopup}
       </div>
 
       <input
@@ -1618,30 +1660,71 @@ export default function ReplayVisualizer({ timeline, replayMeta, events, selecte
         ))}
       </div>
 
-      <div className="playback-tools">
-        <button type="button" onClick={playToPrevEvent} disabled={!timeline.length}>Prev Event</button>
-        <button type="button" onClick={handlePlay} disabled={!timeline.length}>Play</button>
-        <button type="button" onClick={handlePause} disabled={!timeline.length}>Pause</button>
-        <button type="button" onClick={playToNextEvent} disabled={!timeline.length}>Next Event</button>
-        <button type="button" className="ghost" onClick={toggleOrbit}>Orbit</button>
-        <label htmlFor="speedSelect">Speed</label>
-        <select id="speedSelect" value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
-          <option value={0.5}>0.5x</option>
-          <option value={1}>1x</option>
-          <option value={2}>2x</option>
-        </select>
-        <label htmlFor="zoomRange">Zoom</label>
-        <input
-          id="zoomRange"
-          type="range"
-          min={0.6}
-          max={2.0}
-          step={0.05}
-          value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
-        />
-        <span className="time-label">t={currentTimeS.toFixed(2)}</span>
-        <span className="next-event-label">Next event: {nextEvent ? `${nextEvent.mechanicId} @ ${nextEvent.t.toFixed(2)}s` : "none"}</span>
+      <div className="playback-tools icon-controls">
+        <button type="button" className="icon-btn" title="Previous Event" onClick={playToPrevEvent} disabled={!timeline.length}>
+          <i className="fas fa-step-backward"></i>
+        </button>
+        <button type="button" className="icon-btn play-btn" title="Play" onClick={handlePlay} disabled={!timeline.length}>
+          <i className="fas fa-play"></i>
+        </button>
+        <button type="button" className="icon-btn" title="Pause" onClick={handlePause} disabled={!timeline.length}>
+          <i className="fas fa-pause"></i>
+        </button>
+        <button type="button" className="icon-btn" title="Next Event" onClick={playToNextEvent} disabled={!timeline.length}>
+          <i className="fas fa-step-forward"></i>
+        </button>
+
+        <div className="playback-divider"></div>
+
+        <button
+          type="button"
+          className={`ghost icon-btn ${reviewOrbitEnabledRef.current ? "active" : ""}`}
+          title="Toggle Orbit Camera"
+          onClick={toggleOrbit}
+        >
+          <i className="fas fa-sync-alt"></i>
+        </button>
+        <button type="button" className="ghost icon-btn" title="Fullscreen" onClick={() => void toggleFullscreen()}>
+          <i className="fas fa-expand"></i>
+        </button>
+
+        <div className="playback-divider"></div>
+
+        <div className="control-group">
+          <label htmlFor="speedSelect">
+            <i className="fas fa-tachometer-alt"></i> Speed
+          </label>
+          <select id="speedSelect" value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+            <option value={0.5}>0.5x</option>
+            <option value={1}>1x</option>
+            <option value={2}>2x</option>
+          </select>
+        </div>
+
+        <div className="control-group zoom-control">
+          <label htmlFor="zoomRange">
+            <i className="fas fa-search-plus"></i> Zoom
+          </label>
+          <input
+            id="zoomRange"
+            type="range"
+            min={0.6}
+            max={2.0}
+            step={0.05}
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+          />
+          <span className="zoom-value">{zoom.toFixed(1)}x</span>
+        </div>
+
+        <span className="time-label">
+          <i className="fas fa-clock"></i> {currentTimeS.toFixed(2)}s
+        </span>
+        {nextEvent && (
+          <span className="next-event-label">
+            <i className="fas fa-flag"></i> {nextEvent.mechanicId} @ {nextEvent.t.toFixed(2)}s
+          </span>
+        )}
       </div>
     </div>
   );

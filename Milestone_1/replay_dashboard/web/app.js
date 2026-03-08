@@ -22,6 +22,7 @@ const timelineSlider = document.getElementById("timelineSlider");
 const metricCards = document.getElementById("metricCards");
 const eventsEl = document.getElementById("events");
 const labelLayer = document.getElementById("labelLayer");
+const sceneWrap = document.getElementById("sceneWrap");
 const sceneEl = document.getElementById("scene");
 const blueScoreEl = document.getElementById("blueScore");
 const orangeScoreEl = document.getElementById("orangeScore");
@@ -31,37 +32,49 @@ const debugToggleBtn = document.getElementById("debugToggle");
 const debugBubbleEl = document.getElementById("debugBubble");
 const debugCloseBtn = document.getElementById("debugClose");
 const debugBodyEl = document.getElementById("debugBody");
-const eventCoachPanel = document.getElementById("eventCoachPanel");
-const eventCoachClose = document.getElementById("eventCoachClose");
-const eventCoachTitle = document.getElementById("eventCoachTitle");
-const eventCoachScore = document.getElementById("eventCoachScore");
-const eventCoachBody = document.getElementById("eventCoachBody");
 const usernameInput = document.getElementById("usernameInput");
 const aliasesInput = document.getElementById("aliasesInput");
 const rankSelect = document.getElementById("rankSelect");
 const platformSelect = document.getElementById("platformSelect");
 const loginBtn = document.getElementById("loginBtn");
+const signupBtn = document.getElementById("signupBtn");
+const emailInput = document.getElementById("emailInput");
+const passwordInput = document.getElementById("passwordInput");
+const authHint = document.getElementById("authHint");
+const authCard = document.getElementById("authCard");
+const profileSetupCard = document.getElementById("profileSetupCard");
+const profileSetupBtn = document.getElementById("profileSetupBtn");
+const backToAuthBtn = document.getElementById("backToAuthBtn");
 const profileStatus = document.getElementById("profileStatus");
 const refreshLibraryBtn = document.getElementById("refreshLibraryBtn");
 const libraryList = document.getElementById("libraryList");
+const homeSummary = document.getElementById("homeSummary");
 const openLibraryBtn = document.getElementById("openLibraryBtn");
 const closeLibraryBtn = document.getElementById("closeLibraryBtn");
 const libraryDrawer = document.getElementById("libraryDrawer");
 const loginGate = document.getElementById("loginGate");
 const appShell = document.getElementById("appShell");
 const logoutBtn = document.getElementById("logoutBtn");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+const metricsToggleBtn = document.getElementById("metricsToggleBtn");
+const metricsBody = document.getElementById("metricsBody");
 const timelineEvents = document.getElementById("timelineEvents");
 const timelineFilterMode = document.getElementById("timelineFilterMode");
 const refreshRecsBtn = document.getElementById("refreshRecsBtn");
 const recsList = document.getElementById("recsList");
 const refreshMechanicsBtn = document.getElementById("refreshMechanicsBtn");
 const mechanicsList = document.getElementById("mechanicsList");
+const mechanicEventAdvice = document.getElementById("mechanicEventAdvice");
 const recsBubbleToggle = document.getElementById("recsBubbleToggle");
 const recsBubbleBody = document.getElementById("recsBubbleBody");
 const mechanicsBubbleToggle = document.getElementById("mechanicsBubbleToggle");
 const mechanicsBubbleBody = document.getElementById("mechanicsBubbleBody");
+const tabHomeBtn = document.getElementById("tabHomeBtn");
+const tabReplaysBtn = document.getElementById("tabReplaysBtn");
 const tabAnalysisBtn = document.getElementById("tabAnalysisBtn");
 const tabImproveBtn = document.getElementById("tabImproveBtn");
+const tabHome = document.getElementById("tabHome");
+const tabReplays = document.getElementById("tabReplays");
 const tabAnalysis = document.getElementById("tabAnalysis");
 const tabImprove = document.getElementById("tabImprove");
 const progressBubbleToggle = document.getElementById("progressBubbleToggle");
@@ -125,14 +138,16 @@ let fallbackMetricsInFlight = false;
 let zoomScale = 1.0;
 let analysisLocked = false;
 let currentProfile = null;
+let currentAuth = null;
 let currentMechanics = null;
 let playToEventTargetS = null;
 let nextEventExplainKey = "";
 let nextEventExplainToken = 0;
 let timelineEventMode = "top10";
 let lastLibrarySessions = [];
-let lastAutoPausedEventKey = "";
-let eventCoachToken = 0;
+let selectedMechanicId = "";
+let selectedMechanicEventKey = "";
+const mechanicEventAdviceCache = new Map();
 let goalPauseWindows = [];
 let goalHoldUntilWallMs = 0;
 let goalHoldReplayT = 0;
@@ -194,7 +209,7 @@ let duplicateReplaySessionId = "";
 let progressPoints = [];
 let progressVisibleKeys = new Set(["overall_mechanics_score"]);
 let progressXMode = "auto_hybrid";
-let dashboardTab = "analysis";
+let dashboardTab = "home";
 
 const progressLineMeta = {
   overall_mechanics_score: { title: "Overall", color: "#8ce4ff" },
@@ -282,20 +297,21 @@ function restoreDrawerState() {
 }
 
 function setDashboardTab(tab) {
-  const next = String(tab || "analysis") === "improvement" ? "improvement" : "analysis";
+  const raw = String(tab || "home");
+  const next = (raw === "home" || raw === "replays" || raw === "analysis" || raw === "improvement") ? raw : "home";
   dashboardTab = next;
-  const isAnalysis = next === "analysis";
-  tabAnalysis?.classList.toggle("hidden", !isAnalysis);
-  tabImprove?.classList.toggle("hidden", isAnalysis);
-  tabAnalysisBtn?.classList.toggle("active", isAnalysis);
-  tabImproveBtn?.classList.toggle("active", !isAnalysis);
-  tabAnalysisBtn?.setAttribute("aria-pressed", isAnalysis ? "true" : "false");
-  tabImproveBtn?.setAttribute("aria-pressed", isAnalysis ? "false" : "true");
+  tabHome?.classList.toggle("hidden", next !== "home");
+  tabReplays?.classList.toggle("hidden", next !== "replays");
+  tabAnalysis?.classList.toggle("hidden", next !== "analysis");
+  tabImprove?.classList.toggle("hidden", next !== "improvement");
+  tabHomeBtn?.classList.toggle("active", next === "home");
+  tabReplaysBtn?.classList.toggle("active", next === "replays");
+  tabAnalysisBtn?.classList.toggle("active", next === "analysis");
+  tabImproveBtn?.classList.toggle("active", next === "improvement");
   try {
     localStorage.setItem("dashboard_tab", next);
   } catch (_err) {}
-  if (isAnalysis) {
-    // Scene can initialize while hidden if previous tab was Improvement; force a viewport refresh.
+  if (next === "analysis") {
     setTimeout(() => {
       refreshSceneViewport();
     }, 0);
@@ -303,10 +319,10 @@ function setDashboardTab(tab) {
 }
 
 function restoreDashboardTab() {
-  let t = "analysis";
+  let t = "home";
   try {
     const raw = localStorage.getItem("dashboard_tab");
-    if (raw === "improvement" || raw === "analysis") t = raw;
+    if (raw === "home" || raw === "replays" || raw === "improvement" || raw === "analysis") t = raw;
   } catch (_err) {}
   setDashboardTab(t);
 }
@@ -379,15 +395,9 @@ function setNextEventExplainText(text) {
   nextEventExplain.textContent = String(text || "Why: --");
 }
 
-function setCoachPanelOpen(open) {
-  if (!eventCoachPanel) return;
-  eventCoachPanel.classList.toggle("hidden", !open);
-  reviewOrbitEnabled = !!open;
-  if (!open) {
-    reviewOrbitDragging = false;
-    reviewOrbitYaw = 0;
-    reviewOrbitPitch = 0;
-  }
+function setMechanicEventAdviceText(text) {
+  if (!mechanicEventAdvice) return;
+  mechanicEventAdvice.textContent = String(text || "");
 }
 
 function englishEventName(mid) {
@@ -694,8 +704,7 @@ function seekPlayToMechanicEvent(evt, directionLabel) {
     renderAtTime(target);
     playing = false;
     playToEventTargetS = null;
-    lastAutoPausedEventKey = `${String(evt?.mechanic_id || "")}|${fmt(target, 3)}`;
-    openEventCoachPanel(evt).catch(() => {});
+    showMechanicEventAdvice(evt).catch(() => {});
     statusText.textContent = `At ${directionLabel} event: ${eventRatingText(evt)}`;
     return;
   }
@@ -710,18 +719,18 @@ function seekPlayToMechanicEvent(evt, directionLabel) {
   needsRender = true;
 }
 
-async function openEventCoachPanel(evt) {
+async function showMechanicEventAdvice(evt) {
   if (!evt) return;
   const et = Number(evt?.__aligned_t || evt?.time || 0);
   const label = String(evt?.quality_label || "neutral");
-  const score100 = Math.max(0, Math.min(100, Number(evt?.quality_score || 0) * 100));
-  const en = englishEventName(evt?.mechanic_id || "");
-  if (eventCoachTitle) eventCoachTitle.textContent = `${en.charAt(0).toUpperCase()}${en.slice(1)}`;
-  if (eventCoachScore) eventCoachScore.textContent = `Score: ${fmt(score100, 1)}/100 (${label}) at ${fmt(et, 2)}s`;
-  if (eventCoachBody) eventCoachBody.textContent = "Loading coaching advice...";
-  setCoachPanelOpen(true);
-
-  const token = ++eventCoachToken;
+  const score100 = Math.max(0, Math.min(100, Number(evt?.quality_score || 0) * 100)).toFixed(1);
+  const key = `${String(evt?.mechanic_id || "")}|${fmt(et, 3)}`;
+  selectedMechanicEventKey = key;
+  setMechanicEventAdviceText(`Loading coaching advice for ${englishEventName(evt?.mechanic_id || "")} (${score100}/100 at ${fmt(et, 2)}s)...`);
+  if (mechanicEventAdviceCache.has(key)) {
+    setMechanicEventAdviceText(mechanicEventAdviceCache.get(key) || "");
+    return;
+  }
   try {
     const res = await fetchJson("/api/mechanics/explain", {
       method: "POST",
@@ -732,7 +741,6 @@ async function openEventCoachPanel(evt) {
         include_llm: true,
       }),
     });
-    if (token !== eventCoachToken) return;
     const llmText = String(res?.data?.llm?.text || "").trim();
     const hints = Array.isArray(res?.data?.deterministic?.actionable_hints) ? res.data.deterministic.actionable_hints : [];
     const out = llmText || buildFallbackAdviceText({
@@ -741,17 +749,19 @@ async function openEventCoachPanel(evt) {
       hints,
       timeS: et,
     });
-    if (eventCoachBody) eventCoachBody.textContent = out;
+    const finalText = `${englishEventName(evt?.mechanic_id || "")} | ${score100}/100 @ ${fmt(et, 2)}s\n${out}`;
+    mechanicEventAdviceCache.set(key, finalText);
+    if (selectedMechanicEventKey === key) setMechanicEventAdviceText(finalText);
   } catch (_err) {
-    if (token !== eventCoachToken) return;
-    if (eventCoachBody) {
-      eventCoachBody.textContent = buildFallbackAdviceText({
-        mechanicId: evt?.mechanic_id || "",
-        label,
-        hints: [],
-        timeS: et,
-      });
-    }
+    const out = buildFallbackAdviceText({
+      mechanicId: evt?.mechanic_id || "",
+      label,
+      hints: [],
+      timeS: et,
+    });
+    const finalText = `${englishEventName(evt?.mechanic_id || "")} | ${score100}/100 @ ${fmt(et, 2)}s\n${out}`;
+    mechanicEventAdviceCache.set(key, finalText);
+    if (selectedMechanicEventKey === key) setMechanicEventAdviceText(finalText);
   }
 }
 
@@ -2146,9 +2156,7 @@ function animate(tsMs) {
       const events = filteredMechanicEvents();
       const hit = events.find((ev) => Math.abs(Number(ev?.__aligned_t || ev?.time || 0) - Number(targetFromJump || 0)) <= 0.08);
       if (hit) {
-        const key = `${String(hit?.mechanic_id || "")}|${fmt(Number(hit?.__aligned_t || hit?.time || 0), 3)}`;
-        lastAutoPausedEventKey = key;
-        openEventCoachPanel(hit).catch(() => {});
+        showMechanicEventAdvice(hit).catch(() => {});
       }
     }
     if (targetReplayT >= replayEndTimeS) {
@@ -2165,29 +2173,6 @@ function animate(tsMs) {
           goalHoldUntilWallMs = nowMs + 3000.0;
           statusText.textContent = "Goal scored. Holding restart for 3s...";
           break;
-        }
-      }
-    }
-    if (playing && playToEventTargetS === null && goalHoldUntilWallMs <= 0) {
-      const events = filteredMechanicEvents();
-      let hit = null;
-      for (const ev of events) {
-        const et = Number(ev?.__aligned_t || ev?.time || 0);
-        if (!Number.isFinite(et)) continue;
-        if (et > (prevReplayT + 0.01) && et <= (targetReplayT + 0.01)) {
-          hit = ev;
-          break;
-        }
-      }
-      if (hit) {
-        const key = `${String(hit?.mechanic_id || "")}|${fmt(Number(hit?.__aligned_t || hit?.time || 0), 3)}`;
-        if (key !== lastAutoPausedEventKey) {
-          targetReplayT = Number(hit?.__aligned_t || hit?.time || targetReplayT);
-          playing = false;
-          playToEventTargetS = null;
-          lastAutoPausedEventKey = key;
-          openEventCoachPanel(hit).catch(() => {});
-          statusText.textContent = `Paused at event: ${eventRatingText(hit)}`;
         }
       }
     }
@@ -2274,6 +2259,12 @@ function ensureSceneInitialized() {
   sceneInitialized = true;
 }
 
+function setLoginGateMode(mode) {
+  const m = String(mode || "auth");
+  authCard?.classList.toggle("hidden", m !== "auth");
+  profileSetupCard?.classList.toggle("hidden", m !== "profile_setup");
+}
+
 function setProfileUi(profile) {
   currentProfile = profile || null;
   if (!currentProfile || !currentProfile.username) {
@@ -2281,6 +2272,7 @@ function setProfileUi(profile) {
     if (aliasesInput) aliasesInput.value = "";
     if (loginGate) loginGate.classList.remove("hidden");
     if (appShell) appShell.classList.add("hidden");
+    setLoginGateMode("auth");
     setDrawerOpen(false);
     return;
   }
@@ -2293,16 +2285,25 @@ function setProfileUi(profile) {
   if (appShell) appShell.classList.remove("hidden");
   setDrawerOpen(false);
   ensureSceneInitialized();
-  restoreDashboardTab();
+  setDashboardTab("home");
   restoreBubbleStates();
 }
 
+function setNeedsProfileSetupUi() {
+  profileStatus.textContent = "Finish profile setup to continue.";
+  if (loginGate) loginGate.classList.remove("hidden");
+  if (appShell) appShell.classList.add("hidden");
+  setLoginGateMode("profile_setup");
+  setDrawerOpen(false);
+}
+
 async function logoutProfile() {
-  const res = await fetchJson("/api/profile/logout", { method: "POST" });
+  const res = await fetchJson("/api/auth/logout", { method: "POST" });
   if (!res?.ok) {
     statusText.textContent = `Logout failed: ${res?.error || "unknown error"}`;
     return;
   }
+  currentAuth = null;
   setProfileUi(null);
   renderLibrary([]);
   renderRecommendations([]);
@@ -2372,30 +2373,141 @@ async function refreshRecommendations() {
   renderRecommendations(res?.data?.recommendations || []);
 }
 
+function canonicalMechanicId(mid) {
+  const m = String(mid || "");
+  if (m === "flicking_carry_offense") return "flicking";
+  return m;
+}
+
+function buildMechanicGroups(payload) {
+  const data = payload || {};
+  const grades = Array.isArray(data?.game_mechanics) ? data.game_mechanics : [];
+  const events = Array.isArray(data?.mechanic_events) ? data.mechanic_events : [];
+  const titleByMid = new Map();
+  const order = [];
+  for (const g of grades) {
+    const mid = canonicalMechanicId(g?.mechanic_id);
+    if (!mid) continue;
+    if (!titleByMid.has(mid)) titleByMid.set(mid, String(g?.title || mid));
+    if (!order.includes(mid)) order.push(mid);
+  }
+  for (const e of events) {
+    const mid = canonicalMechanicId(e?.mechanic_id);
+    if (!mid) continue;
+    if (!titleByMid.has(mid)) titleByMid.set(mid, englishEventName(mid));
+    if (!order.includes(mid)) order.push(mid);
+  }
+
+  const grouped = new Map();
+  for (const mid of order) grouped.set(mid, []);
+  for (const e of events) {
+    const mid = canonicalMechanicId(e?.mechanic_id);
+    if (!mid) continue;
+    if (!grouped.has(mid)) grouped.set(mid, []);
+    grouped.get(mid).push(e);
+  }
+
+  const out = [];
+  for (const mid of order) {
+    const evs = (grouped.get(mid) || []).slice().sort((a, b) => Number(a?.time || 0) - Number(b?.time || 0));
+    const avg = evs.length
+      ? evs.reduce((acc, e) => acc + Math.max(0, Math.min(100, Number(e?.quality_score || 0) * 100)), 0) / evs.length
+      : 50.0;
+    out.push({
+      mechanic_id: mid,
+      title: String(titleByMid.get(mid) || mid),
+      score_0_100: Number(avg || 0),
+      event_count: evs.length,
+      events: evs,
+    });
+  }
+  return out;
+}
+
+async function jumpToMechanicEvent(evt) {
+  if (!replayData?.timeline?.length) {
+    statusText.textContent = "Load replay data first.";
+    return;
+  }
+  const aligned = alignEventToTimeline(evt || {});
+  const target = Number(aligned.__aligned_t || evt?.time || 0);
+  if (!Number.isFinite(target)) return;
+  playing = false;
+  playToEventTargetS = null;
+  currentReplayTimeS = target;
+  renderAtTime(target);
+  rebuildCharts();
+  updateNextEventInfoAtTime(target);
+  statusText.textContent = `Jumped to ${eventRatingText(evt)} @ ${fmt(target, 2)}s`;
+  await showMechanicEventAdvice({ ...(evt || {}), ...aligned });
+}
+
 function renderMechanics(payload) {
   if (!mechanicsList) return;
   mechanicsList.innerHTML = "";
-  const data = payload || {};
-  const grades = Array.isArray(data?.game_mechanics) ? data.game_mechanics : [];
-  if (!grades.length) {
+  const groups = buildMechanicGroups(payload);
+  if (!groups.length) {
     const empty = document.createElement("div");
     empty.className = "library-item-meta";
     empty.textContent = "Run replay analysis to generate mechanic grades.";
     mechanicsList.appendChild(empty);
+    setMechanicEventAdviceText("Select a mechanic event to jump to that moment and view coaching advice.");
     return;
   }
-  const overall = Number(data?.overall_mechanics_score || 0).toFixed(1);
+  const overall = (groups.reduce((acc, g) => acc + Number(g?.score_0_100 || 0), 0) / Math.max(1, groups.length)).toFixed(1);
   const head = document.createElement("div");
   head.className = "library-item-meta";
-  head.textContent = `Overall mechanics score: ${overall}/100`;
+  head.textContent = `Overall mechanics score (event average): ${overall}/100`;
   mechanicsList.appendChild(head);
-  for (const g of grades) {
+  if (!selectedMechanicId && groups.length) selectedMechanicId = String(groups[0].mechanic_id || "");
+  for (const g of groups) {
     const row = document.createElement("div");
-    row.className = "library-item mech-grade-row";
+    row.className = "library-item mech-group";
+    const btn = document.createElement("button");
     const score = Number(g?.score_0_100 || 0).toFixed(1);
-    const conf = Number(g?.confidence_0_1 || 0).toFixed(2);
-    row.innerHTML = `<div class="rec-item-title">${g?.title || g?.mechanic_id || "Mechanic"}</div>
-      <div class="mech-grade-score">Score ${score}/100 | Confidence ${conf} | Events ${Number(g?.event_count || 0)}</div>`;
+    const isActive = String(selectedMechanicId || "") === String(g?.mechanic_id || "");
+    btn.className = `mech-group-btn${isActive ? " active" : ""}`;
+    btn.textContent = `${g?.title || g?.mechanic_id || "Mechanic"} | ${score}/100 | ${Number(g?.event_count || 0)} events`;
+    btn.addEventListener("click", () => {
+      selectedMechanicId = String(g?.mechanic_id || "");
+      renderMechanics(currentMechanics);
+    });
+    row.appendChild(btn);
+
+    const eventsWrap = document.createElement("div");
+    eventsWrap.className = `mech-events-wrap${isActive ? "" : " hidden"}`;
+    if (!g.events.length) {
+      const empty = document.createElement("div");
+      empty.className = "library-item-meta";
+      empty.textContent = "No events detected for this mechanic in this replay.";
+      eventsWrap.appendChild(empty);
+    } else {
+      for (const evt of g.events) {
+        const rowEvt = document.createElement("div");
+        rowEvt.className = "library-item";
+        const infoEvt = document.createElement("div");
+        const rawLabel = String(evt?.quality_label || "neutral").toLowerCase();
+        const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+        const scoreEvt = (Math.max(0, Math.min(100, Number(evt?.quality_score || 0) * 100))).toFixed(1);
+        const tEvt = Number(evt?.time || 0);
+        const eKey = `${canonicalMechanicId(evt?.mechanic_id)}|${fmt(tEvt, 3)}`;
+        infoEvt.innerHTML = `<div>${label} | ${scoreEvt}/100 | ${fmt(tEvt, 2)}s</div><div class="library-item-meta">${String(evt?.short || evt?.mechanic_id || "EVT")}</div>`;
+        const coachBtn = document.createElement("button");
+        coachBtn.className = `mech-event-btn${selectedMechanicEventKey === eKey ? " active" : ""}`;
+        coachBtn.textContent = "Coach";
+        coachBtn.addEventListener("click", () => {
+          selectedMechanicEventKey = eKey;
+          jumpToMechanicEvent(evt).catch((err) => {
+            statusText.textContent = `Event jump failed: ${err?.message || err}`;
+          });
+          renderMechanics(currentMechanics);
+        });
+        rowEvt.appendChild(infoEvt);
+        rowEvt.appendChild(coachBtn);
+        eventsWrap.appendChild(rowEvt);
+      }
+    }
+    row.appendChild(eventsWrap);
     mechanicsList.appendChild(row);
   }
 }
@@ -2646,6 +2758,32 @@ async function loadCurrentMechanics() {
   renderTimelineEventMarkers();
 }
 
+async function resetReplayStateOnDashboardEntry() {
+  replayData = null;
+  selectedPlayer = "";
+  currentMechanics = null;
+  selectedMechanicId = "";
+  selectedMechanicEventKey = "";
+  mechanicEventAdviceCache.clear();
+  metricsReady = false;
+  playing = false;
+  playToEventTargetS = null;
+  clearMetricDisplay();
+  if (timelineEvents) timelineEvents.innerHTML = "";
+  setMechanicEventAdviceText("Select a mechanic event to jump to that moment and view coaching advice.");
+  setLoadingOverlayVisible(false);
+  setProgress(0, "");
+  durationLabel.textContent = "Duration: 0:00";
+  timeLabel.textContent = "t=0.00";
+  statusText.textContent = "Choose a replay to analyze.";
+  setControlsEnabled(false);
+  try {
+    await fetchJson("/api/replay/clear_current", { method: "POST" });
+  } catch (_err) {
+    // Best effort only; UI still starts empty.
+  }
+}
+
 async function recomputeMechanics() {
   const res = await fetchJson("/api/mechanics/recompute", { method: "POST" });
   if (!res?.ok) {
@@ -2683,15 +2821,59 @@ function renderTimelineEventMarkers() {
 }
 
 async function loadCurrentProfile() {
-  const res = await fetchJson("/api/profile/current");
+  const res = await fetchJson("/api/auth/me");
   if (!res?.ok) {
+    currentAuth = null;
     setProfileUi(null);
     return;
   }
-  setProfileUi(res.profile || null);
+  currentAuth = res.auth || null;
+  if (res.profile && res.profile.id) {
+    setProfileUi(res.profile || null);
+    await resetReplayStateOnDashboardEntry();
+    await loadLibrary();
+    renderHomeDashboard();
+    return;
+  }
+  setNeedsProfileSetupUi();
 }
 
-async function loginProfile() {
+async function authenticate(mode) {
+  const email = String(emailInput?.value || "").trim();
+  const password = String(passwordInput?.value || "");
+  if (!email || !password) {
+    statusText.textContent = "Enter email and password.";
+    return;
+  }
+  const endpoint = String(mode || "login") === "signup" ? "/api/auth/signup" : "/api/auth/login";
+  const res = await fetchJson(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res?.ok) {
+    statusText.textContent = `${mode === "signup" ? "Create account" : "Login"} failed: ${res?.error || "unknown error"}`;
+    if (authHint) authHint.textContent = "";
+    return;
+  }
+  currentAuth = res.auth || null;
+  if (res.profile && res.profile.id) {
+    setProfileUi(res.profile || null);
+    await resetReplayStateOnDashboardEntry();
+    await loadLibrary();
+    renderHomeDashboard();
+    statusText.textContent = "Logged in.";
+    if (authHint) authHint.textContent = "";
+  } else {
+    setNeedsProfileSetupUi();
+    statusText.textContent = "Account created. Finish profile setup.";
+    if (authHint) authHint.textContent = String(currentAuth?.email || email);
+  }
+  await loadCurrentRecommendations();
+  await loadProfileProgress();
+}
+
+async function saveProfileSetup() {
   const username = String(usernameInput?.value || "").trim();
   const aliasesRaw = String(aliasesInput?.value || "");
   const aliases = aliasesRaw
@@ -2701,22 +2883,83 @@ async function loginProfile() {
   const rank_tier = String(rankSelect?.value || "bronze_1");
   const platform = String(platformSelect?.value || "epic");
   if (!username) {
-    statusText.textContent = "Enter a username first.";
+    statusText.textContent = "Enter your Rocket League username.";
     return;
   }
-  const res = await fetchJson("/api/profile/login", {
+  const res = await fetchJson("/api/profile/setup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, rank_tier, platform, aliases }),
   });
   if (!res?.ok) {
-    statusText.textContent = `Login failed: ${res?.error || "unknown error"}`;
+    statusText.textContent = `Profile setup failed: ${res?.error || "unknown error"}`;
     return;
   }
   setProfileUi(res.profile || null);
+  await resetReplayStateOnDashboardEntry();
+  await loadLibrary();
+  renderHomeDashboard();
   statusText.textContent = `Welcome, ${username}.`;
   await loadCurrentRecommendations();
   await loadProfileProgress();
+}
+
+function replayCardLines(s) {
+  const summary = s?.summary || {};
+  const player = String(s?.tracked_player_name || summary?.analysis_player || "Unknown");
+  const arena = String(s?.map_name || "Arena");
+  const gradeRaw = Number(summary?.overall_mechanics_score || 0);
+  const grade = Number.isFinite(gradeRaw) ? gradeRaw.toFixed(1) : "--";
+  const dateIso = String(summary?.replay_date_iso || s?.created_at || "").slice(0, 10);
+
+  let result = "Result";
+  let score = "--";
+  const teamScores = summary?.team_scores_final || {};
+  const blue = Number(teamScores?.blue);
+  const orange = Number(teamScores?.orange);
+  const playerTeams = s?.player_teams || {};
+  const t = Number(playerTeams?.[player]);
+  if (Number.isFinite(blue) && Number.isFinite(orange)) {
+    score = `${blue}-${orange}`;
+    if (t === 0) result = blue > orange ? "Win" : (blue < orange ? "Loss" : "Draw");
+    else if (t === 1) result = orange > blue ? "Win" : (orange < blue ? "Loss" : "Draw");
+  }
+  const line1 = `${result} ${score} | ${arena}`;
+  const line2 = `${player} | Grade ${grade} | ${dateIso || "Unknown date"}`;
+  return { line1, line2 };
+}
+
+function renderHomeDashboard() {
+  if (!homeSummary) return;
+  homeSummary.innerHTML = "";
+  if (!currentProfile || !currentProfile.id) return;
+  if (!lastLibrarySessions.length) {
+    const card = document.createElement("div");
+    card.className = "library-item";
+    card.innerHTML = `
+      <div class="rec-item-title">Welcome to RocketCoach</div>
+      <div class="library-item-meta">Upload a .replay file in Replay Studio, or open one from Replays to begin analysis.</div>
+      <div class="library-item-meta">Flow: Replays tab -> select replay -> Replay Studio coaching + metrics.</div>`;
+    homeSummary.appendChild(card);
+    return;
+  }
+  const latest = lastLibrarySessions[0];
+  const lines = replayCardLines(latest);
+  const card = document.createElement("div");
+  card.className = "library-item";
+  card.innerHTML = `
+    <div class="rec-item-title">Last Replay</div>
+    <div>${lines.line1}</div>
+    <div class="library-item-meta">${lines.line2}</div>`;
+  const btn = document.createElement("button");
+  btn.textContent = "Open in Replay Studio";
+  btn.addEventListener("click", async () => {
+    if (!latest?.session_id) return;
+    setDashboardTab("replays");
+    await loadLibrary();
+  });
+  card.appendChild(btn);
+  homeSummary.appendChild(card);
 }
 
 function renderLibrary(sessions) {
@@ -2732,8 +2975,9 @@ function renderLibrary(sessions) {
   for (const s of sessions) {
     const row = document.createElement("div");
     row.className = "library-item";
+    const lines = replayCardLines(s);
     const info = document.createElement("div");
-    info.innerHTML = `<div>${s.replay_name || s.session_id}</div><div class="library-item-meta">${s.source_type || "replay"} | ${s.map_name || "soccar"} | ${formatDurationMMSS(Number(s.duration_s || 0))}</div>`;
+    info.innerHTML = `<div class="rec-item-title">${lines.line1}</div><div class="library-item-meta">${lines.line2}</div><div class="library-item-meta">${s.source_type || "replay"} | ${formatDurationMMSS(Number(s.duration_s || 0))}</div>`;
     const btn = document.createElement("button");
     btn.textContent = "Open";
     btn.addEventListener("click", async () => {
@@ -2758,17 +3002,41 @@ function renderLibrary(sessions) {
       });
       if (!res?.ok) {
         statusText.textContent = `Open saved replay failed: ${res?.error || "unknown error"}`;
+        if (String(res?.error || "").toLowerCase().includes("saved replay not found")) {
+          showToast("Replay entry was stale and has been removed from your library.");
+          loadLibrary().catch(() => {});
+        }
         setLoadingOverlayVisible(false);
         return;
       }
-      const ok = await pollStatusUntilReady();
-      if (!ok) {
-        setLoadingOverlayVisible(false);
-        return;
+      const needsPrepare = !!res?.requires_reanalysis;
+      if (needsPrepare) {
+        const ok = await pollStatusUntilReady();
+        if (!ok) {
+          setLoadingOverlayVisible(false);
+          return;
+        }
+      } else {
+        setLoadingState({
+          title: "Opening Saved Replay",
+          status: "Loaded from cache.",
+          progress: 1.0,
+          checklist: {
+            upload_received: true,
+            replay_parsed: true,
+            timeline_ready: true,
+            analysis_ready: true,
+            dashboard_ready: true,
+          },
+          duplicateSessionId: "",
+        });
       }
       await loadReplaySession();
       setLoadingOverlayVisible(false);
-      statusText.textContent = "Saved replay opened.";
+      statusText.textContent = needsPrepare
+        ? "Saved replay opened."
+        : "Saved replay opened from cache.";
+      setDashboardTab("analysis");
     });
     row.appendChild(info);
     row.appendChild(btn);
@@ -2793,6 +3061,7 @@ async function loadLibrary() {
   }
   lastLibrarySessions = data?.sessions || [];
   renderLibrary(lastLibrarySessions);
+  renderHomeDashboard();
 }
 
 async function ensureLegacyMetricsForPlayer(player) {
@@ -2985,8 +3254,9 @@ async function loadReplaySession() {
   replayStartTimeS = Number(replayData.timeline?.[0]?.t || 0);
   replayEndTimeS = Number(replayData.timeline?.[replayData.timeline.length - 1]?.t || 0);
   currentReplayTimeS = replayStartTimeS;
-  lastAutoPausedEventKey = "";
-  setCoachPanelOpen(false);
+  selectedMechanicEventKey = "";
+  mechanicEventAdviceCache.clear();
+  setMechanicEventAdviceText("Select a mechanic event to jump to that moment and view coaching advice.");
   lastFrameLookupIdx = 0;
   playerIdxMap = new Map();
   replayData.players.forEach((p, i) => playerIdxMap.set(p, i));
@@ -3026,20 +3296,29 @@ async function loadReplaySession() {
   lastChartDrawMs = 0;
 
   if (selectedPlayer) {
-    statusText.textContent = `Running analysis for ${selectedPlayer}...`;
-    await loadReplayDataForPlayer(selectedPlayer);
-    statusText.textContent = `Replay ready for ${selectedPlayer}.`;
+    const useCache = !!replayData.analysis_ready;
+    if (!useCache) statusText.textContent = `Running analysis for ${selectedPlayer}...`;
+    await loadReplayDataForPlayer(selectedPlayer, { skipAnalysis: useCache });
+    statusText.textContent = useCache
+      ? `Replay loaded from cache for ${selectedPlayer}.`
+      : `Replay ready for ${selectedPlayer}.`;
   } else {
     statusText.textContent = "Replay loaded, but your logged-in username was not found in this replay.";
   }
 }
 
-async function loadReplayDataForPlayer(player) {
+async function loadReplayDataForPlayer(player, opts = {}) {
   selectedPlayer = player;
+  const skipAnalysis = !!opts.skipAnalysis;
+  const loadingTitle = skipAnalysis ? "Loading Cached Replay Data" : "Analyzing Replay";
+  const loadingStatusText = skipAnalysis
+    ? `Loading cached metrics and events for ${player}...`
+    : `Running full-game analysis for ${player}...`;
   updateTagStyles();
   metricsReady = false;
-  lastAutoPausedEventKey = "";
-  setCoachPanelOpen(false);
+  selectedMechanicEventKey = "";
+  mechanicEventAdviceCache.clear();
+  setMechanicEventAdviceText("Select a mechanic event to jump to that moment and view coaching advice.");
   recentBallTouchUntilT = -1;
   lastBallTouchDetectT = -999;
   reviewOrbitEnabled = false;
@@ -3058,20 +3337,24 @@ async function loadReplayDataForPlayer(player) {
   metricPollToken += 1;
   liveSeekFailureCount = 0;
   setLoadingState({
-    title: "Analyzing Replay",
-    status: `Running full-game analysis for ${player}...`,
-    progress: 0.88,
+    title: loadingTitle,
+    status: loadingStatusText,
+    progress: skipAnalysis ? 0.94 : 0.88,
     checklist: {
       upload_received: true,
       replay_parsed: true,
       timeline_ready: true,
-      analysis_ready: false,
+      analysis_ready: skipAnalysis,
       dashboard_ready: false,
     },
     duplicateSessionId: "",
   });
-  statusText.textContent = `Running future-aware analysis for ${player}...`;
-  await runAnalysisForSelectedPlayer(player);
+  if (!skipAnalysis) {
+    statusText.textContent = `Running future-aware analysis for ${player}...`;
+    await runAnalysisForSelectedPlayer(player);
+  } else {
+    statusText.textContent = `Loading cached replay data for ${player}...`;
+  }
   const dataRes = await fetchJson(`/api/replay/player_metrics/data?player=${encodeURIComponent(player)}`);
   if (!dataRes?.ok) throw new Error(dataRes?.error || "metric data failed");
   replayData.metrics_timeline = dataRes.data?.metrics_timeline || [];
@@ -3207,7 +3490,6 @@ playBtn.addEventListener("click", () => {
   }
   playing = true;
   playToEventTargetS = null;
-  setCoachPanelOpen(false);
   recentBallTouchUntilT = -1;
   lastBallTouchDetectT = -999;
   reviewOrbitEnabled = false;
@@ -3232,10 +3514,6 @@ pauseBtn.addEventListener("click", () => {
   goalHoldResumeReplayT = 0;
   playbackDriftMs = 0;
   needsRender = true;
-});
-
-eventCoachClose?.addEventListener("click", () => {
-  setCoachPanelOpen(false);
 });
 
 nextEventBtn?.addEventListener("click", () => {
@@ -3264,7 +3542,6 @@ timelineSlider.addEventListener("input", () => {
   currentFrame = Number(timelineSlider.value || 0);
   playing = false;
   playToEventTargetS = null;
-  lastAutoPausedEventKey = "";
   reviewOrbitDragging = false;
   goalHoldUntilWallMs = 0;
   goalHoldReplayT = 0;
@@ -3297,9 +3574,25 @@ playerSelect.addEventListener("change", async () => {
 analyzePlayerBtn?.addEventListener("click", () => {});
 
 loginBtn?.addEventListener("click", () => {
-  loginProfile().catch((err) => {
+  authenticate("login").catch((err) => {
     statusText.textContent = `Login failed: ${err?.message || err}`;
   });
+});
+
+signupBtn?.addEventListener("click", () => {
+  authenticate("signup").catch((err) => {
+    statusText.textContent = `Create account failed: ${err?.message || err}`;
+  });
+});
+
+profileSetupBtn?.addEventListener("click", () => {
+  saveProfileSetup().catch((err) => {
+    statusText.textContent = `Profile setup failed: ${err?.message || err}`;
+  });
+});
+
+backToAuthBtn?.addEventListener("click", () => {
+  setLoginGateMode("auth");
 });
 
 logoutBtn?.addEventListener("click", () => {
@@ -3308,10 +3601,24 @@ logoutBtn?.addEventListener("click", () => {
   });
 });
 
-usernameInput?.addEventListener("keydown", (ev) => {
+emailInput?.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter") {
     ev.preventDefault();
     loginBtn?.click();
+  }
+});
+
+passwordInput?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    loginBtn?.click();
+  }
+});
+
+usernameInput?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    profileSetupBtn?.click();
   }
 });
 
@@ -3322,14 +3629,14 @@ refreshLibraryBtn?.addEventListener("click", () => {
 });
 
 openLibraryBtn?.addEventListener("click", () => {
-  setDrawerOpen(true);
+  setDashboardTab("replays");
   loadLibrary().catch((err) => {
     statusText.textContent = `Library load failed: ${err?.message || err}`;
   });
 });
 
 closeLibraryBtn?.addEventListener("click", () => {
-  setDrawerOpen(false);
+  setDashboardTab("analysis");
 });
 
 openDuplicateBtn?.addEventListener("click", async () => {
@@ -3354,17 +3661,41 @@ openDuplicateBtn?.addEventListener("click", async () => {
   });
   if (!res?.ok) {
     statusText.textContent = `Open saved replay failed: ${res?.error || "unknown error"}`;
+    if (String(res?.error || "").toLowerCase().includes("saved replay not found")) {
+      showToast("Replay entry was stale and has been removed from your library.");
+      loadLibrary().catch(() => {});
+    }
     setLoadingOverlayVisible(false);
     return;
   }
-  const ok = await pollStatusUntilReady();
-  if (!ok) {
-    setLoadingOverlayVisible(false);
-    return;
+  const needsPrepare = !!res?.requires_reanalysis;
+  if (needsPrepare) {
+    const ok = await pollStatusUntilReady();
+    if (!ok) {
+      setLoadingOverlayVisible(false);
+      return;
+    }
+  } else {
+    setLoadingState({
+      title: "Opening Existing Replay",
+      status: "Loaded from cache.",
+      progress: 1.0,
+      checklist: {
+        upload_received: true,
+        replay_parsed: true,
+        timeline_ready: true,
+        analysis_ready: true,
+        dashboard_ready: true,
+      },
+      duplicateSessionId: "",
+    });
   }
   await loadReplaySession();
   setLoadingOverlayVisible(false);
-  statusText.textContent = "Loaded existing replay from library.";
+  statusText.textContent = needsPrepare
+    ? "Loaded existing replay from library."
+    : "Loaded existing replay from cache.";
+  setDashboardTab("analysis");
 });
 
 closeLoadingBtn?.addEventListener("click", () => {
@@ -3372,8 +3703,16 @@ closeLoadingBtn?.addEventListener("click", () => {
   setLoadingOverlayVisible(false);
 });
 
-libraryDrawer?.addEventListener("click", (ev) => {
-  if (ev.target === libraryDrawer) setDrawerOpen(false);
+tabHomeBtn?.addEventListener("click", () => {
+  setDashboardTab("home");
+  renderHomeDashboard();
+});
+
+tabReplaysBtn?.addEventListener("click", () => {
+  setDashboardTab("replays");
+  loadLibrary().catch((err) => {
+    statusText.textContent = `Library load failed: ${err?.message || err}`;
+  });
 });
 
 tabAnalysisBtn?.addEventListener("click", () => {
@@ -3382,6 +3721,20 @@ tabAnalysisBtn?.addEventListener("click", () => {
 
 tabImproveBtn?.addEventListener("click", () => {
   setDashboardTab("improvement");
+});
+
+metricsToggleBtn?.addEventListener("click", () => {
+  const open = !metricsBody?.classList.contains("hidden");
+  metricsBody?.classList.toggle("hidden", open);
+  if (metricsToggleBtn) metricsToggleBtn.textContent = open ? "Show" : "Hide";
+});
+
+fullscreenBtn?.addEventListener("click", async () => {
+  if (!sceneWrap) return;
+  try {
+    if (!document.fullscreenElement) await sceneWrap.requestFullscreen();
+    else await document.exitFullscreen();
+  } catch (_err) {}
 });
 
 recsBubbleToggle?.addEventListener("click", () => {
@@ -3468,7 +3821,6 @@ initMetricCards();
 
 loadCurrentProfile()
   .then(() => loadCurrentRecommendations())
-  .then(() => loadCurrentMechanics())
   .then(() => loadProfileProgress())
   .catch(() => {
     setProfileUi(null);

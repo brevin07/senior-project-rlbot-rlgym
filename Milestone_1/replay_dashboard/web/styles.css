@@ -231,6 +231,58 @@ body {
   color: #b8d7f7;
 }
 
+.mechanic-events-card {
+  margin-top: 10px;
+}
+
+.mechanic-grades-list {
+  max-height: 320px;
+}
+
+.mech-group {
+  display: block;
+}
+
+.mech-group-btn {
+  width: 100%;
+  text-align: left;
+  font-weight: 700;
+}
+
+.mech-group-btn.active {
+  border-color: #73bbff;
+  background: linear-gradient(180deg, #1f3655, #15283f);
+}
+
+.mech-events-wrap {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mech-event-btn {
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  border-color: #365475;
+}
+
+.mech-event-btn.active {
+  border-color: #88d0ff;
+  background: #17314c;
+}
+
+.mechanic-event-advice {
+  margin-top: 8px;
+  background: #101827;
+  border: 1px solid #2a3f5e;
+  border-radius: 8px;
+  padding: 10px;
+  white-space: pre-line;
+  font-size: 13px;
+  color: #d6e8fb;
+}
+
 #arenaStatus {
   color: #b9f4cc;
 }
@@ -740,4 +792,120 @@ input[type="range"] {
   height: 10px;
   border-radius: 999px;
   margin-top: 2px;
+}
+
+.login-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 12px;
+}
+
+.brand-card .feature-list {
+  display: grid;
+  gap: 10px;
+}
+
+.feature-row {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 8px;
+  align-items: start;
+  background: rgba(15, 22, 36, 0.5);
+  border: 1px solid #2f4563;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.feature-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.setup-card {
+  margin-top: 10px;
+}
+
+.shell-grid {
+  width: min(1700px, 98vw);
+  margin: 10px auto;
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  gap: 12px;
+}
+
+.left-nav {
+  background: rgba(18, 28, 43, 0.85);
+  border: 1px solid #2b4360;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-height: calc(100vh - 120px);
+  position: sticky;
+  top: 10px;
+}
+
+.nav-brand {
+  font-weight: 800;
+  color: #d8eeff;
+  margin-bottom: 6px;
+}
+
+.nav-btn {
+  text-align: left;
+  border: 1px solid #35517b;
+  background: rgba(19, 30, 47, 0.7);
+  color: #bcd6f4;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-weight: 700;
+}
+
+.nav-btn.active {
+  color: #e8f6ff;
+  background: linear-gradient(180deg, #27476f, #1d3758);
+  border-color: #5ea2ef;
+}
+
+.nav-spacer {
+  min-height: 10px;
+}
+
+.main-content {
+  min-width: 0;
+}
+
+.icon-controls button {
+  min-width: 36px;
+  font-weight: 800;
+}
+
+#homeSummary .library-item {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 1080px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .shell-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .left-nav {
+    position: static;
+    min-height: auto;
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap: 8px;
+    align-items: center;
+  }
+
+  .nav-brand,
+  .nav-spacer,
+  #profileStatus,
+  #logoutBtn {
+    grid-column: 1 / -1;
+  }
 }
