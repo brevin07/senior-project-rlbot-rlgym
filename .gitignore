@@ -3,8 +3,10 @@
 .venv-wsl/
 venv/
 venv_win/
+venv_linux/
 rlbot_training/venv/
 rlbot_training/venv_win/
+rlbot_training/vnev/
 
 # IDE / editor
 .idea/
@@ -88,3 +90,10 @@ Thumbs.db
 # Frontend
 frontend/dashboard/node_modules/
 frontend/dashboard/dist/
+
+# Database files (SQLite - machine-local, replicated via Litestream)
+artifacts/data/
+data/*.replay
+
+# Alpha test artifacts
+artifacts/alpha_receipts/
