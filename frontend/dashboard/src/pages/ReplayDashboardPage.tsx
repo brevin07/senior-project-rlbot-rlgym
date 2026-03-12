@@ -120,7 +120,7 @@ const metricMeta = [
   { key: "recovery_time_avg_s", label: "Recovery Avg (s)", hint: "Average time to become playable after awkward states." },
 ];
 
-type AppTab = "home" | "replays" | "studio";
+type AppTab = "home" | "replays" | "studio" | "improvement";
 
 function fmtNumber(v: number | undefined, digits = 2) {
   if (v == null || Number.isNaN(v)) return "--";
@@ -188,6 +188,96 @@ function replayCardLines(s: LibrarySession) {
   return { line1, line2 };
 }
 
+const TUTORIAL_SEEN_KEY = "rlcoach_tutorial_seen";
+
+const TUTORIAL_STEPS = [
+  {
+    icon: "⬆️",
+    title: "Step 1: Upload a Replay",
+    description:
+      "Go to the Replays tab and upload a .replay file from your Rocket League replay folder. Click 'Open Replay Folder' in the header to find your files quickly.",
+  },
+  {
+    icon: "🎬",
+    title: "Step 2: Open in Studio",
+    description:
+      "Once uploaded, click 'Open' on any replay card. RocketCoach will process it and take you to Replay Studio where you can watch the 3D playback of your game.",
+  },
+  {
+    icon: "🔍",
+    title: "Step 3: Analyze Your Play",
+    description:
+      "In Studio, click 'Analyze' to run the full mechanics analysis. Live metrics and mechanic grades will populate in the sidebar. Click 'Coach' on any event for personalized feedback.",
+  },
+  {
+    icon: "📈",
+    title: "Step 4: Check Improvement",
+    description:
+      "Visit the Improvement tab to see your top 3 mechanics to practice based on your replay data. Track your progress over time in the Home tab chart.",
+  },
+];
+
+const IMPROVEMENT_PLACEHOLDER = [
+  {
+    rank: 1,
+    mechanic: "Aerial Control",
+    priority: "High" as const,
+    description:
+      "Your aerial mechanics show inconsistent ball contact angles. Focus on controlling your car rotation in the air before making contact.",
+  },
+  {
+    rank: 2,
+    mechanic: "Boost Management",
+    priority: "Medium" as const,
+    description:
+      "Boost is being spent in low-value situations. Practice collecting small pads and throttle-feathering to conserve boost for pressure moments.",
+  },
+  {
+    rank: 3,
+    mechanic: "Defending",
+    priority: "Low" as const,
+    description:
+      "Shadow defense positioning could be improved. Work on maintaining goal-side positioning and reading opponent dribbles.",
+  },
+];
+
+function TutorialModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState(0);
+  const current = TUTORIAL_STEPS[step];
+  const isFirst = step === 0;
+  const isLast = step === TUTORIAL_STEPS.length - 1;
+
+  return (
+    <div className="drawer">
+      <div className="drawer-panel tutorial-modal">
+        <div className="tutorial-header">
+          <h2>How to Use RocketCoach</h2>
+          <button type="button" className="ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="tutorial-step-indicator">
+          {TUTORIAL_STEPS.map((_, i) => (
+            <div key={i} className={`tutorial-dot ${i === step ? "active" : i < step ? "done" : ""}`} />
+          ))}
+        </div>
+        <div className="tutorial-body">
+          <div className="tutorial-icon">{current.icon}</div>
+          <h3>{current.title}</h3>
+          <p className="library-item-meta" style={{ fontSize: 14, lineHeight: 1.6 }}>{current.description}</p>
+        </div>
+        <div className="tutorial-footer">
+          <button type="button" className="ghost" disabled={isFirst} onClick={() => setStep((s) => s - 1)}>Back</button>
+          <span className="status-text" style={{ fontSize: 12 }}>{step + 1} / {TUTORIAL_STEPS.length}</span>
+          {isLast ? (
+            <button type="button" onClick={onClose}>Done</button>
+          ) : (
+            <button type="button" onClick={() => setStep((s) => s + 1)}>Next</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReplayDashboardPage() {
   const { profile, logout } = useAuth();
   const location = useLocation();
@@ -213,6 +303,8 @@ export default function ReplayDashboardPage() {
   const [openMetricHelp, setOpenMetricHelp] = useState("");
   const [openMechanicId, setOpenMechanicId] = useState("");
   const [noPlayerPopup, setNoPlayerPopup] = useState("");
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [improvementScope, setImprovementScope] = useState<"all" | "latest">("all");
 
   const [loadingOverlay, setLoadingOverlay] = useState({
     open: false,
@@ -485,6 +577,20 @@ export default function ReplayDashboardPage() {
 
   const latestReplay = (library?.data?.sessions ?? [])[0];
 
+  const closeTutorial = useCallback(() => {
+    localStorage.setItem(TUTORIAL_SEEN_KEY, "1");
+    setShowTutorial(false);
+  }, []);
+
+  useEffect(() => {
+    if (library === null) return;
+    const seen = localStorage.getItem(TUTORIAL_SEEN_KEY);
+    const hasReplays = (library?.data?.sessions ?? []).length > 0;
+    if (!seen && !hasReplays) {
+      setShowTutorial(true);
+    }
+  }, [library]);
+
   return (
     <div className="dashboard-shell">
       <aside className="left-nav">
@@ -492,6 +598,7 @@ export default function ReplayDashboardPage() {
         <button type="button" className={`nav-btn ${activeTab === "home" ? "active" : ""}`} onClick={() => setActiveTab("home")}>Home</button>
         <button type="button" className={`nav-btn ${activeTab === "replays" ? "active" : ""}`} onClick={() => setActiveTab("replays")}>Replays</button>
         <button type="button" className={`nav-btn ${activeTab === "studio" ? "active" : ""}`} onClick={() => setActiveTab("studio")}>Replay Studio</button>
+        <button type="button" className={`nav-btn ${activeTab === "improvement" ? "active" : ""}`} onClick={() => setActiveTab("improvement")}>Improvement</button>
         <div className="nav-spacer" />
         <span className="status-text">{profile?.username ?? "Pilot"}</span>
         <Link to="/account" state={{ from: location.pathname }} className="ghost nav-link">Account</Link>
@@ -515,8 +622,13 @@ export default function ReplayDashboardPage() {
         {activeTab === "home" && (
           <section className="panel-stack">
             <div className="metrics-card">
-              <h2>Dashboard Overview</h2>
-              <p className="status-text">Track your progress and recent performance</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div>
+                  <h2>Dashboard Overview</h2>
+                  <p className="status-text">Track your progress and recent performance</p>
+                </div>
+                <button type="button" className="ghost" onClick={() => setShowTutorial(true)}>How to Use</button>
+              </div>
             </div>
 
             {latestReplay && (
@@ -547,7 +659,10 @@ export default function ReplayDashboardPage() {
 
             {latestReplay && groupedMechanics.length > 0 && (
               <div className="metrics-card">
-                <h3>Recent Mechanic Grades</h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <h3 style={{ margin: 0 }}>Recent Mechanic Grades</h3>
+                  <button type="button" style={{ fontSize: 13 }} onClick={() => setActiveTab("improvement")}>View Improvement Tips</button>
+                </div>
                 <div className="mechanic-summary-grid">
                   {groupedMechanics.slice(0, 6).map((group) => (
                     <div key={group.mechanicId} className="mechanic-summary-card">
@@ -764,6 +879,67 @@ export default function ReplayDashboardPage() {
                   </p>
                 </div>
               </div>
+
+              {!!mechanicEvents.length && (
+                <div className="studio-sidebar-section" style={{ borderBottom: "none", paddingBottom: 0 }}>
+                  <button type="button" style={{ width: "100%" }} onClick={() => setActiveTab("improvement")}>
+                    View Improvement Tips
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+        {activeTab === "improvement" && (
+          <section className="panel-stack">
+            <div className="metrics-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <h2>Improvement Recommendations</h2>
+                  <p className="library-item-meta">Recommendations are based on your replay analysis data</p>
+                </div>
+                <button type="button" className="ghost" onClick={() => setActiveTab("replays")}>Back to Replays</button>
+              </div>
+
+              <div className="improvement-toggle" style={{ marginTop: 16, marginBottom: 20 }}>
+                <button
+                  type="button"
+                  className={improvementScope === "all" ? "" : "ghost"}
+                  onClick={() => setImprovementScope("all")}
+                >
+                  All Replays
+                </button>
+                <button
+                  type="button"
+                  className={improvementScope === "latest" ? "" : "ghost"}
+                  onClick={() => setImprovementScope("latest")}
+                >
+                  Latest Replay
+                </button>
+              </div>
+
+              <h3 style={{ marginBottom: 14 }}>Top 3 Mechanics to Practice</h3>
+
+              <div className="improvement-cards">
+                {IMPROVEMENT_PLACEHOLDER.map((item) => (
+                  <div key={item.rank} className="improvement-card">
+                    <div className="improvement-card-header">
+                      <div className={`improvement-rank improvement-rank--${item.rank}`}>#{item.rank}</div>
+                      <div style={{ flex: 1 }}>
+                        <strong style={{ fontSize: 15 }}>{item.mechanic}</strong>
+                        <div style={{ marginTop: 4 }}>
+                          <span className={`quality-badge improvement-priority--${item.priority.toLowerCase()}`}>{item.priority} Priority</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="library-item-meta" style={{ lineHeight: 1.6, margin: "10px 0" }}>{item.description}</p>
+                    <div className="improvement-tips">
+                      <strong style={{ fontSize: 12 }}>Practice Tips</strong>
+                      <p className="library-item-meta" style={{ marginTop: 4, fontStyle: "italic" }}>Coming soon — algorithm in development</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         )}
@@ -780,6 +956,8 @@ export default function ReplayDashboardPage() {
           </div>
         </div>
       )}
+
+      {showTutorial && <TutorialModal onClose={closeTutorial} />}
 
       {loadingOverlay.open && (
         <div className="loading-overlay">

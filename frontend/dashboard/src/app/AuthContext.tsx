@@ -25,8 +25,8 @@ type AuthState = {
   profile: Profile | null;
   loading: boolean;
   authError: string | null;
-  refresh: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  refresh: () => Promise<Profile | null>;
+  login: (email: string, password: string) => Promise<Profile | null>;
   signup: (email: string, password: string) => Promise<void>;
   confirmSignup: (email: string, code: string) => Promise<void>;
   resendSignupCode: (email: string) => Promise<void>;
@@ -54,12 +54,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [idToken, setIdToken] = useState("");
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<Profile | null> => {
     const res = await apiGet<{ ok: boolean; auth?: AuthUser | null; profile?: Profile | null }>(
       `${REPLAY_PREFIX}/auth/me`
     );
     setAuth(res.ok ? (res.auth ?? null) : null);
     setProfile(res.ok ? (res.profile ?? null) : null);
+    return res.ok ? (res.profile ?? null) : null;
   }, []);
 
   useEffect(() => {
@@ -101,14 +102,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refresh]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<Profile | null> => {
     setLoading(true);
     setAuthError(null);
     try {
       const tokens = await cognitoLogin(email, password);
       setIdToken(tokens.idToken);
       await apiPost(`${REPLAY_PREFIX}/auth/cognito/login`, { id_token: tokens.idToken });
-      await refresh();
+      const fetchedProfile = await refresh();
+      return fetchedProfile;
     } catch (err) {
       setAuth(null);
       setProfile(null);

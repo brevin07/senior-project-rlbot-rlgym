@@ -1,0 +1,113 @@
+{
+  "generated_at_utc": "2026-03-08T22:27:54.216095+00:00",
+  "results": [
+    {
+      "kr": "KR1",
+      "name": "Replay parsing to Pandas DataFrame",
+      "status": "FAIL",
+      "summary": "Replay file not found: C:\\Users\\brevi\\senior-project-rlbot-",
+      "details": {
+        "replay_path": "C:\\Users\\brevi\\senior-project-rlbot-"
+      }
+    },
+    {
+      "kr": "KR2",
+      "name": "Top-3 weakness derivation",
+      "status": "PASS",
+      "summary": "Derived three weakest mechanics from stored threshold-based mechanic scores.",
+      "details": {
+        "replay_name": "300F73EE4FFBA48E8BFB138C0C7E89E8.replay",
+        "mechanic_score_count": 8,
+        "weakest_three": [
+          {
+            "mechanic_id": "kickoff",
+            "score_0_100": 50.0
+          },
+          {
+            "mechanic_id": "flicking",
+            "score_0_100": 73.42
+          },
+          {
+            "mechanic_id": "challenge",
+            "score_0_100": 75.02
+          }
+        ]
+      }
+    },
+    {
+      "kr": "KR3",
+      "name": "Visualizer pause/FPS instrumentation presence",
+      "status": "PASS",
+      "summary": "Code paths for mistake-timestamp pause and FPS instrumentation are present.",
+      "details": {
+        "checks": {
+          "react_auto_event_pause_callback": true,
+          "react_pause_on_event_hit": true,
+          "legacy_fps_counter": true,
+          "legacy_debug_fps_line": true
+        },
+        "manual_screenshot_steps": [
+          "Run replay dashboard: powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1",
+          "Load a replay and open debug bubble in legacy view (or event playback in React view).",
+          "Capture screenshot showing event pause behavior and FPS line."
+        ]
+      }
+    },
+    {
+      "kr": "KR4",
+      "name": "SQLite persistence evidence",
+      "status": "PASS",
+      "summary": "Replay/session persistence rows are present in local SQLite artifacts.",
+      "details": {
+        "db_path": "C:\\Users\\brevi\\senior-project-rlbot-rlgym\\artifacts\\data\\app.db",
+        "table_count": 10,
+        "tables": [
+          "app_state",
+          "auth_sessions",
+          "auth_users",
+          "drill_runs",
+          "event_labels",
+          "llm_event_explanations",
+          "recommendation_snapshots",
+          "replay_sessions",
+          "sqlite_sequence",
+          "users"
+        ],
+        "row_counts": {
+          "users": 1,
+          "replay_sessions": 3,
+          "auth_users": 2,
+          "auth_sessions": 44,
+          "event_labels": 0,
+          "recommendation_snapshots": 0
+        },
+        "recent_replay_sessions": [
+          {
+            "replay_name": "300F73EE4FFBA48E8BFB138C0C7E89E8.replay",
+            "created_at": "2026-03-04T20:43:27.785345+00:00",
+            "duration_s": 635.497988,
+            "tracked_player_name": "hxzywassaved",
+            "has_blob": true,
+            "has_prepared": true
+          },
+          {
+            "replay_name": "AE64DC9044CEC18B60A1D6B5E8B462B7.replay",
+            "created_at": "2026-03-04T20:36:56.134354+00:00",
+            "duration_s": 352.2878584,
+            "tracked_player_name": "hxzywassaved",
+            "has_blob": true,
+            "has_prepared": true
+          },
+          {
+            "replay_name": "813B575742916BF2F8354E8DEC8FAAF5.replay",
+            "created_at": "2026-03-04T20:34:05.119091+00:00",
+            "duration_s": 425.312379,
+            "tracked_player_name": "what_the_shigma",
+            "has_blob": true,
+            "has_prepared": true
+          }
+        ]
+      }
+    }
+  ]
+}

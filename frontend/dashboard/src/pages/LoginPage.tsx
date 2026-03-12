@@ -24,8 +24,12 @@ export default function LoginPage() {
     setError("");
     setMessage("");
     try {
-      await login(email, password);
-      navigate("/profile", { replace: true });
+      const fetchedProfile = await login(email, password);
+      if (!fetchedProfile || !fetchedProfile.username) {
+        navigate("/profile", { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

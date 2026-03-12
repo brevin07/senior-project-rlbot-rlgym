@@ -13,7 +13,7 @@ if (-not $ngrok) {
 Write-Host "[ngrok] exposing http://127.0.0.1:$Port"
 if ($Domain) {
     Write-Host "[ngrok] using reserved domain: https://$Domain"
-    & $ngrok.Path http $Port --url $Domain
+    & $ngrok.Path http $Port --domain $Domain
 } else {
     & $ngrok.Path http $Port
 }

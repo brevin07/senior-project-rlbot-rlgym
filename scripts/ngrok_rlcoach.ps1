@@ -11,4 +11,4 @@ if (-not $ngrok) {
 }
 
 Write-Host "[ngrok] exposing http://127.0.0.1:$Port as https://$Domain"
-& $ngrok.Path http $Port --url $Domain
+& $ngrok.Path http $Port --domain $Domain

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh-keygen -t ed25519 -C \"brevintating@gmail.com\" -f ~/.ssh/github_this_machine)",
+      "Bash(curl -s http://127.0.0.1:8888/api/health 2>&1)",
+      "Bash(cd C:\\\\Users\\\\brevi\\\\senior-project-rlbot-rlgym\\\\frontend\\\\dashboard && npx tsc --noEmit 2>&1)"
+    ]
+  }
+}

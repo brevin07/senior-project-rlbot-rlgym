@@ -1590,3 +1590,141 @@ button.ghost {
     max-width: 160px;
   }
 }
+
+/* ── Tutorial Modal ─────────────────────────────────────────── */
+.tutorial-modal {
+  width: min(540px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.tutorial-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.tutorial-header h2 { margin: 0; }
+.tutorial-step-indicator {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.tutorial-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2a3a49;
+  border: 1px solid #3a4a59;
+  transition: all 0.15s ease;
+}
+.tutorial-dot.done {
+  background: rgba(78, 193, 255, 0.4);
+  border-color: var(--accent);
+}
+.tutorial-dot.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(78, 193, 255, 0.5);
+}
+.tutorial-body {
+  text-align: center;
+  padding: 10px 0;
+}
+.tutorial-icon {
+  font-size: 48px;
+  margin-bottom: 14px;
+  line-height: 1;
+}
+.tutorial-body h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+.tutorial-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid #2a3a49;
+  padding-top: 14px;
+}
+
+/* ── Improvement Tab ────────────────────────────────────────── */
+.improvement-toggle {
+  display: flex;
+}
+.improvement-toggle button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.improvement-toggle button:last-child {
+  border-radius: 0 8px 8px 0;
+  margin-left: -1px;
+}
+.improvement-cards {
+  display: grid;
+  gap: 14px;
+}
+.improvement-card {
+  background: var(--panel-strong);
+  border: 1px solid #2a3a49;
+  border-radius: 10px;
+  padding: 16px;
+  transition: border-color 0.15s ease;
+}
+.improvement-card:hover {
+  border-color: rgba(78, 193, 255, 0.3);
+}
+.improvement-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+.improvement-rank {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.improvement-rank--1 {
+  background: rgba(255, 215, 0, 0.2);
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.4);
+}
+.improvement-rank--2 {
+  background: rgba(192, 192, 192, 0.2);
+  color: #c0c0c0;
+  border: 1px solid rgba(192, 192, 192, 0.4);
+}
+.improvement-rank--3 {
+  background: rgba(205, 127, 50, 0.2);
+  color: #cd7f32;
+  border: 1px solid rgba(205, 127, 50, 0.4);
+}
+.improvement-priority--high {
+  background: rgba(255, 122, 92, 0.2);
+  color: #ff7a5c;
+  border: 1px solid rgba(255, 122, 92, 0.4);
+}
+.improvement-priority--medium {
+  background: rgba(255, 179, 71, 0.2);
+  color: #ffb347;
+  border: 1px solid rgba(255, 179, 71, 0.4);
+}
+.improvement-priority--low {
+  background: rgba(103, 228, 139, 0.2);
+  color: #67e48b;
+  border: 1px solid rgba(103, 228, 139, 0.4);
+}
+.improvement-tips {
+  background: #0f171f;
+  border: 1px solid #2a3a49;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
