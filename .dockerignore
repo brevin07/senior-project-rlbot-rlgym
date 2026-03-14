@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.claude
+.venv
+.venv-wsl
+venv
+venv_Win
+venv_linux
+artifacts
+frontend/dashboard/node_modules
+frontend/dashboard/dist
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env

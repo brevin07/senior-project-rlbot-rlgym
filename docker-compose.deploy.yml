@@ -1,0 +1,32 @@
+version: "3.9"
+services:
+  replay:
+    image: ${REPLAY_IMAGE:?set REPLAY_IMAGE}
+    restart: unless-stopped
+    environment:
+      - COGNITO_ISSUER=${COGNITO_ISSUER}
+      - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - RLBOT_ENABLE_LLM_EXPLAIN=${RLBOT_ENABLE_LLM_EXPLAIN:-1}
+      - RLBOT_APP_DB_PATH=/app/artifacts/data/app.db
+      - RLBOT_LLM_MODEL=${RLBOT_LLM_MODEL:-gpt-4o-mini}
+      - RLBOT_LLM_MAX_TOKENS=${RLBOT_LLM_MAX_TOKENS:-80}
+      - RLBOT_LLM_BATCH_MAX_TOKENS=${RLBOT_LLM_BATCH_MAX_TOKENS:-900}
+      - RLBOT_LLM_BATCH_CHUNK_SIZE=${RLBOT_LLM_BATCH_CHUNK_SIZE:-30}
+      - RLBOT_LLM_TIMEOUT_S=${RLBOT_LLM_TIMEOUT_S:-6}
+      - RLBOT_LLM_BATCH_TIMEOUT_S=${RLBOT_LLM_BATCH_TIMEOUT_S:-8}
+    volumes:
+      - rlcoach-data:/app/artifacts/data
+    ports:
+      - "8775:8775"
+
+  gateway:
+    image: ${GATEWAY_IMAGE:?set GATEWAY_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      - replay
+    ports:
+      - "8888:8888"
+
+volumes:
+  rlcoach-data:

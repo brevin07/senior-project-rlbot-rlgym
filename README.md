@@ -180,6 +180,40 @@ Notes:
   - `scripts\start_ngrok_replay.ps1`
   - `scripts\start_rlcoach.ps1`
 
+## Docker Hub Deployment
+
+GitHub Actions can now build and publish deployable Docker images for `replay` and `gateway`.
+
+Required GitHub repository secrets:
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+Workflow file:
+
+- `.github/workflows/docker-images.yml`
+
+The workflow publishes:
+
+- `docker.io/<DOCKERHUB_USERNAME>/rlcoach-replay:latest`
+- `docker.io/<DOCKERHUB_USERNAME>/rlcoach-gateway:latest`
+- matching short-SHA tags on each `main` push
+
+The replay image bundles a pinned Linux `rrrocket` binary so replay parsing does not require a separate host install.
+
+Host deployment steps:
+
+1. Create a `.env` file from `.env.example`
+2. Set:
+   - `REPLAY_IMAGE=docker.io/<DOCKERHUB_USERNAME>/rlcoach-replay:latest`
+   - `GATEWAY_IMAGE=docker.io/<DOCKERHUB_USERNAME>/rlcoach-gateway:latest`
+3. Start the stack:
+
+```powershell
+docker compose -f docker-compose.deploy.yml pull
+docker compose -f docker-compose.deploy.yml up -d
+```
+
 ### Cognito Sign-In (React)
 
 The React login page now performs direct Cognito User Pool API authentication

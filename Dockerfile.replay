@@ -1,8 +1,26 @@
+FROM rust:1.86-slim AS rrrocket-build
+
+ARG RRROCKET_VERSION=v0.10.12
+
+RUN cargo install --git https://github.com/nickbabcock/rrrocket --tag ${RRROCKET_VERSION} rrrocket
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Pre-install heavy dependencies so container startup is fast.
-RUN python -m pip install --no-cache-dir pandas "PyJWT[crypto]>=2.8,<3"
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUTF8=1 \
+    PYTHONIOENCODING=utf-8 \
+    RRROCKET_BIN=/usr/local/bin/rrrocket
+
+RUN python -m pip install --no-cache-dir --upgrade pip && \
+    python -m pip install --no-cache-dir pandas "PyJWT[crypto]>=2.8,<3"
+
+COPY --from=rrrocket-build /usr/local/cargo/bin/rrrocket /usr/local/bin/rrrocket
+COPY Milestone_1 ./Milestone_1
+COPY collision_meshes ./collision_meshes
+
+EXPOSE 8775
 
 CMD ["python", "Milestone_1/replay_dashboard/run_replay_dashboard.py", "--host", "0.0.0.0", "--port", "8775", "--no-browser"]
