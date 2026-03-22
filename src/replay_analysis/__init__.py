@@ -1,1 +1,1 @@
-"""Package scaffold for replay analysis migration."""
+"""Compatibility package for replay analysis entrypoints."""

@@ -30,11 +30,16 @@ function Resolve-PythonCommand {
 }
 
 function Resolve-VenvPython {
-    $winPy = ".\venv\Scripts\python.exe"
-    if (Test-Path $winPy) { return $winPy }
+    $candidates = @(
+        ".\venv\Scripts\python.exe",
+        ".\venv\bin\python"
+    )
 
-    $posixPy = ".\venv\bin\python"
-    if (Test-Path $posixPy) { return $posixPy }
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
 
     return $null
 }
@@ -50,8 +55,10 @@ function Invoke-CommandString {
 $pythonCmd = Resolve-PythonCommand -Requested $Python
 Write-Host "[bootstrap] using interpreter: $pythonCmd"
 
-if (!(Test-Path "venv")) {
-    Invoke-CommandString "$pythonCmd -m venv venv"
+$venvRoot = "venv"
+
+if (!(Test-Path $venvRoot)) {
+    Invoke-CommandString "$pythonCmd -m venv $venvRoot"
 }
 
 $venvPython = Resolve-VenvPython
@@ -66,7 +73,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 if ($versionLine -notin @("3.11", "3.12")) {
     Write-Host "[bootstrap] rebuilding venv with supported Python version"
-    Invoke-CommandString "$pythonCmd -m venv --clear venv"
+    Invoke-CommandString "$pythonCmd -m venv --clear $venvRoot"
     $venvPython = Resolve-VenvPython
     if (-not $venvPython) {
         throw "Unable to resolve python executable inside venv after rebuild."

@@ -19,13 +19,14 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 function Resolve-VenvPython([string]$root) {
-    $winPy = Join-Path $root "venv\Scripts\python.exe"
-    if (Test-Path $winPy) {
-        return $winPy
-    }
-    $posixPy = Join-Path $root "venv\bin\python"
-    if (Test-Path $posixPy) {
-        return $posixPy
+    $candidates = @(
+        Join-Path $root "venv\Scripts\python.exe",
+        Join-Path $root "venv\bin\python"
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
     }
     return $null
 }
@@ -33,7 +34,7 @@ function Resolve-VenvPython([string]$root) {
 Push-Location $repoRoot
 try {
     $venvPython = Resolve-VenvPython $repoRoot
-    if (!(Test-Path $venvPython)) {
+    if (-not $venvPython) {
         if ($SkipBootstrap) {
             throw "Virtual environment missing and -SkipBootstrap was provided."
         }
@@ -41,7 +42,7 @@ try {
         & powershell -ExecutionPolicy Bypass -File ".\scripts\bootstrap.ps1"
         $venvPython = Resolve-VenvPython $repoRoot
     }
-    if (!(Test-Path $venvPython)) {
+    if (-not $venvPython) {
         throw "Unable to resolve python executable inside venv."
     }
 
@@ -67,8 +68,10 @@ sys.exit(0 if not missing else 1)
         & $venvPython -m pip install "flatbuffers>=24.3.25"
     }
 
+    $entry = "rocketcoach\live_analysis\run_live_analysis.py"
+
     $cmd = @(
-        "Milestone_1\live_analysis\run_live_analysis.py",
+        $entry,
         "--host", $BindHost,
         "--port", "$Port",
         "--player-index", "$PlayerIndex",
@@ -93,7 +96,7 @@ sys.exit(0 if not missing else 1)
     }
 
     $env:RLBOT_LIVE_ANALYSIS_LAUNCHED = "1"
-    Write-Host "[launcher] Starting live analysis..."
+    Write-Host "[launcher] Starting live analysis from $entry..."
     Write-Host "[launcher] Dashboard URL: http://$BindHost`:$Port"
     if ($AttachOnly) {
         Write-Host "[launcher] Mode: attach-only"

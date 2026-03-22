@@ -14,12 +14,13 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 function Resolve-VenvPython([string]$root) {
-    $winPy = Join-Path $root "venv\Scripts\python.exe"
-    if (Test-Path $winPy) { return $winPy }
-    $altPy = Join-Path $root ".venv\Scripts\python.exe"
-    if (Test-Path $altPy) { return $altPy }
-    $posixPy = Join-Path $root "venv\bin\python"
-    if (Test-Path $posixPy) { return $posixPy }
+    $candidates = @(
+        Join-Path $root "venv\Scripts\python.exe",
+        Join-Path $root "venv\bin\python"
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) { return $candidate }
+    }
     return $null
 }
 
@@ -61,11 +62,11 @@ try {
     }
 
     $venvPython = Resolve-VenvPython $repoRoot
-    if (!(Test-Path $venvPython)) {
+    if (-not $venvPython) {
         throw "Virtual environment not found. Run scripts/bootstrap.ps1 first."
     }
 
-    $gateway = Join-Path $repoRoot "Milestone_1\dashboard_gateway\gateway_server.py"
+    $gateway = Join-Path $repoRoot "rocketcoach\dashboard_gateway\gateway_server.py"
     $liveUrl = "http://${BindHost}:$LivePort"
     $replayUrl = "http://${BindHost}:$ReplayPort"
     & $venvPython $gateway --host $BindHost --port $GatewayPort --live $liveUrl --replay $replayUrl

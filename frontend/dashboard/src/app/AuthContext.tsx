@@ -2,11 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { apiGet, apiPost, setApiAuthTokenProvider } from "../api";
 import {
   cognitoConfirmSignup,
+  cognitoDeleteCurrentUser,
   cognitoLogin,
   cognitoResendSignupCode,
   cognitoRestoreSession,
   cognitoSignOut,
   cognitoSignup,
+  getCognitoConfigError,
 } from "./cognito";
 
 const REPLAY_PREFIX = "/api/replay";
@@ -25,6 +27,7 @@ type AuthState = {
   profile: Profile | null;
   loading: boolean;
   authError: string | null;
+  devBypassAuth: boolean;
   refresh: () => Promise<Profile | null>;
   login: (email: string, password: string) => Promise<Profile | null>;
   signup: (email: string, password: string) => Promise<void>;
@@ -43,11 +46,13 @@ type AuthState = {
     platform: string;
     aliases: string[];
   }) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const devBypassAuth = String(import.meta.env.VITE_DEV_BYPASS_AUTH ?? "").trim() === "1";
   const [auth, setAuth] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,7 +78,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const restore = async () => {
       setLoading(true);
       try {
-        const restored = await cognitoRestoreSession();
+        const configError = getCognitoConfigError();
+        if (configError && !devBypassAuth) {
+          if (!canceled) {
+            setAuth(null);
+            setProfile(null);
+            setAuthError(configError);
+          }
+          return;
+        }
+        const restored = devBypassAuth ? null : await cognitoRestoreSession();
         if (restored?.idToken) {
           if (!canceled) {
             setIdToken(restored.idToken);
@@ -100,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       canceled = true;
     };
-  }, [refresh]);
+  }, [devBypassAuth, refresh]);
 
   const login = useCallback(async (email: string, password: string): Promise<Profile | null> => {
     setLoading(true);
@@ -160,12 +174,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(res.profile ?? null);
   }, []);
 
+  const deleteAccount = useCallback(async () => {
+    await apiPost(`${REPLAY_PREFIX}/auth/delete_account`, {});
+    try {
+      await cognitoDeleteCurrentUser();
+    } catch {
+      // Local deletion already completed; the user can retry Cognito cleanup by signing in again if needed.
+    }
+    setIdToken("");
+    cognitoSignOut();
+    setAuth(null);
+    setProfile(null);
+  }, []);
+
   const value = useMemo<AuthState>(
     () => ({
       auth,
       profile,
       loading,
       authError,
+      devBypassAuth,
       refresh,
       login,
       signup,
@@ -174,8 +202,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       setupProfile,
       updateProfile,
+      deleteAccount,
     }),
-    [auth, profile, loading, authError, refresh, login, signup, confirmSignup, resendSignupCode, logout, setupProfile, updateProfile]
+    [auth, profile, loading, authError, devBypassAuth, refresh, login, signup, confirmSignup, resendSignupCode, logout, setupProfile, updateProfile, deleteAccount]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

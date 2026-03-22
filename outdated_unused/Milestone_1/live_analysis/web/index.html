@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Scenario Analysis</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Live Scenario Analysis</h1>
+    <div id="status">Connecting...</div>
+  </header>
+
+  <section class="controls">
+    <label for="usernameInput">Primary Username</label>
+    <input id="usernameInput" type="text" placeholder="Your RL username" />
+    <label for="aliasesInput">Other Usernames</label>
+    <input id="aliasesInput" type="text" placeholder="Comma-separated past usernames" />
+    <label for="rankSelect">Rank</label>
+    <select id="rankSelect">
+      <option value="bronze_1">Bronze 1</option>
+      <option value="bronze_2">Bronze 2</option>
+      <option value="bronze_3">Bronze 3</option>
+      <option value="silver_1">Silver 1</option>
+      <option value="silver_2">Silver 2</option>
+      <option value="silver_3">Silver 3</option>
+      <option value="gold_1">Gold 1</option>
+      <option value="gold_2">Gold 2</option>
+      <option value="gold_3">Gold 3</option>
+      <option value="platinum_1">Platinum 1</option>
+      <option value="platinum_2">Platinum 2</option>
+      <option value="platinum_3">Platinum 3</option>
+      <option value="diamond_1">Diamond 1</option>
+      <option value="diamond_2">Diamond 2</option>
+      <option value="diamond_3">Diamond 3</option>
+      <option value="champion_1">Champion 1</option>
+      <option value="champion_2">Champion 2</option>
+      <option value="champion_3">Champion 3</option>
+      <option value="grand_champion_1">Grand Champion 1</option>
+      <option value="grand_champion_2">Grand Champion 2</option>
+      <option value="grand_champion_3">Grand Champion 3</option>
+      <option value="ssl">SSL</option>
+    </select>
+    <label for="platformSelect">Platform</label>
+    <select id="platformSelect">
+      <option value="epic">Epic</option>
+      <option value="steam">Steam</option>
+    </select>
+    <button id="loginBtn">Log In</button>
+    <span id="profileStatus">Not logged in.</span>
+  </section>
+
+  <section class="tabs">
+    <button id="tabLive" class="tab-btn active">Live Metrics</button>
+    <button id="tabReview" class="tab-btn">Review Session</button>
+  </section>
+
+  <div id="liveTab">
+    <section class="controls">
+      <label for="scenarioSelect">Scenario</label>
+      <select id="scenarioSelect"></select>
+      <button id="applyScenario">Apply Scenario</button>
+      <span id="activeScenario">Active: none</span>
+      <span id="activeSource">Source: n/a</span>
+      <span id="spawnMode">Spawn: n/a</span>
+    </section>
+
+    <section class="cards">
+      <div class="card"><h3>Speed</h3><p id="speedVal">0</p></div>
+      <div class="card"><h3>Hesitation %</h3><p id="hesitationVal">0</p></div>
+      <div class="card"><h3>Hesitation Score</h3><p id="hesitationScoreVal">0</p></div>
+      <div class="card"><h3>Boost Waste %</h3><p id="boostWasteVal">0</p></div>
+      <div class="card"><h3>Supersonic %</h3><p id="supersonicVal">0</p></div>
+      <div class="card"><h3>Useful Supersonic %</h3><p id="usefulSupersonicVal">0</p></div>
+      <div class="card"><h3>Pressure %</h3><p id="pressureVal">0</p></div>
+      <div class="card"><h3>Whiff Rate / min</h3><p id="whiffRateVal">0</p></div>
+      <div class="card"><h3>Approach Efficiency</h3><p id="approachEffVal">0</p></div>
+      <div class="card"><h3>Recovery Avg (s)</h3><p id="recoveryAvgVal">0</p></div>
+      <div class="card"><h3>Contest-Suppressed Whiffs</h3><p id="contestSuppressedVal">0</p></div>
+      <div class="card"><h3>Clear Misses Under Contest</h3><p id="clearMissContestVal">0</p></div>
+      <div class="card"><h3>Pressure Gated Frames</h3><p id="pressureGatedVal">0</p></div>
+    </section>
+
+    <section class="charts">
+      <canvas id="speedChart" width="500" height="140"></canvas>
+      <canvas id="hesitationChart" width="500" height="140"></canvas>
+      <canvas id="hesitationScoreChart" width="500" height="140"></canvas>
+      <canvas id="boostChart" width="500" height="140"></canvas>
+      <canvas id="supersonicChart" width="500" height="140"></canvas>
+      <canvas id="pressureChart" width="500" height="140"></canvas>
+      <canvas id="whiffRateChart" width="500" height="140"></canvas>
+      <canvas id="approachChart" width="500" height="140"></canvas>
+      <canvas id="recoveryChart" width="500" height="140"></canvas>
+    </section>
+
+    <section class="events">
+      <h2>Recent Events</h2>
+      <ul id="events"></ul>
+    </section>
+
+    <section class="events">
+      <h2>What To Work On</h2>
+      <div class="controls">
+        <button id="refreshRecsBtn">Refresh Recommendations</button>
+      </div>
+      <ul id="recommendations"></ul>
+    </section>
+
+    <section class="events">
+      <h2>Mechanic Grades (Latest Review Session)</h2>
+      <div class="controls">
+        <button id="refreshMechanicsBtn">Refresh Mechanics</button>
+      </div>
+      <ul id="mechanics"></ul>
+    </section>
+  </div>
+
+  <div id="reviewTab" class="hidden">
+    <section class="controls">
+      <label for="reviewSessionSelect">Session</label>
+      <select id="reviewSessionSelect"></select>
+      <button id="reviewLoadBtn">Load Session</button>
+      <button id="reviewLoadLatestBtn">Load Latest</button>
+      <span id="reviewStatus">No review session loaded.</span>
+    </section>
+    <section class="review-layout">
+      <div class="review-scene-card">
+        <div id="reviewHud">
+          <span id="reviewBlueScore">0</span>
+          <span id="reviewClock">5:00</span>
+          <span id="reviewOrangeScore">0</span>
+        </div>
+        <div id="reviewSceneWrap">
+          <div id="reviewScene"></div>
+          <div id="reviewLabelLayer"></div>
+        </div>
+        <div class="review-controls">
+          <button id="reviewPlayBtn">Play</button>
+          <button id="reviewPauseBtn">Pause</button>
+          <span id="reviewTime">t=0.00</span>
+          <input id="reviewTimeline" type="range" min="0" max="0" value="0" step="1" />
+          <button id="markMissedWhiffBtn">Mark Missed Whiff</button>
+          <button id="markMissedHesBtn">Mark Missed Hesitation</button>
+        </div>
+      </div>
+      <div class="review-events-panel">
+        <h2>Event Review</h2>
+        <div class="label-summary" id="labelSummary">TP 0 | FP 0 | TN 0 | FN 0</div>
+        <ul id="reviewEvents"></ul>
+      </div>
+    </section>
+  </div>
+
+  <script src="/three.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

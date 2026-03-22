@@ -1,2 +1,2 @@
-entrypoint: Milestone_1/extract_player_data.py
-output_dir: Milestone_1/heuristic_analysis/csv_files
+entrypoint: rocketcoach/extract_player_data.py
+output_dir: rocketcoach/heuristic_analysis/csv_files

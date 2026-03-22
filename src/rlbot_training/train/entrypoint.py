@@ -1,13 +1,12 @@
-"""Compatibility wrapper for training entrypoint migration."""
-
+import subprocess
+import sys
 from pathlib import Path
-import runpy
 
 
 def main():
     root = Path(__file__).resolve().parents[3]
-    legacy = root / "rlbot_training" / "rlbot_starting_code.py"
-    runpy.run_path(str(legacy), run_name="__main__")
+    entry = root / "rlbot_training" / "rlbot_starting_code.py"
+    raise SystemExit(subprocess.call([sys.executable, str(entry)]))
 
 
 if __name__ == "__main__":

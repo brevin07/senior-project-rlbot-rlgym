@@ -99,13 +99,17 @@ try {
         }
     }
 
-    Write-Host "[start] starting docker compose (gateway + replay)"
+    Write-Host "[start] resetting docker compose state"
     $composeArgs = @("compose")
     if ($ComposeProjectName) {
         $composeArgs += @("-p", $ComposeProjectName)
     }
-    $composeArgs += @("up", "-d")
-    & docker @composeArgs
+    $composeDownArgs = @($composeArgs + @("down", "--remove-orphans"))
+    & docker @composeDownArgs
+
+    Write-Host "[start] starting docker compose (gateway + replay)"
+    $composeUpArgs = @($composeArgs + @("up", "-d", "--build"))
+    & docker @composeUpArgs
 
     Write-Host "[start] waiting for gateway to become reachable..."
     $deadline = (Get-Date).AddSeconds([double]$StartupWaitSeconds)
@@ -122,14 +126,13 @@ try {
         }
     }
     if (-not $ready) {
-        Write-Host "[start] warning: gateway did not respond before timeout."
-    } else {
-        Write-Host "[start] gateway is healthy at http://127.0.0.1:$GatewayPort"
+        throw "Gateway did not respond at http://127.0.0.1:$GatewayPort before timeout. Skipping ngrok startup."
     }
+    Write-Host "[start] gateway is healthy at http://127.0.0.1:$GatewayPort"
 
-    Write-Host "[start] live analysis is optional and not auto-started."
+    Write-Host "[start] live analysis / training is optional and not auto-started."
     Write-Host "[start] to run it later: powershell -ExecutionPolicy Bypass -File scripts\launch_live_analysis.ps1 -AttachOnly"
-    Write-Host "[start] in the UI, open the 'Test Mechanic Events & Live Metrics' tab."
+    Write-Host "[start] in the UI, use Home for summary, Replay for review, Improvement for trends, and Training to launch drills."
 
     Write-Host "[start] starting ngrok"
     & powershell -ExecutionPolicy Bypass -File "scripts\ngrok_dashboard.ps1" -Port $GatewayPort -Domain $Domain

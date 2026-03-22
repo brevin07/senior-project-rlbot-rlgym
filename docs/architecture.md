@@ -8,14 +8,15 @@
 ## Current Runtime Components
 - `rlbot_training/rlbot_starting_code.py`: PPO training entrypoint.
 - `rlbot_training/reward_funcs/reward_functions.py`: reward library and experiments.
-- `Milestone_1/extract_player_data.py`: rrrocket JSON -> gameplay CSV extraction.
-- `Milestone_1/heuristic_analysis/analyzer.py`: offline heuristic analysis.
-- `Milestone_1/heuristic_analysis/live_dashboard.py`: live telemetry dashboard.
+- `rocketcoach/extract_player_data.py`: rrrocket JSON -> gameplay CSV extraction.
+- `rocketcoach/replay_dashboard/run_replay_dashboard.py`: replay dashboard entrypoint.
+- `rocketcoach/live_analysis/run_live_analysis.py`: live telemetry dashboard / analysis entrypoint.
 
 ## Target Logical Boundaries
-- `src/rlbot_training/train/*`: training pipeline and env builders.
-- `src/live_analysis/*`: live, in-match metric analysis and dashboards.
-- `src/replay_analysis/*`: replay parsing and offline analysis.
+- `rocketcoach/common/*`: persistence, shared contracts, and backend utilities.
+- `rocketcoach/live_analysis/*`: live, in-match metric analysis and dashboards.
+- `rocketcoach/replay_dashboard/*`: replay parsing, replay APIs, and coaching workflows.
+- `src/*`: thin compatibility entrypoints only.
 
 ## Artifact Policy
 - Do not commit model binaries, checkpoint folders, replay dumps, or generated plots/csvs.
@@ -24,5 +25,5 @@
 ## Migration Strategy
 1. Stabilize current scripts with wrappers under `scripts/`.
 2. Add docs, ignore rules, and guardrails (pre-commit + large-file checks).
-3. Incrementally move code into `src/` while keeping wrapper compatibility.
+3. Keep `rocketcoach/` as the canonical runtime package and limit `src/` to thin compatibility wrappers.
 4. Perform history rewrite using `scripts/history_cleanup.ps1` after team coordination.

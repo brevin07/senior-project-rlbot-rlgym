@@ -13,6 +13,8 @@ from typing import Dict, Any
 import json
 import socket
 import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 from rlgym.api import Renderer, RLGym
@@ -45,6 +47,25 @@ def get_windows_host_ip() -> str:
 
 WINDOWS_HOST_IP = get_windows_host_ip()
 print(f"Windows host IP for RocketSimVis: {WINDOWS_HOST_IP}")
+
+
+def resolve_checkpoint_load_folder() -> str | None:
+    argv = list(sys.argv[1:])
+    for idx, value in enumerate(argv):
+        if value == "--checkpoint-load-folder" and idx + 1 < len(argv):
+            candidate = str(argv[idx + 1]).strip()
+            if candidate:
+                return candidate
+    env_value = str(os.environ.get("RLBOT_CHECKPOINT_LOAD_FOLDER", "")).strip()
+    if env_value:
+        return env_value
+    repo_root = Path(__file__).resolve().parents[1]
+    default_dir = repo_root / "data" / "checkpoints"
+    if default_dir.exists():
+        checkpoint_dirs = sorted((p for p in default_dir.rglob("*") if p.is_dir()), key=lambda p: p.stat().st_mtime, reverse=True)
+        for path in checkpoint_dirs:
+            return str(path)
+    return None
 
 
 class RocketSimVisRenderer(Renderer[GameState]):
@@ -232,6 +253,8 @@ if __name__ == "__main__":
     n_proc = 12
     min_inference_size = max(1, int(round(n_proc * 0.9)))
 
+    checkpoint_load_folder = resolve_checkpoint_load_folder()
+
     learner = Learner(
         build_rlgym_v2_env,
         n_proc=n_proc,
@@ -253,8 +276,7 @@ if __name__ == "__main__":
         timestep_limit=5_000_000_000,
         log_to_wandb=False,
         render=True,  # Sends visualization to RocketSimVis on Windows
-
-       checkpoint_load_folder="D:\\PycharmProjects\\RLGym_Bot_Training\\rlbot\\data\\checkpoints\\rlgym-ppo-run-1769157999478113400\\2245131382"
+        checkpoint_load_folder=checkpoint_load_folder,
     )
     learner.learn()
     input()

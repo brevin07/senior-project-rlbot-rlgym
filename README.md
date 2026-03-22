@@ -1,146 +1,152 @@
-# RLGym_Bot_Training
+# RocketCoach
 
-Rocket League bot training and analysis workspace with two dashboards:
+RocketCoach is a Rocket League coaching platform that combines replay parsing, mechanic grading, LLM-generated coaching feedback, progress tracking, and RLBot-based training scenarios.
 
-- Live Analysis Dashboard (while running/attaching to a match)
-- Replay 3D Dashboard (post-game replay analysis)
+The product goal is to help a player move through one continuous loop:
 
-## What You Can Run
+1. Create an account and verify it with AWS Cognito.
+2. Add the Rocket League usernames the replay parser should track, along with rank and platform.
+3. Review past replays and see event-by-event coaching plus mechanic grades.
+4. Track improvement over time.
+5. Practice the weakest mechanics against targeted bots and scenarios.
 
-- `scripts/bootstrap.ps1`: create venv and install dependencies
-- `scripts/train.ps1`: run training entrypoint
-- `scripts/live_analysis.ps1`: launch live analysis workflow
-- `scripts/launch_live_analysis.ps1`: one-click live launcher with dependency self-heal
-- `scripts/replay_extract.ps1`: pick a `.replay` and extract replay data
-- `scripts/replay_dashboard.ps1`: launch replay dashboard web app
+This repository already includes the foundations for that flow. Some parts are implemented end to end today, while others are still represented by placeholder UI or backend training infrastructure that has not yet been fully connected to the main dashboard experience.
 
-## Prerequisites
+## User Flow
+
+### 1. Account creation and verification
+
+The React frontend includes Cognito-backed sign-up, sign-in, email verification, and resend-code flows. A player creates an account, verifies their email, then signs in to access the dashboard.
+
+### 2. Player profile setup
+
+After authentication, the player configures the identity used for replay analysis:
+
+- in-game username
+- alternate usernames / aliases
+- rank tier
+- platform
+
+This gives the replay pipeline enough information to match parsed replay data back to the correct player.
+
+### 3. Replay review and coaching
+
+Once the profile is configured, the player enters the dashboard and uploads or opens replays. The replay analysis flow is intended to show:
+
+- replay history
+- a graded breakdown of mechanics
+- event-by-event feedback
+- LLM explanations of what happened and how to improve
+
+### 4. Improvement tracking
+
+RocketCoach is intended to turn replay analysis into trend data over time, so the player can see whether their mechanics are improving across multiple replays instead of only reviewing a single match in isolation.
+
+### 5. Training against bots
+
+The end-state product experience is for the player to select a mechanic that needs work and launch a focused practice session against a hard-coded RL bot or scenario tailored to that skill.
+
+## Dashboard Tabs
+
+The desired product language is:
+
+- `Replay`
+- `Improvement`
+- `Training`
+
+The current implementation uses:
+
+- `Home`
+- `Replays`
+- `Studio`
+- `Improvement`
+
+Here is how those concepts map today.
+
+### Replay
+
+Target behavior:
+
+- View replay history
+- Open past replays
+- Review graded mechanics
+- Read LLM explanations for specific events and mistakes
+
+Current implementation:
+
+- Replay library lives in `Replays`
+- Detailed replay review lives in `Studio`
+- Mechanic grades and coaching explanations are already available in the studio experience
+
+### Improvement
+
+Target behavior:
+
+- Show a graph of mechanic score changes over time based on replay analysis
+
+Current implementation:
+
+- Progress charting exists today
+- The graph currently appears in `Home`, not in `Improvement`
+
+### Training
+
+Target behavior:
+
+- Rank mechanics by how urgently the player should practice them
+- Show the replays or replay evidence behind each recommendation
+- Let the player click `Train against a bot`
+- Spawn a targeted training session against a hard-coded bot or scenario for that mechanic
+
+Current implementation:
+
+- The current `Improvement` tab contains placeholder `Top 3 Mechanics to Practice` cards
+- RLBot scenario and spawning infrastructure exists in the repository
+- The dashboard-level `Train against a bot` flow is not fully wired yet as a finished user-facing feature
+
+## Current Implementation Snapshot
+
+The repository already contains these working or partially working pieces:
+
+- Cognito sign-up, sign-in, email verification, and session restore in the React frontend
+- Profile setup for username, aliases, rank, and platform
+- Replay upload / replay library flow
+- Replay studio with 3D playback
+- Mechanic grading from replay analysis
+- LLM-backed event explanations and coaching feedback
+- Progress charting from replay-derived scores
+- RLBot live-analysis and scenario-loading infrastructure for training workflows
+
+## Product Status Notes
+
+This README reflects both the current system and the intended product direction.
+
+- The authentication and profile setup flow already matches the intended user journey closely.
+- Replay analysis is real today, but it is split across `Replays` and `Studio` instead of being presented as one unified `Replay` tab.
+- Improvement tracking exists, but the graph is currently on `Home`.
+- The current `Improvement` tab still uses placeholder recommendation cards.
+- Bot/scenario training support exists in backend and RLBot infrastructure, but the polished dashboard action for launching skill-specific bot practice is still a planned integration step.
+
+## Quick Start
+
+### Prerequisites
 
 - Windows PowerShell
-- Python 3.11 or 3.12 installed (`py` launcher recommended)
-- Rocket League installed (for live analysis mode)
+- Python 3.11 or 3.12
+- Node.js and npm for the React frontend
+- Rocket League installed for live analysis and training workflows
 
-Notes:
-- Bootstrap prefers Python 3.11, then 3.12.
-- The project uses `venv/` (not `.venv`) for runtime scripts.
+### 1. Bootstrap Python dependencies
 
-## Setup
-
-From repository root:
+From the repository root:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 ```
 
-This will:
+This creates the `venv` runtime virtual environment and installs the base Python dependencies.
 
-- create/rebuild `venv/` if needed
-- install `requirements/base.txt`
-- apply a `flatbuffers` compatibility override
-- verify required imports
-
-Dependency files are organized in `requirements/`:
-
-- `requirements/base.txt`: runtime dependencies
-- `requirements/dev.txt`: developer tooling
-- `requirements/tensorflow.txt`: optional isolated TensorFlow env
-
-## Run Live Analysis Dashboard
-
-Quick start:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1
-```
-
-or directly use the launcher:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/launch_live_analysis.ps1
-```
-
-Default URL:
-
-- `http://127.0.0.1:8765`
-
-Useful options:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1 -AttachOnly
-powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1 -Launcher auto
-powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1 -NoBrowser
-powershell -ExecutionPolicy Bypass -File scripts/live_analysis.ps1 -NoBotMode none
-```
-
-What these do:
-
-- `-AttachOnly`: attach to an existing RL session instead of auto-starting a match
-- `-Launcher epic|steam|auto`: choose RL launcher mode
-- `-NoBrowser`: do not auto-open browser
-- `-NoBotMode tuck|none`: choose no-bot spawn behavior
-
-## Run Replay 3D Dashboard
-
-Start server:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1
-```
-
-Default URL:
-
-- `http://127.0.0.1:8775`
-
-Optional flags:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1 -Port 8776
-powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1 -NoBrowser
-```
-
-## Replay Extraction
-
-Use file picker:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/replay_extract.ps1
-```
-
-Or pass a replay directly:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/replay_extract.ps1 -ReplayPath "C:\path\to\match.replay"
-```
-
-## Training
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/train.ps1
-```
-
-## Common Troubleshooting
-
-- `Virtual environment not found`:
-  - Run `scripts/bootstrap.ps1` first.
-- Browser did not open:
-  - Open the URL manually (`8765` for live, `8775` for replay dashboard).
-- Port already in use:
-  - Pass `-Port` to the script and use a different port.
-- Live mode fails to start match:
-  - Try `-AttachOnly` and connect to an already running session.
-
-## React + Gateway (Public ngrok)
-
-This repo now includes a React frontend and a gateway server that proxies the existing
-live/replay APIs behind a single URL.
-
-Folder:
-- `frontend/dashboard`: Vite + React + TypeScript app.
-
-Gateway server:
-- `Milestone_1/dashboard_gateway/gateway_server.py`
-
-Build the React app:
+### 2. Build or run the React frontend
 
 ```powershell
 cd frontend\dashboard
@@ -149,88 +155,82 @@ npm run build
 cd ..\..
 ```
 
-Run the gateway (starts live + replay dashboards + gateway):
+Use `npm run dev` during frontend development if you want the Vite development server instead of a production build.
+
+### 3. Start the gateway and replay services
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_gateway.ps1
 ```
 
-Default URLs:
-- Gateway: `http://127.0.0.1:8888`
-- React routes: `/live` and `/replay`
-- Legacy UIs: `/legacy/live/` and `/legacy/replay/`
+Default gateway URL:
 
-Expose via ngrok:
+- `http://127.0.0.1:8888`
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\ngrok_dashboard.ps1 -Port 8888
-```
+This gateway fronts the dashboard experience and proxies the replay and live-analysis services behind a single entry point.
 
-One-step RLCoach startup (loads `.env`, starts Docker replay+gateway, then ngrok):
+For the separate developer dashboard launcher that opens replay and gateway windows for you, use:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\start_rlcoach_app.ps1 -BuildReact
+powershell -ExecutionPolicy Bypass -File scripts\start_dev_dashboard.ps1
 ```
 
-Notes:
-- `-BuildReact` is optional and only needed when you want to rebuild frontend assets.
-- Live analysis is not auto-started. Run it later when needed:
-  - `powershell -ExecutionPolicy Bypass -File scripts\launch_live_analysis.ps1 -AttachOnly`
-- Legacy startup script names are still available as wrappers:
-  - `scripts\start_ngrok_replay.ps1`
-  - `scripts\start_rlcoach.ps1`
-
-## Docker Hub Deployment
-
-GitHub Actions can now build and publish deployable Docker images for `replay` and `gateway`.
-
-Required GitHub repository secrets:
-
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-
-Workflow file:
-
-- `.github/workflows/docker-images.yml`
-
-The workflow publishes:
-
-- `docker.io/<DOCKERHUB_USERNAME>/rlcoach-replay:latest`
-- `docker.io/<DOCKERHUB_USERNAME>/rlcoach-gateway:latest`
-- matching short-SHA tags on each `main` push
-
-The replay image bundles a pinned Linux `rrrocket` binary so replay parsing does not require a separate host install.
-
-Host deployment steps:
-
-1. Create a `.env` file from `.env.example`
-2. Set:
-   - `REPLAY_IMAGE=docker.io/<DOCKERHUB_USERNAME>/rlcoach-replay:latest`
-   - `GATEWAY_IMAGE=docker.io/<DOCKERHUB_USERNAME>/rlcoach-gateway:latest`
-3. Start the stack:
+### 4. Optional: launch live analysis or training-related flows
 
 ```powershell
-docker compose -f docker-compose.deploy.yml pull
-docker compose -f docker-compose.deploy.yml up -d
+powershell -ExecutionPolicy Bypass -File scripts/launch_live_analysis.ps1
 ```
 
-### Cognito Sign-In (React)
+### 5. Optional: run replay extraction directly
 
-The React login page now performs direct Cognito User Pool API authentication
-(email/password) from the app UI, then exchanges the ID token with the backend
-via `/api/replay/auth/cognito/login`.
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/replay_extract.ps1
+```
 
-Set frontend env values before running `npm run dev` or `npm run build`:
+## Cognito Configuration
 
-- `VITE_COGNITO_AUTHORITY` (for example `https://cognito-idp.us-east-2.amazonaws.com/us-east-2_5hkzGscoV`)
-- `VITE_COGNITO_USER_POOL_ID` (for example `us-east-2_5hkzGscoV`)
+The React login flow uses AWS Cognito for account creation and verification, then exchanges the Cognito ID token with the backend.
+
+Frontend environment variables:
+
+- `VITE_COGNITO_AUTHORITY`
+- `VITE_COGNITO_USER_POOL_ID`
 - `VITE_COGNITO_CLIENT_ID`
-- `VITE_COGNITO_SCOPE` (keep as `openid` unless you enable more on the app client)
+- `VITE_COGNITO_SCOPE`
 
-Backend token verification expects:
+Backend environment variables:
 
 - `COGNITO_ISSUER`
 - `COGNITO_CLIENT_ID`
+
+If you are deploying with Docker or running the hosted-style stack, copy `.env.example` to `.env` and fill in the required Cognito values there.
+
+## Key Scripts
+
+These are the main entry points still used in the repo:
+
+- `scripts/bootstrap.ps1` - create the Python environment and install dependencies
+- `scripts/run_gateway.ps1` - start the gateway plus replay services
+- `scripts/launch_live_analysis.ps1` - launch live analysis with helper behavior
+- `scripts/replay_extract.ps1` - extract replay data from a `.replay` file
+- `scripts/replay_dashboard.ps1` - run the replay dashboard service
+- `scripts/train.ps1` - run the training entrypoint
+- `scripts/start_dev_dashboard.ps1` - one-step developer dashboard + gateway launcher
+- `scripts/start_rlcoach_app.ps1` - one-step startup flow for the broader app stack
+- `scripts/prune_accounts.ps1` - remove local accounts, with optional Cognito cleanup
+
+## Deployment Notes
+
+Docker-based deployment is supported for the replay and gateway services.
+
+Relevant files:
+
+- `docker-compose.deploy.yml`
+- `.github/workflows/docker-images.yml`
+- `Dockerfile.replay`
+- `Dockerfile.gateway`
+
+The deployment flow publishes Docker images for the replay and gateway services, then runs them through the deploy compose file.
 
 ## Repository Layout
 
@@ -239,20 +239,21 @@ Backend token verification expects:
 |-- artifacts/               # External artifact pointers and generated outputs
 |-- configs/                 # Config stubs
 |-- data/                    # Lightweight tracked data only
-|-- docs/                    # Architecture/workflow notes
+|-- docs/                    # Architecture and workflow notes
+|-- frontend/                # React dashboard frontend
 |-- scripts/                 # PowerShell workflow wrappers
 |-- src/                     # Migration scaffold
-|-- Milestone_1/             # Live/replay analysis apps and tooling
-`-- rlbot_training/          # Training/runtime code
+|-- rocketcoach/             # Replay, live analysis, gateway, and persistence code
+`-- rlbot_training/          # RLBot / training runtime code
 ```
 
 ## Artifact Policy
 
-Do not commit large generated artifacts:
+Do not commit large generated artifacts such as:
 
-- model binaries/checkpoints
-- replay dumps and large json/csv exports
-- generated plots/logs
-- local tool binaries/bundles
+- model binaries and checkpoints
+- replay dumps and large JSON / CSV exports
+- generated plots and logs
+- local tool binaries and bundles
 
-Keep pointer metadata under `artifacts/pointers/` when needed.
+Track external artifact metadata under `artifacts/pointers/` when needed.

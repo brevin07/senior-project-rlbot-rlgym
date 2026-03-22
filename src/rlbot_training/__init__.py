@@ -1,1 +1,1 @@
-"""Package scaffold for training code migration."""
+"""Compatibility package for training code entrypoints."""

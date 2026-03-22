@@ -19,9 +19,23 @@ type ScenariosResponse = { scenarios: { name: string; source: string }[] };
 
 type HistoryResponse = { history: Record<string, number>[] };
 
-type RecommendationsResponse = { ok: boolean; data?: { items?: { title?: string; summary?: string }[] } };
+type RecommendationsResponse = { ok: boolean; data?: { recommendations?: { title?: string; evidence?: string[] }[] } };
 
 type MechanicsResponse = { ok: boolean; data?: { mechanic_events?: { mechanic_id?: string; score?: number; quality_label?: string }[] } };
+
+type TrainingLaunchResponse = {
+  ok: boolean;
+  data?: {
+    focus_id?: string;
+    difficulty_tier?: string;
+    difficulty_value?: number;
+    bot_profile_id?: string;
+    scenario_ids?: string[];
+    drill_mode?: string;
+    bot_required?: boolean;
+    drill_run_id?: number;
+  };
+};
 
 const metricMeta = [
   { key: "speed", label: "Speed" },
@@ -49,6 +63,7 @@ export default function LiveDashboardPage() {
   const [selectedScenario, setSelectedScenario] = useState("");
   const [recommendations, setRecommendations] = useState<RecommendationsResponse | null>(null);
   const [mechanics, setMechanics] = useState<MechanicsResponse | null>(null);
+  const [trainingLaunch, setTrainingLaunch] = useState<TrainingLaunchResponse | null>(null);
   const [error, setError] = useState("");
 
   const loadLive = useCallback(async () => {
@@ -70,12 +85,18 @@ export default function LiveDashboardPage() {
     setMechanics(data);
   }, []);
 
+  const loadTrainingLaunch = useCallback(async () => {
+    const data = await apiGet<TrainingLaunchResponse>(`${LIVE_PREFIX}/training/current`, { suppressErrorWindow: true });
+    setTrainingLaunch(data);
+  }, []);
+
   useEffect(() => {
     setError("");
     void loadLive().catch((err) => setError(err instanceof Error ? err.message : String(err)));
     void loadRecommendations().catch(() => {});
     void loadMechanics().catch(() => {});
-  }, [loadLive, loadRecommendations, loadMechanics]);
+    void loadTrainingLaunch().catch(() => {});
+  }, [loadLive, loadRecommendations, loadMechanics, loadTrainingLaunch]);
 
   const applyScenario = async () => {
     if (!selectedScenario) return;
@@ -134,6 +155,22 @@ export default function LiveDashboardPage() {
         <span className="pill">Spawn: {metrics?.spawn_mode || "n/a"}</span>
       </section>
 
+      {(trainingLaunch?.data?.focus_id || trainingLaunch?.data?.drill_mode) && (
+        <section className="profile-pill">
+          <span>
+            Active training:
+            {" "}
+            <strong>{trainingLaunch?.data?.focus_id || "focus"}</strong>
+            {" | "}
+            Tier {trainingLaunch?.data?.difficulty_tier || "n/a"}
+            {" | "}
+            Mode {trainingLaunch?.data?.drill_mode || "n/a"}
+            {" | "}
+            Bot {trainingLaunch?.data?.bot_profile_id || (trainingLaunch?.data?.bot_required ? "required" : "optional")}
+          </span>
+        </section>
+      )}
+
       <section className="cards">
         {metricMeta.map((m) => (
           <div className="card" key={m.key}>
@@ -164,10 +201,10 @@ export default function LiveDashboardPage() {
           <button type="button" onClick={() => apiPost(`${LIVE_PREFIX}/recommendations/refresh`, {}).then(loadRecommendations)}>Refresh Recommendations</button>
         </div>
         <ul id="recommendations">
-          {(recommendations?.data?.items ?? []).slice(0, 8).map((rec, idx) => (
+          {(recommendations?.data?.recommendations ?? []).slice(0, 8).map((rec, idx) => (
             <li className="rec-item" key={`${rec.title}-${idx}`}>
               <strong>{rec.title ?? "Recommendation"}</strong>
-              <div className="rec-meta">{rec.summary ?? ""}</div>
+              <div className="rec-meta">{(rec.evidence ?? [])[0] ?? ""}</div>
             </li>
           ))}
         </ul>

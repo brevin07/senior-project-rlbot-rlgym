@@ -1,1 +1,1 @@
-"""Package scaffold for live analysis migration."""
+"""Compatibility package for live analysis entrypoints."""

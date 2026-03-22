@@ -1,0 +1,37 @@
+﻿{
+  "name": "shadow_defense_lane",
+  "game_state": {
+    "cars": {
+      "0": {
+        "physics": {
+          "location": {"x": -200, "y": -2800, "z": 17},
+          "rotation": {"pitch": 0, "yaw": 1.4, "roll": 0},
+          "velocity": {"x": 0, "y": 900, "z": 0},
+          "angular_velocity": {"x": 0, "y": 0, "z": 0}
+        },
+        "boost_amount": 35,
+        "jumped": false,
+        "double_jumped": false
+      },
+      "1": {
+        "physics": {
+          "location": {"x": 100, "y": -1200, "z": 17},
+          "rotation": {"pitch": 0, "yaw": 1.57, "roll": 0},
+          "velocity": {"x": 0, "y": 1100, "z": 0},
+          "angular_velocity": {"x": 0, "y": 0, "z": 0}
+        },
+        "boost_amount": 60,
+        "jumped": false,
+        "double_jumped": false
+      }
+    },
+    "ball": {
+      "physics": {
+        "location": {"x": 0, "y": -1000, "z": 110},
+        "rotation": {"pitch": 0, "yaw": 0, "roll": 0},
+        "velocity": {"x": 0, "y": 900, "z": 0},
+        "angular_velocity": {"x": 0, "y": 0, "z": 0}
+      }
+    }
+  }
+}

@@ -1,11 +1,25 @@
 param(
-    [string]$Entry = "Milestone_1\extract_player_data.py",
+    [string]$Entry = "rocketcoach\extract_player_data.py",
     [string]$ReplayPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-if (!(Test-Path ".\.venv\Scripts\python.exe")) {
+function Resolve-VenvPython {
+    $candidates = @(
+        ".\venv\Scripts\python.exe",
+        ".\venv\bin\python"
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
+$pythonExe = Resolve-VenvPython
+if (-not $pythonExe) {
     throw "Virtual environment not found. Run scripts/bootstrap.ps1 first."
 }
 
@@ -83,4 +97,4 @@ if (!(Test-Path -Path $ReplayPath -PathType Leaf)) {
     throw "Replay file not found: $ReplayPath"
 }
 
-& .\.venv\Scripts\python.exe $Entry --replay $ReplayPath
+& $pythonExe $Entry --replay $ReplayPath

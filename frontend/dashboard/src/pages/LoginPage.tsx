@@ -5,7 +5,7 @@ import { useAuth } from "../app/AuthContext";
 type Mode = "signin" | "signup" | "verify";
 
 export default function LoginPage() {
-  const { login, signup, confirmSignup, resendSignupCode, loading, authError } = useAuth();
+  const { login, signup, confirmSignup, resendSignupCode, loading, authError, devBypassAuth } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -111,6 +111,39 @@ export default function LoginPage() {
     setError("");
     setMessage("");
   };
+
+  if (devBypassAuth) {
+    return (
+      <div className="auth auth--neon">
+        <div className="auth__panel auth__panel--neon">
+          <div className="auth__badge">RLCOACH</div>
+          <h1>Dev no-login mode</h1>
+          <p>Cognito is bypassed in this build, so you can jump straight into the dashboard without signing in.</p>
+          <div className="auth__stage">
+            <div className="auth__stage-label">Local development</div>
+            <div className="auth__form">
+              <div className="alert" style={{ background: "rgba(67, 188, 120, 0.16)", borderColor: "rgba(67, 188, 120, 0.5)" }}>
+                Authentication checks are disabled for local development.
+              </div>
+              <button className="auth__cta" onClick={() => navigate("/dashboard", { replace: true })}>
+                Continue to dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="auth__visual auth__visual--neon auth__visual--product">
+          <div className="hud-grid" />
+          <div className="hud-ring hud-ring--one" />
+          <div className="hud-ring hud-ring--two" />
+          <div className="hud-sweep" />
+          <div className="hud-copy">
+            <h2>RocketCoach</h2>
+            <p>Run the dashboard without signing into Cognito while wiring up the frontend and replay workflows.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="auth auth--neon">

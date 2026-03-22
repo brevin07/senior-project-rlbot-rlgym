@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   replay:
     build:
@@ -15,20 +14,23 @@ services:
       - RLBOT_ENABLE_LLM_EXPLAIN=${RLBOT_ENABLE_LLM_EXPLAIN}
       - RLBOT_APP_DB_PATH=/app/artifacts/data/app.db
       - RLBOT_LLM_MODEL=${RLBOT_LLM_MODEL:-gpt-4o-mini}
-      - RLBOT_LLM_MAX_TOKENS=${RLBOT_LLM_MAX_TOKENS:-80}
-      - RLBOT_LLM_BATCH_MAX_TOKENS=${RLBOT_LLM_BATCH_MAX_TOKENS:-900}
-      - RLBOT_LLM_BATCH_CHUNK_SIZE=${RLBOT_LLM_BATCH_CHUNK_SIZE:-30}
-      - RLBOT_LLM_TIMEOUT_S=${RLBOT_LLM_TIMEOUT_S:-6}
-      - RLBOT_LLM_BATCH_TIMEOUT_S=${RLBOT_LLM_BATCH_TIMEOUT_S:-8}
-    command: python Milestone_1/replay_dashboard/run_replay_dashboard.py --host 0.0.0.0 --port 8775 --no-browser
+      - RLBOT_LLM_MAX_TOKENS=${RLBOT_LLM_MAX_TOKENS:-56}
+      - RLBOT_LLM_BATCH_MAX_TOKENS=${RLBOT_LLM_BATCH_MAX_TOKENS:-480}
+      - RLBOT_LLM_BATCH_CHUNK_SIZE=${RLBOT_LLM_BATCH_CHUNK_SIZE:-12}
+      - RLBOT_LLM_TIMEOUT_S=${RLBOT_LLM_TIMEOUT_S:-5}
+      - RLBOT_LLM_BATCH_TIMEOUT_S=${RLBOT_LLM_BATCH_TIMEOUT_S:-6}
+    command: python rocketcoach/replay_dashboard/run_replay_dashboard.py --host 0.0.0.0 --port 8775 --no-browser
     ports:
       - "8775:8775"
 
   gateway:
-    image: python:3.11-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    image: rlcoach-gateway:local
     working_dir: /app
     volumes:
       - .:/app
-    command: python Milestone_1/dashboard_gateway/gateway_server.py --host 0.0.0.0 --port 8888 --replay http://replay:8775 --live http://host.docker.internal:8765
+    command: python rocketcoach/dashboard_gateway/gateway_server.py --host 0.0.0.0 --port 8888 --replay http://replay:8775 --live http://host.docker.internal:8765
     ports:
       - "8888:8888"

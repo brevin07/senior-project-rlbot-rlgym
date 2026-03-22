@@ -7,9 +7,12 @@ import LiveDashboardPage from "./pages/LiveDashboardPage";
 import AccountPage from "./pages/AccountPage";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
-  const { auth, loading } = useAuth();
+  const { auth, loading, devBypassAuth } = useAuth();
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
+  }
+  if (devBypassAuth) {
+    return children;
   }
   if (!auth) {
     return <Navigate to="/login" replace />;
@@ -18,9 +21,12 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function RequireProfile({ children }: { children: JSX.Element }) {
-  const { profile, loading } = useAuth();
+  const { profile, loading, devBypassAuth } = useAuth();
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
+  }
+  if (devBypassAuth) {
+    return children;
   }
   if (!profile || !profile.username) {
     return <Navigate to="/profile" replace />;

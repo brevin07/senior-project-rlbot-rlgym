@@ -1,0 +1,37 @@
+﻿{
+  "name": "aerial_recovery_test",
+  "game_state": {
+    "cars": {
+      "0": {
+        "physics": {
+          "location": {"x": 400, "y": -900, "z": 250},
+          "rotation": {"pitch": -0.2, "yaw": 1.2, "roll": 0.3},
+          "velocity": {"x": 200, "y": 700, "z": -100},
+          "angular_velocity": {"x": 0, "y": 0, "z": 0}
+        },
+        "boost_amount": 70,
+        "jumped": true,
+        "double_jumped": false
+      },
+      "1": {
+        "physics": {
+          "location": {"x": -200, "y": 1100, "z": 17},
+          "rotation": {"pitch": 0, "yaw": -1.57, "roll": 0},
+          "velocity": {"x": 0, "y": -500, "z": 0},
+          "angular_velocity": {"x": 0, "y": 0, "z": 0}
+        },
+        "boost_amount": 45,
+        "jumped": false,
+        "double_jumped": false
+      }
+    },
+    "ball": {
+      "physics": {
+        "location": {"x": 120, "y": -300, "z": 500},
+        "rotation": {"pitch": 0, "yaw": 0, "roll": 0},
+        "velocity": {"x": -200, "y": 400, "z": -300},
+        "angular_velocity": {"x": 0, "y": 0, "z": 0}
+      }
+    }
+  }
+}

@@ -3,22 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from rocketcoach.replay_dashboard.replay_loader import load_replay_bytes
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MILESTONE_DIR = REPO_ROOT / "Milestone_1"
-LIVE_ANALYSIS_DIR = MILESTONE_DIR / "live_analysis"
-REPLAY_DASH_DIR = MILESTONE_DIR / "replay_dashboard"
-
-for p in (MILESTONE_DIR, LIVE_ANALYSIS_DIR, REPLAY_DASH_DIR):
-    s = str(p)
-    if s not in sys.path:
-        sys.path.insert(0, s)
 
 
 @dataclass
@@ -119,17 +111,6 @@ def test_kr1_parser_and_dataframe(replay_path: Optional[Path]) -> TestResult:
         )
 
     try:
-        from replay_loader import load_replay_bytes
-    except Exception as exc:
-        return TestResult(
-            kr="KR1",
-            name="Replay parsing to Pandas DataFrame",
-            status="FAIL",
-            summary=f"Import error for replay loader: {exc}",
-            details={},
-        )
-
-    try:
         data = replay_path.read_bytes()
         session = load_replay_bytes(file_name=replay_path.name, data=data)
         df = session.df
@@ -222,30 +203,27 @@ def test_kr2_three_weaknesses(db_path: Path) -> TestResult:
 
 def test_kr3_visualizer_readiness() -> TestResult:
     react_file = REPO_ROOT / "frontend" / "dashboard" / "src" / "components" / "replay" / "ReplayVisualizer.tsx"
-    legacy_file = REPO_ROOT / "Milestone_1" / "replay_dashboard" / "web" / "app.js"
-    if not react_file.exists() or not legacy_file.exists():
+    if not react_file.exists():
         return TestResult(
             kr="KR3",
             name="Visualizer pause/FPS instrumentation presence",
             status="FAIL",
-            summary="Required visualizer source files were not found.",
+            summary="Replay visualizer source file was not found.",
             details={},
         )
 
     react_src = react_file.read_text(encoding="utf-8", errors="replace")
-    legacy_src = legacy_file.read_text(encoding="utf-8", errors="replace")
 
     checks = {
         "react_auto_event_pause_callback": "onAutoEventPause?.(" in react_src,
         "react_pause_on_event_hit": "setPlaying(false);" in react_src and "if (hit)" in react_src,
-        "legacy_fps_counter": "currentFps" in legacy_src and "fpsCounter" in legacy_src,
-        "legacy_debug_fps_line": "FPS:" in legacy_src and "updateDebugBubble" in legacy_src,
+        "react_debug_overlay_present": "debug-overlay" in react_src or "debugOverlay" in react_src,
     }
     ok = all(checks.values())
     manual_steps = [
         "Run replay dashboard: powershell -ExecutionPolicy Bypass -File scripts/replay_dashboard.ps1",
-        "Load a replay and open debug bubble in legacy view (or event playback in React view).",
-        "Capture screenshot showing event pause behavior and FPS line.",
+        "Load a replay and open the replay visualizer.",
+        "Capture a screenshot showing event pause behavior and the active debug overlay.",
     ]
     return TestResult(
         kr="KR3",

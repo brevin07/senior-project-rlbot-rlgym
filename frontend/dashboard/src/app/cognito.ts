@@ -24,14 +24,33 @@ function inferUserPoolId(value: string): string {
 
 const userPoolId = configuredUserPoolId || inferUserPoolId(authority);
 
-if (!clientId || !userPoolId) {
-  throw new Error("Missing Cognito config. Set VITE_COGNITO_CLIENT_ID and VITE_COGNITO_USER_POOL_ID (or authority with pool id).");
+let cognitoConfigError = "";
+let pool: CognitoUserPool | null = null;
+
+function getPool(): CognitoUserPool {
+  if (pool) {
+    return pool;
+  }
+  if (!clientId || !userPoolId) {
+    cognitoConfigError = "Missing Cognito config. Set VITE_COGNITO_CLIENT_ID and VITE_COGNITO_USER_POOL_ID (or authority with pool id).";
+    throw new Error(cognitoConfigError);
+  }
+  pool = new CognitoUserPool({
+    UserPoolId: userPoolId,
+    ClientId: clientId,
+  });
+  return pool;
 }
 
-const pool = new CognitoUserPool({
-  UserPoolId: userPoolId,
-  ClientId: clientId,
-});
+export function getCognitoConfigError(): string {
+  if (cognitoConfigError) {
+    return cognitoConfigError;
+  }
+  if (!clientId || !userPoolId) {
+    cognitoConfigError = "Missing Cognito config. Set VITE_COGNITO_CLIENT_ID and VITE_COGNITO_USER_POOL_ID (or authority with pool id).";
+  }
+  return cognitoConfigError;
+}
 
 function toTokens(user: CognitoUser, session: any): Tokens {
   const idToken = String(session?.getIdToken()?.getJwtToken?.() ?? "");
@@ -43,7 +62,7 @@ function toTokens(user: CognitoUser, session: any): Tokens {
 }
 
 export function cognitoLogin(email: string, password: string): Promise<Tokens> {
-  const user = new CognitoUser({ Username: email.trim(), Pool: pool });
+  const user = new CognitoUser({ Username: email.trim(), Pool: getPool() });
   const details = new AuthenticationDetails({
     Username: email.trim(),
     Password: password,
@@ -60,7 +79,7 @@ export function cognitoLogin(email: string, password: string): Promise<Tokens> {
 export function cognitoSignup(email: string, password: string): Promise<ISignUpResult> {
   const attributes = [new CognitoUserAttribute({ Name: "email", Value: email.trim() })];
   return new Promise((resolve, reject) => {
-    pool.signUp(email.trim(), password, attributes, [], (err, result) => {
+    getPool().signUp(email.trim(), password, attributes, [], (err, result) => {
       if (err || !result) {
         reject(err ?? new Error("Signup failed"));
         return;
@@ -71,7 +90,7 @@ export function cognitoSignup(email: string, password: string): Promise<ISignUpR
 }
 
 export function cognitoConfirmSignup(email: string, code: string): Promise<void> {
-  const user = new CognitoUser({ Username: email.trim(), Pool: pool });
+  const user = new CognitoUser({ Username: email.trim(), Pool: getPool() });
   return new Promise((resolve, reject) => {
     user.confirmRegistration(code.trim(), true, (err) => {
       if (err) {
@@ -84,7 +103,7 @@ export function cognitoConfirmSignup(email: string, code: string): Promise<void>
 }
 
 export function cognitoResendSignupCode(email: string): Promise<void> {
-  const user = new CognitoUser({ Username: email.trim(), Pool: pool });
+  const user = new CognitoUser({ Username: email.trim(), Pool: getPool() });
   return new Promise((resolve, reject) => {
     user.resendConfirmationCode((err) => {
       if (err) {
@@ -97,7 +116,11 @@ export function cognitoResendSignupCode(email: string): Promise<void> {
 }
 
 export function cognitoRestoreSession(): Promise<Tokens | null> {
-  const user = pool.getCurrentUser();
+  if (getCognitoConfigError()) {
+    return Promise.resolve(null);
+  }
+  const currentPool = getPool();
+  const user = currentPool.getCurrentUser();
   if (!user) {
     return Promise.resolve(null);
   }
@@ -113,8 +136,30 @@ export function cognitoRestoreSession(): Promise<Tokens | null> {
 }
 
 export function cognitoSignOut(): void {
-  const user = pool.getCurrentUser();
+  if (getCognitoConfigError()) {
+    return;
+  }
+  const user = getPool().getCurrentUser();
   if (user) {
     user.signOut();
   }
+}
+
+export function cognitoDeleteCurrentUser(): Promise<void> {
+  if (getCognitoConfigError()) {
+    return Promise.resolve();
+  }
+  const user = getPool().getCurrentUser();
+  if (!user) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    user.deleteUser((err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
+  });
 }

@@ -19,10 +19,10 @@ $paths = @(
     "rlbot_training/rattletrap",
     "rlbot_training/data/checkpoints",
     "rlbot_training/wandb",
-    "Milestone_1/physics_data.json",
-    "Milestone_1/raw_physics.csv",
-    "Milestone_1/player_physics.csv",
-    "Milestone_1/player_physics_v3.csv"
+    "rocketcoach/physics_data.json",
+    "rocketcoach/raw_physics.csv",
+    "rocketcoach/player_physics.csv",
+    "rocketcoach/player_physics_v3.csv"
 )
 
 $args = @("--force")

@@ -12,9 +12,8 @@ $ErrorActionPreference = "Stop"
 function Resolve-Python {
     $candidates = @(
         ".\venv\Scripts\python.exe",
-        ".\.venv\Scripts\python.exe",
         ".\venv_Win\Scripts\python.exe",
-        ".\rlbot_training\.venv\Scripts\python.exe"
+        ".\rlbot_training\venv\Scripts\python.exe"
     )
     foreach ($c in $candidates) {
         if (Test-Path $c) {

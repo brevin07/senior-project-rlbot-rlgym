@@ -1,0 +1,37 @@
+﻿{
+  "name": "ground_duel_center",
+  "game_state": {
+    "cars": {
+      "0": {
+        "physics": {
+          "location": {"x": 0, "y": -500, "z": 17},
+          "rotation": {"pitch": 0, "yaw": 1.57, "roll": 0},
+          "velocity": {"x": 0, "y": 0, "z": 0},
+          "angular_velocity": {"x": 0, "y": 0, "z": 0}
+        },
+        "boost_amount": 50,
+        "jumped": false,
+        "double_jumped": false
+      },
+      "1": {
+        "physics": {
+          "location": {"x": 0, "y": 500, "z": 17},
+          "rotation": {"pitch": 0, "yaw": -1.57, "roll": 0},
+          "velocity": {"x": 0, "y": 0, "z": 0},
+          "angular_velocity": {"x": 0, "y": 0, "z": 0}
+        },
+        "boost_amount": 50,
+        "jumped": false,
+        "double_jumped": false
+      }
+    },
+    "ball": {
+      "physics": {
+        "location": {"x": 0, "y": 0, "z": 93},
+        "rotation": {"pitch": 0, "yaw": 0, "roll": 0},
+        "velocity": {"x": 0, "y": 200, "z": 0},
+        "angular_velocity": {"x": 0, "y": 0, "z": 0}
+      }
+    }
+  }
+}
