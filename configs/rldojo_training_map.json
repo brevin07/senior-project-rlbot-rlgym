@@ -1,0 +1,257 @@
+{
+  "difficulties": {
+    "beginner": {
+      "label": "Beginner",
+      "difficulty_value": 0.3,
+      "summary": "Bronze and Silver friendly reps with slower pressure and simpler reads."
+    },
+    "intermediate": {
+      "label": "Intermediate",
+      "difficulty_value": 0.55,
+      "summary": "Gold and Platinum reps with balanced pressure and more realistic recoveries."
+    },
+    "advanced": {
+      "label": "Advanced",
+      "difficulty_value": 0.78,
+      "summary": "Diamond and Champion reps with tighter windows, faster pressure, and cleaner execution."
+    },
+    "expert": {
+      "label": "Expert",
+      "difficulty_value": 0.92,
+      "summary": "Grand Champ and SSL reps with punishing angles, fast reads, and minimal free space."
+    }
+  },
+  "mechanics": {
+    "shadow_defense": {
+      "title": "Shadow Defense",
+      "bot_required": true,
+      "drill_mode_options": [
+        "bot_duel"
+      ],
+      "difficulties": {
+        "beginner": {
+          "bot_profile_id": "noob_blue",
+          "bot_name": "Noob Blue",
+          "playlist_name": "RC Shadow Defense - Beginner",
+          "playlist_file": "rc_shadow_defense_beginner.json"
+        },
+        "intermediate": {
+          "bot_profile_id": "botimus_prime",
+          "bot_name": "Botimus Prime",
+          "playlist_name": "RC Shadow Defense - Intermediate",
+          "playlist_file": "rc_shadow_defense_intermediate.json"
+        },
+        "advanced": {
+          "bot_profile_id": "necto",
+          "bot_name": "Necto",
+          "playlist_name": "RC Shadow Defense - Advanced",
+          "playlist_file": "rc_shadow_defense_advanced.json"
+        },
+        "expert": {
+          "bot_profile_id": "nexto",
+          "bot_name": "Nexto",
+          "playlist_name": "RC Shadow Defense - Expert",
+          "playlist_file": "rc_shadow_defense_expert.json"
+        }
+      }
+    },
+    "challenge": {
+      "title": "Challenge Timing",
+      "bot_required": true,
+      "drill_mode_options": [
+        "bot_duel"
+      ],
+      "difficulties": {
+        "beginner": {
+          "bot_profile_id": "noob_blue",
+          "bot_name": "Noob Blue",
+          "playlist_name": "RC Challenge Timing - Beginner",
+          "playlist_file": "rc_challenge_beginner.json"
+        },
+        "intermediate": {
+          "bot_profile_id": "botimus_prime",
+          "bot_name": "Botimus Prime",
+          "playlist_name": "RC Challenge Timing - Intermediate",
+          "playlist_file": "rc_challenge_intermediate.json"
+        },
+        "advanced": {
+          "bot_profile_id": "necto",
+          "bot_name": "Necto",
+          "playlist_name": "RC Challenge Timing - Advanced",
+          "playlist_file": "rc_challenge_advanced.json"
+        },
+        "expert": {
+          "bot_profile_id": "nexto",
+          "bot_name": "Nexto",
+          "playlist_name": "RC Challenge Timing - Expert",
+          "playlist_file": "rc_challenge_expert.json"
+        }
+      }
+    },
+    "fifty_fifty_control": {
+      "title": "50/50 Control",
+      "bot_required": true,
+      "drill_mode_options": [
+        "bot_duel"
+      ],
+      "difficulties": {
+        "beginner": {
+          "bot_profile_id": "noob_blue",
+          "bot_name": "Noob Blue",
+          "playlist_name": "RC 50-50 Control - Beginner",
+          "playlist_file": "rc_fifty_fifty_control_beginner.json"
+        },
+        "intermediate": {
+          "bot_profile_id": "botimus_prime",
+          "bot_name": "Botimus Prime",
+          "playlist_name": "RC 50-50 Control - Intermediate",
+          "playlist_file": "rc_fifty_fifty_control_intermediate.json"
+        },
+        "advanced": {
+          "bot_profile_id": "necto",
+          "bot_name": "Necto",
+          "playlist_name": "RC 50-50 Control - Advanced",
+          "playlist_file": "rc_fifty_fifty_control_advanced.json"
+        },
+        "expert": {
+          "bot_profile_id": "nexto",
+          "bot_name": "Nexto",
+          "playlist_name": "RC 50-50 Control - Expert",
+          "playlist_file": "rc_fifty_fifty_control_expert.json"
+        }
+      }
+    },
+    "aerial_offense": {
+      "title": "Aerial Offense",
+      "bot_required": true,
+      "drill_mode_options": [
+        "bot_duel"
+      ],
+      "difficulties": {
+        "beginner": {
+          "bot_profile_id": "noob_blue",
+          "bot_name": "Noob Blue",
+          "playlist_name": "RC Aerial Offense - Beginner",
+          "playlist_file": "rc_aerial_offense_beginner.json"
+        },
+        "intermediate": {
+          "bot_profile_id": "botimus_prime",
+          "bot_name": "Botimus Prime",
+          "playlist_name": "RC Aerial Offense - Intermediate",
+          "playlist_file": "rc_aerial_offense_intermediate.json"
+        },
+        "advanced": {
+          "bot_profile_id": "necto",
+          "bot_name": "Necto",
+          "playlist_name": "RC Aerial Offense - Advanced",
+          "playlist_file": "rc_aerial_offense_advanced.json"
+        },
+        "expert": {
+          "bot_profile_id": "nexto",
+          "bot_name": "Nexto",
+          "playlist_name": "RC Aerial Offense - Expert",
+          "playlist_file": "rc_aerial_offense_expert.json"
+        }
+      }
+    },
+    "aerial_defense": {
+      "title": "Aerial Defense",
+      "bot_required": true,
+      "drill_mode_options": [
+        "bot_duel"
+      ],
+      "difficulties": {
+        "beginner": {
+          "bot_profile_id": "noob_blue",
+          "bot_name": "Noob Blue",
+          "playlist_name": "RC Aerial Defense - Beginner",
+          "playlist_file": "rc_aerial_defense_beginner.json"
+        },
+        "intermediate": {
+          "bot_profile_id": "botimus_prime",
+          "bot_name": "Botimus Prime",
+          "playlist_name": "RC Aerial Defense - Intermediate",
+          "playlist_file": "rc_aerial_defense_intermediate.json"
+        },
+        "advanced": {
+          "bot_profile_id": "necto",
+          "bot_name": "Necto",
+          "playlist_name": "RC Aerial Defense - Advanced",
+          "playlist_file": "rc_aerial_defense_advanced.json"
+        },
+        "expert": {
+          "bot_profile_id": "nexto",
+          "bot_name": "Nexto",
+          "playlist_name": "RC Aerial Defense - Expert",
+          "playlist_file": "rc_aerial_defense_expert.json"
+        }
+      }
+    },
+    "flicking": {
+      "title": "Flicking",
+      "bot_required": true,
+      "drill_mode_options": [
+        "bot_duel"
+      ],
+      "difficulties": {
+        "beginner": {
+          "bot_profile_id": "noob_blue",
+          "bot_name": "Noob Blue",
+          "playlist_name": "RC Flicking - Beginner",
+          "playlist_file": "rc_flicking_beginner.json"
+        },
+        "intermediate": {
+          "bot_profile_id": "aether",
+          "bot_name": "Aether",
+          "playlist_name": "RC Flicking - Intermediate",
+          "playlist_file": "rc_flicking_intermediate.json"
+        },
+        "advanced": {
+          "bot_profile_id": "necto",
+          "bot_name": "Necto",
+          "playlist_name": "RC Flicking - Advanced",
+          "playlist_file": "rc_flicking_advanced.json"
+        },
+        "expert": {
+          "bot_profile_id": "nexto",
+          "bot_name": "Nexto",
+          "playlist_name": "RC Flicking - Expert",
+          "playlist_file": "rc_flicking_expert.json"
+        }
+      }
+    },
+    "carrying_dribbling": {
+      "title": "Carrying Dribbling",
+      "bot_required": true,
+      "drill_mode_options": [
+        "bot_duel"
+      ],
+      "difficulties": {
+        "beginner": {
+          "bot_profile_id": "noob_blue",
+          "bot_name": "Noob Blue",
+          "playlist_name": "RC Carrying Dribbling - Beginner",
+          "playlist_file": "rc_carrying_dribbling_beginner.json"
+        },
+        "intermediate": {
+          "bot_profile_id": "aether",
+          "bot_name": "Aether",
+          "playlist_name": "RC Carrying Dribbling - Intermediate",
+          "playlist_file": "rc_carrying_dribbling_intermediate.json"
+        },
+        "advanced": {
+          "bot_profile_id": "necto",
+          "bot_name": "Necto",
+          "playlist_name": "RC Carrying Dribbling - Advanced",
+          "playlist_file": "rc_carrying_dribbling_advanced.json"
+        },
+        "expert": {
+          "bot_profile_id": "nexto",
+          "bot_name": "Nexto",
+          "playlist_name": "RC Carrying Dribbling - Expert",
+          "playlist_file": "rc_carrying_dribbling_expert.json"
+        }
+      }
+    }
+  }
+}

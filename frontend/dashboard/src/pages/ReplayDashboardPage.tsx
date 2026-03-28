@@ -8,7 +8,7 @@ import LineChart from "../components/LineChart";
 const REPLAY_PREFIX = "/api/replay";
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
-type AppTab = "home" | "replay" | "improvement" | "training";
+type AppTab = "home" | "replay" | "improvement" | "training" | "installer";
 type TabReadyMap = Record<AppTab, boolean>;
 type TabReasonMap = Record<AppTab, string>;
 
@@ -215,15 +215,50 @@ type TrainingPlanResponse = {
 type TrainingPreflightResponse = {
   ok: boolean;
   data?: {
-    live_trainer_running?: boolean;
+    host_checks_available?: boolean;
+    launcher_kind?: string;
+    launcher_running?: boolean;
+    dependency_ready?: boolean;
+    shared_dependency_ready?: boolean;
     python_ready?: boolean;
     rlbot_import_ok?: boolean;
     rlbot_gui_detected?: boolean;
+    rlbot_gui_path?: string;
+    rlbot_gui_detection_source?: string;
     rocket_league_detected?: boolean;
+    last_checked_at?: number;
     scenario_count?: number;
+    bot_statuses?: {
+      bot_profile_id?: string;
+      bot_name?: string;
+      config_path?: string;
+      python_file?: string;
+      requirements_file?: string;
+      ready?: boolean;
+      missing_modules?: string[];
+      messages?: string[];
+    }[];
     ready_to_launch?: boolean;
     messages?: string[];
   };
+};
+
+type TrainingLaunchResponse = {
+  ok: boolean;
+  data?: {
+    queued?: boolean;
+    route?: string;
+    launcher_kind?: string;
+    bot_name?: string;
+    playlist_name?: string;
+    status_message?: string;
+  };
+};
+
+type TrainingLaunchFeedback = {
+  phase: "sending" | "opening" | "success" | "error";
+  message: string;
+  detail?: string;
 };
 
 type ExplainBatchResponse = {
@@ -343,6 +378,8 @@ export default function ReplayDashboardPage() {
   const [homeSummary, setHomeSummary] = useState<HomeSummaryResponse | null>(null);
   const [trainingPlan, setTrainingPlan] = useState<TrainingPlanResponse | null>(null);
   const [trainingPreflight, setTrainingPreflight] = useState<TrainingPreflightResponse | null>(null);
+  const [trainingPreflightFetchedAt, setTrainingPreflightFetchedAt] = useState(0);
+  const [trainingPreflightChecking, setTrainingPreflightChecking] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
@@ -351,13 +388,15 @@ export default function ReplayDashboardPage() {
   const [explainCache, setExplainCache] = useState<Record<string, { title: string; body: string }>>({});
   const [trainingSelections, setTrainingSelections] = useState<Record<string, { tier: string; drillMode: string }>>({});
   const [launchingFocus, setLaunchingFocus] = useState("");
+  const [trainingLaunchFeedback, setTrainingLaunchFeedback] = useState<Record<string, TrainingLaunchFeedback>>({});
   const [error, setError] = useState("");
-  const [tabReady, setTabReady] = useState<TabReadyMap>({ home: false, replay: false, improvement: false, training: false });
+  const [tabReady, setTabReady] = useState<TabReadyMap>({ home: false, replay: false, improvement: false, training: false, installer: true });
   const [tabReasons, setTabReasons] = useState<TabReasonMap>({
     home: "Loading dashboard summary...",
     replay: "Loading replay library...",
     improvement: "Loading replay trends...",
     training: "Generating training plan...",
+    installer: "",
   });
   const [replayStudioReady, setReplayStudioReady] = useState(false);
   const [overlay, setOverlay] = useState<LoadingOverlayState>({
@@ -370,6 +409,12 @@ export default function ReplayDashboardPage() {
     explain: null,
     error: "",
   });
+  const trainingPreflightFresh = Boolean(trainingPreflight && (Date.now() - trainingPreflightFetchedAt) < 60_000);
+  const trainingPreflightLastChecked = Number(trainingPreflight?.data?.last_checked_at || 0);
+  const trainingPreflightBotStatuses = trainingPreflight?.data?.bot_statuses ?? [];
+  const trainingPreflightBotStatusMap = Object.fromEntries(
+    trainingPreflightBotStatuses.map((status) => [String(status.bot_profile_id || ""), status])
+  );
 
   const loadStatus = useCallback(async () => {
     const resp = await apiGet<ReplayStatus>(`${REPLAY_PREFIX}/replay/status`, { suppressErrorWindow: true });
@@ -406,11 +451,22 @@ export default function ReplayDashboardPage() {
     return resp;
   }, []);
 
-  const loadTrainingPreflight = useCallback(async () => {
-    const resp = await apiGet<TrainingPreflightResponse>(`${REPLAY_PREFIX}/training/preflight`, { suppressErrorWindow: true });
-    setTrainingPreflight(resp);
-    return resp;
-  }, []);
+  const loadTrainingPreflight = useCallback(async (options?: { force?: boolean }) => {
+    const force = Boolean(options?.force);
+    const cacheFresh = trainingPreflight && (Date.now() - trainingPreflightFetchedAt) < 60_000;
+    if (!force && cacheFresh) {
+      return trainingPreflight;
+    }
+    setTrainingPreflightChecking(true);
+    try {
+      const resp = await apiGet<TrainingPreflightResponse>(`${REPLAY_PREFIX}/training/preflight`, { suppressErrorWindow: true });
+      setTrainingPreflight(resp);
+      setTrainingPreflightFetchedAt(Date.now());
+      return resp;
+    } finally {
+      setTrainingPreflightChecking(false);
+    }
+  }, [trainingPreflight, trainingPreflightFetchedAt]);
 
   const loadMechanics = useCallback(async () => {
     const resp = await apiGet<MechanicsResponse>(`${REPLAY_PREFIX}/mechanics/current`, { suppressErrorWindow: true });
@@ -451,18 +507,26 @@ export default function ReplayDashboardPage() {
       replay: true,
       improvement: true,
       training: true,
+      installer: true,
     });
     setTabReasons({
       home: "",
       replay: libraryResp?.data ? "" : "Loading replay library...",
       improvement: progressResp?.data ? "" : "Loading replay trends...",
       training: trainingResp?.data ? "" : "Generating training plan...",
+      installer: "",
     });
   }, [loadHomeSummary, loadLibrary, loadProgress, loadStatus, loadTrainingPlan, loadTrainingPreflight]);
 
   useEffect(() => {
     void refreshSummaryViews().catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [refreshSummaryViews]);
+
+  useEffect(() => {
+    if (activeTab !== "training") return;
+    if (trainingPreflight && trainingPreflightFresh) return;
+    void loadTrainingPreflight().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, [activeTab, loadTrainingPreflight, trainingPreflight, trainingPreflightFresh]);
 
   useEffect(() => {
     if (!replayStudioReady) return;
@@ -565,9 +629,6 @@ export default function ReplayDashboardPage() {
       }
       setExplainCache((prev) => ({ ...prev, ...nextCache }));
       const priorityReady = Boolean(resp?.data?.priority_ready);
-      if (!priorityReady) {
-        throw new Error("Priority replay explanations are still generating. Please retry in a few seconds.");
-      }
       const pendingCount = Number(resp?.data?.pending_count || 0);
       const allComplete = Boolean(resp?.data?.all_complete || resp?.data?.complete);
       setOverlay((prev) => ({
@@ -579,12 +640,16 @@ export default function ReplayDashboardPage() {
           cached_count: Number(resp?.data?.cached_count || 0),
           pending_count: pendingCount,
           total_count: items.length,
-          message: allComplete
+          message: !priorityReady
+            ? "Replay is opening now. Coaching explanations are still generating in the background."
+            : allComplete
             ? "Replay coaching is ready."
             : "Priority replay coaching is ready. More explanations are loading in the background.",
         },
         progress: 1,
-        message: allComplete
+        message: !priorityReady
+          ? "Replay is opening now. Coaching explanations are still generating in the background."
+          : allComplete
           ? "Replay coaching is ready."
           : "Priority replay coaching is ready. More explanations are loading in the background.",
       }));
@@ -756,6 +821,13 @@ export default function ReplayDashboardPage() {
     [progressPoints]
   );
 
+  const latestScore = progressSeries.length ? Math.round(progressSeries[progressSeries.length - 1].v) : 0;
+  const prevScores = progressSeries.slice(-6, -3);
+  const recentScores = progressSeries.slice(-3);
+  const trendUp = recentScores.length && prevScores.length
+    ? recentScores.reduce((s, p) => s + p.v, 0) / recentScores.length >= prevScores.reduce((s, p) => s + p.v, 0) / prevScores.length
+    : true;
+
   const perMechanicSeries = useMemo(() => {
     const out: Record<string, { t: number; v: number }[]> = {};
     for (const point of progressPoints) {
@@ -789,6 +861,12 @@ export default function ReplayDashboardPage() {
   const latestReplay = homeSummary?.data?.latest_replay || (library?.data?.sessions ?? [])[0];
   const botTrainingReady = Boolean(trainingPreflight?.data?.ready_to_launch);
   const trainingPreflightMessages = trainingPreflight?.data?.messages ?? [];
+  const hostChecksAvailable = trainingPreflight?.data?.host_checks_available !== false;
+  const trainingLauncherRunning = Boolean(trainingPreflight?.data?.launcher_running);
+  const dependencyReady = Boolean(trainingPreflight?.data?.dependency_ready);
+  const sharedDependencyReady = Boolean(trainingPreflight?.data?.shared_dependency_ready);
+  const rlbotGuiPath = String(trainingPreflight?.data?.rlbot_gui_path || "");
+  const rlbotGuiSource = String(trainingPreflight?.data?.rlbot_gui_detection_source || "");
 
   const setTrainingTier = (focusId: string, tier: string) => {
     setTrainingSelections((prev) => ({
@@ -811,13 +889,64 @@ export default function ReplayDashboardPage() {
     const tier = selection?.tier || String(rec.difficulty_default?.tier || profiles[0]?.tier || "beginner");
     const profileChoice = profiles.find((p) => p.tier === tier) || rec.difficulty_default || profiles[0] || {};
     const drillMode = selection?.drillMode || String(rec.drill_mode_options?.[0] || "");
-    if (rec.bot_required && !botTrainingReady) {
-      setError(trainingPreflightMessages[0] || "RLBot setup is incomplete. Complete the preflight checks before launching bot drills.");
-      return;
-    }
+    let openingTimer: number | null = null;
     try {
+      const preflightResp = (!trainingPreflight || !trainingPreflightFresh)
+        ? await loadTrainingPreflight({ force: true })
+        : trainingPreflight;
+      const preflightData = preflightResp?.data ?? {};
+      const preflightMessages = preflightData.messages ?? [];
+      const preflightReady = Boolean(preflightData.ready_to_launch);
+      const sharedReady = Boolean(preflightData.shared_dependency_ready);
+      const launcherRunning = Boolean(preflightData.launcher_running);
+      const selectedBotStatus = (preflightData.bot_statuses ?? []).find(
+        (status) => String(status.bot_profile_id || "") === String(profileChoice.bot_profile_id || "")
+      );
+      if (rec.bot_required && (!launcherRunning || !sharedReady)) {
+        const message = preflightMessages[0] || "RLBot setup is incomplete. Complete the preflight checks before launching bot drills.";
+        setTrainingLaunchFeedback((prev) => ({
+          ...prev,
+          [focusId]: {
+            phase: "error",
+            message,
+          },
+        }));
+        return;
+      }
+      if (rec.bot_required && selectedBotStatus && !selectedBotStatus.ready) {
+        const detail = (selectedBotStatus.messages ?? [])[0] || "The mapped bot is not launch-ready yet.";
+        setTrainingLaunchFeedback((prev) => ({
+          ...prev,
+          [focusId]: {
+            phase: "error",
+            message: `${selectedBotStatus.bot_name || "This bot"} is not ready to launch.`,
+            detail,
+          },
+        }));
+        return;
+      }
+      setError("");
       setLaunchingFocus(focusId);
-      await apiPost(
+      setTrainingLaunchFeedback((prev) => ({
+        ...prev,
+        [focusId]: {
+          phase: "sending",
+          message: "Sending launch request...",
+        },
+      }));
+      openingTimer = window.setTimeout(() => {
+        setTrainingLaunchFeedback((prev) => {
+          if (launchingFocus !== focusId && prev[focusId]?.phase !== "sending") return prev;
+          return {
+            ...prev,
+            [focusId]: {
+              phase: "opening",
+              message: "Opening Rocket League / RLBot...",
+            },
+          };
+        });
+      }, 500);
+      const resp = await apiPost<TrainingLaunchResponse>(
         `${REPLAY_PREFIX}/training/launch`,
         {
           focus_id: focusId,
@@ -830,12 +959,46 @@ export default function ReplayDashboardPage() {
         },
         { suppressErrorWindow: true }
       );
-      window.location.assign("/live");
+      const launchData = resp?.data ?? {};
+      const detailParts = [
+        launchData.playlist_name ? `Playlist: ${launchData.playlist_name}` : "",
+        launchData.bot_name ? `Bot: ${launchData.bot_name}` : "",
+        launchData.launcher_kind ? `Launcher: ${launchData.launcher_kind}` : "",
+      ].filter(Boolean);
+      setTrainingLaunchFeedback((prev) => ({
+        ...prev,
+        [focusId]: {
+          phase: "success",
+          message:
+            launchData.status_message ||
+            "Training match requested. Check Rocket League. If nothing takes focus within a few seconds, check the training bridge console window for the exact error.",
+          detail: detailParts.join(" | "),
+        },
+      }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setTrainingLaunchFeedback((prev) => ({
+        ...prev,
+        [focusId]: {
+          phase: "error",
+          message,
+          detail: "Check the training bridge console window for additional RLBot startup details.",
+        },
+      }));
     } finally {
+      if (openingTimer != null) {
+        window.clearTimeout(openingTimer);
+      }
       setLaunchingFocus("");
     }
+  };
+
+  const TAB_ICONS: Record<AppTab, string> = {
+    home: "fa-solid fa-house",
+    replay: "fa-solid fa-film",
+    improvement: "fa-solid fa-chart-line",
+    training: "fa-solid fa-dumbbell",
+    installer: "fa-solid fa-download",
   };
 
   const renderTabButton = (tab: AppTab, label: string) => (
@@ -846,7 +1009,10 @@ export default function ReplayDashboardPage() {
       disabled={!tabReady[tab]}
       title={tabReady[tab] ? label : tabReasons[tab]}
     >
-      <span>{label}</span>
+      <span className="nav-btn-content">
+        <i className={TAB_ICONS[tab]} />
+        <span>{label}</span>
+      </span>
       {!tabReady[tab] && <span className="nav-btn-subtitle">{tabReasons[tab]}</span>}
     </button>
   );
@@ -854,16 +1020,31 @@ export default function ReplayDashboardPage() {
   return (
     <div className="dashboard-shell">
       <aside className="left-nav">
-        <div className="nav-brand">RocketCoach</div>
-        {renderTabButton("home", "Home")}
-        {renderTabButton("replay", "Replay")}
-        {renderTabButton("improvement", "Improvement")}
-        {renderTabButton("training", "Training")}
+        <div className="nav-brand">
+          <span className="nav-brand-icon">RC</span>
+          <span className="nav-brand-text">RocketCoach</span>
+        </div>
+        <nav className="nav-group">
+          <div className="nav-group-label">Dashboard</div>
+          {renderTabButton("home", "Home")}
+          {renderTabButton("replay", "Replay")}
+          {renderTabButton("improvement", "Improvement")}
+        </nav>
+        <nav className="nav-group">
+          <div className="nav-group-label">Tools</div>
+          {renderTabButton("training", "Training")}
+          {renderTabButton("installer", "Installer")}
+        </nav>
         <div className="nav-spacer" />
-        <span className="status-text">{profile?.username ?? "Pilot"}</span>
-        <Link to="/live" className="ghost nav-link">Live Trainer</Link>
-        <Link to="/account" state={{ from: location.pathname }} className="ghost nav-link">Account</Link>
-        <button type="button" className="ghost" onClick={() => logout()}>Log Out</button>
+        <div className="nav-footer">
+          <div className="nav-user">
+            <i className="fa-solid fa-user-astronaut" />
+            <span>{profile?.username ?? "Pilot"}</span>
+          </div>
+          <Link to="/live" className="nav-footer-link"><i className="fa-solid fa-satellite-dish" /><span>Live Trainer</span></Link>
+          <Link to="/account" state={{ from: location.pathname }} className="nav-footer-link"><i className="fa-solid fa-gear" /><span>Account</span></Link>
+          <button type="button" className="nav-footer-link" onClick={() => logout()}><i className="fa-solid fa-right-from-bracket" /><span>Log Out</span></button>
+        </div>
       </aside>
 
       <main className="main-content">
@@ -889,9 +1070,9 @@ export default function ReplayDashboardPage() {
 
             {latestReplay ? (
               <div className="metrics-card">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div className="card-header">
                   <div>
-                    <h3 style={{ marginBottom: 6 }}>Recent Performance</h3>
+                    <h3>Recent Performance</h3>
                     <strong>{replayCardLines(latestReplay).line1}</strong>
                     <div className="library-item-meta">{replayCardLines(latestReplay).line2}</div>
                   </div>
@@ -899,10 +1080,38 @@ export default function ReplayDashboardPage() {
                 </div>
               </div>
             ) : (
-              <div className="metrics-card empty-state">
-                <h3>Welcome to RocketCoach</h3>
-                <p>Upload your first replay to unlock coaching feedback, trend tracking, and personalized training plans.</p>
-                <button type="button" onClick={() => openTab("replay")}>Go to Replay Tab</button>
+              <div className="metrics-card welcome-card">
+                <div className="welcome-header">
+                  <div className="welcome-icon"><i className="fa-solid fa-rocket" /></div>
+                  <div>
+                    <h2>Welcome to RocketCoach{profile?.username ? `, ${profile.username}` : ""}</h2>
+                    <p className="text-muted">Upload your first replay to unlock coaching feedback, trend tracking, and personalized training.</p>
+                  </div>
+                </div>
+                <div className="welcome-steps">
+                  <div className="welcome-step">
+                    <div className="welcome-step-number">1</div>
+                    <div>
+                      <strong>Upload a replay</strong>
+                      <p className="text-muted">Drop a .replay file from your Rocket League replays folder.</p>
+                    </div>
+                  </div>
+                  <div className="welcome-step">
+                    <div className="welcome-step-number">2</div>
+                    <div>
+                      <strong>Get graded</strong>
+                      <p className="text-muted">RocketCoach analyzes every mechanic and gives you scores.</p>
+                    </div>
+                  </div>
+                  <div className="welcome-step">
+                    <div className="welcome-step-number">3</div>
+                    <div>
+                      <strong>Train smarter</strong>
+                      <p className="text-muted">Practice recommendations tailored to your weaknesses.</p>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" onClick={() => openTab("replay")}><i className="fa-solid fa-upload" /> Upload Your First Replay</button>
               </div>
             )}
 
@@ -915,9 +1124,9 @@ export default function ReplayDashboardPage() {
             </div>
 
             <div className="metrics-card">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div className="card-header">
                 <div>
-                  <h3 style={{ marginBottom: 6 }}>What To Work On</h3>
+                  <h3>What To Work On</h3>
                   <p className="library-item-meta">Short prescriptive guidance based on your most recent replay-backed recommendations.</p>
                 </div>
                 <button type="button" className="ghost" onClick={() => openTab("training")} disabled={!tabReady.training}>Open Training</button>
@@ -987,6 +1196,7 @@ export default function ReplayDashboardPage() {
 
             {!session && (
               <div className="metrics-card empty-state">
+                <div className="empty-state-icon"><i className="fa-regular fa-circle-play" /></div>
                 <h3>No Replay Open</h3>
                 <p>Open a replay from your library or upload a new one to unlock the replay studio.</p>
               </div>
@@ -994,6 +1204,7 @@ export default function ReplayDashboardPage() {
 
             {session && !replayStudioReady && (
               <div className="metrics-card empty-state">
+                <div className="empty-state-icon"><i className="fa-solid fa-spinner fa-spin" /></div>
                 <h3>Replay Loading</h3>
                 <p>The replay studio will unlock once metrics, mechanic grades, and the priority coaching explanations are ready.</p>
               </div>
@@ -1160,6 +1371,25 @@ export default function ReplayDashboardPage() {
               <h2>Improvement</h2>
               <p className="library-item-meta">Descriptive trend analysis built from your replay history.</p>
             </div>
+            {progressSeries.length > 0 && (
+              <div className="improvement-summary">
+                <div className="summary-stat">
+                  <div className="summary-stat-label">Replays Analyzed</div>
+                  <div className="summary-stat-value">{progressSeries.length}</div>
+                </div>
+                <div className="summary-stat">
+                  <div className="summary-stat-label">Latest Score</div>
+                  <div className="summary-stat-value">{latestScore}<span className="text-muted">/100</span></div>
+                </div>
+                <div className="summary-stat">
+                  <div className="summary-stat-label">Trend</div>
+                  <div className="summary-stat-value">
+                    <i className={`fa-solid ${trendUp ? "fa-arrow-trend-up" : "fa-arrow-trend-down"}`}
+                       style={{ color: trendUp ? "var(--success)" : "var(--danger)" }} />
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="metrics-card">
               <h3>Overall Mechanics Score Over Time</h3>
               <div className="chart-container">
@@ -1167,14 +1397,47 @@ export default function ReplayDashboardPage() {
               </div>
               {!progressSeries.length && <div className="library-item-meta">No replay trend data yet.</div>}
             </div>
-            {Object.entries(perMechanicSeries).slice(0, 4).map(([mechanicId, series]) => (
-              <div className="metrics-card" key={mechanicId}>
-                <h3>{englishEventName(mechanicId)}</h3>
-                <div className="chart-container">
-                  <LineChart series={series} width={820} height={180} />
+            <div className="improvement-layout">
+              {Object.entries(perMechanicSeries).slice(0, 4).map(([mechanicId, series]) => (
+                <div className="metrics-card" key={mechanicId}>
+                  <h3>{englishEventName(mechanicId)}</h3>
+                  <div className="chart-container">
+                    <LineChart series={series} width={400} height={180} />
+                  </div>
                 </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeTab === "installer" && (
+          <section className="panel-stack">
+            <div className="metrics-card">
+              <h2>Installer</h2>
+              <p className="library-item-meta">Download the RLBot Stack Installer to set up everything you need on a new machine.</p>
+            </div>
+            <div className="metrics-card">
+              <h3>RLBotStackInstaller.exe</h3>
+              <p className="library-item-meta" style={{ marginBottom: 16 }}>
+                A standalone Windows installer. No Python installation required — it downloads and configures RLBot GUI, RLBotPack, and the full Python environment.
+              </p>
+              <a
+                href={`${REPLAY_PREFIX}/installer/download`}
+                download="RLBotStackInstaller.exe"
+                className="installer-download-link"
+              >
+                Download RLBotStackInstaller.exe
+              </a>
+            </div>
+            <div className="metrics-card">
+              <h3>What the installer sets up</h3>
+              <div className="library-list" style={{ marginTop: 8 }}>
+                <div className="library-item"><span>RLBot GUI — the launcher and match manager for Rocket League bots</span></div>
+                <div className="library-item"><span>RLBotPack — a collection of community bots to train against</span></div>
+                <div className="library-item"><span>Python virtual environment with all required project dependencies</span></div>
+                <div className="library-item"><span>Optional extras: stable-baselines3 and pygame for reinforcement learning</span></div>
               </div>
-            ))}
+            </div>
           </section>
         )}
 
@@ -1184,13 +1447,69 @@ export default function ReplayDashboardPage() {
               <h2>Training</h2>
               <p className="library-item-meta">Prescriptive practice planning based on replay-backed weaknesses and evidence.</p>
             </div>
+            <div className="metrics-card">
+              <h3>RLBot Setup Installer</h3>
+              <p className="library-item-meta" style={{ marginBottom: 16 }}>
+                If this machine still needs RLBot GUI, RLBotPack, bot dependencies, or the training runtime, install the full stack first.
+              </p>
+              <a
+                href={`${REPLAY_PREFIX}/installer/download`}
+                download="RLBotStackInstaller.exe"
+                className="installer-download-link"
+              >
+                Download RLBotStackInstaller.exe
+              </a>
+            </div>
             <div className={`metrics-card ${botTrainingReady ? "" : "empty-state"}`}>
-              <h3>RLBot Preflight</h3>
+              <div className="card-header">
+                <h3>RLBot Preflight</h3>
+                <span className={`status-badge ${botTrainingReady ? "status-badge--ready" : "status-badge--blocked"}`}>
+                  <i className={`fa-solid ${botTrainingReady ? "fa-circle-check" : "fa-triangle-exclamation"}`} />
+                  {botTrainingReady ? "Ready" : "Setup Required"}
+                </span>
+              </div>
               <p className="library-item-meta">
                 {botTrainingReady
                   ? "Bot drills are ready to launch."
-                  : "Bot drills are blocked until the local trainer and RLBot prerequisites are ready."}
+                  : "Bot drills are blocked until the local training launcher and RLBot prerequisites are ready."}
               </p>
+              <div className="library-item-meta" style={{ lineHeight: 1.6, marginBottom: 8 }}>
+                <div className="preflight-check">
+                  <i className={`fa-solid ${dependencyReady ? "fa-circle-check" : "fa-circle-xmark"}`} style={{ color: dependencyReady ? "var(--success)" : "var(--danger)" }} />
+                  <span>Dependencies installed</span>
+                </div>
+                <div className="preflight-check">
+                  <i className={`fa-solid ${trainingLauncherRunning ? "fa-circle-check" : "fa-circle-xmark"}`} style={{ color: trainingLauncherRunning ? "var(--success)" : "var(--danger)" }} />
+                  <span>Training launcher running</span>
+                </div>
+                <div>Last checked: {trainingPreflightLastChecked ? new Date(trainingPreflightLastChecked * 1000).toLocaleString() : "Not yet checked"}</div>
+              </div>
+              <div className="controls" style={{ marginTop: 0, marginBottom: 12 }}>
+                <button type="button" onClick={() => void loadTrainingPreflight({ force: true }).catch((err) => setError(err instanceof Error ? err.message : String(err)))} disabled={trainingPreflightChecking}>
+                  {trainingPreflightChecking ? "Checking..." : "Re-run Checks"}
+                </button>
+                {trainingPreflightFresh && !trainingPreflightChecking && <div className="library-item-meta">Cached result is fresh.</div>}
+              </div>
+              <div className="library-item-meta" style={{ lineHeight: 1.6, marginBottom: 8 }}>
+                {!hostChecksAvailable ? (
+                  <div>
+                    Host RLBot and Rocket League installs cannot be verified from the Docker app until the Windows training launcher is running.
+                  </div>
+                ) : trainingPreflight?.data?.rlbot_gui_detected ? (
+                  <div>
+                    RLBot GUI path: {rlbotGuiPath || "detected"}{rlbotGuiSource ? ` (${rlbotGuiSource})` : ""}
+                  </div>
+                ) : (
+                  <div>
+                    RLBot GUI path: not detected. Set <code>RLBOT_GUI_PATH</code> to your install folder if it is custom.
+                  </div>
+                )}
+              </div>
+              {!trainingLauncherRunning && (
+                <div className="library-item-meta" style={{ marginBottom: 8 }}>
+                  Start it with <code>powershell -ExecutionPolicy Bypass -File scripts\launch_training_bridge.ps1</code>
+                </div>
+              )}
               {trainingPreflightMessages.length ? (
                 <div className="library-item-meta" style={{ lineHeight: 1.6 }}>
                   {trainingPreflightMessages.slice(0, 4).map((message, idx) => (
@@ -1200,12 +1519,36 @@ export default function ReplayDashboardPage() {
               ) : (
                 <div className="library-item-meta">No preflight details were returned yet.</div>
               )}
+              {!!trainingPreflightBotStatuses.length && (
+                <div className="library-list" style={{ marginTop: 12 }}>
+                  {trainingPreflightBotStatuses.map((status) => (
+                    <div key={String(status.bot_profile_id || status.bot_name || "")} className="library-item">
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "100%" }}>
+                        <strong>{status.bot_name || status.bot_profile_id || "Bot"}</strong>
+                        <span style={{ color: status.ready ? "#94f0b8" : "#ffb3b3" }}>{status.ready ? "Ready" : "Blocked"}</span>
+                      </div>
+                      {!!(status.messages ?? []).length && (
+                        <div className="library-item-meta" style={{ marginTop: 4, lineHeight: 1.5 }}>
+                          {(status.messages ?? []).slice(0, 2).map((message, idx) => (
+                            <div key={`${status.bot_profile_id}-${idx}`}>{message}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="improvement-cards">
               {recommendations.map((rec) => {
                 const focusId = String(rec.focus_id || "");
                 const selectedTier = trainingSelections[focusId]?.tier || String(rec.difficulty_default?.tier || rec.difficulty_profiles?.[0]?.tier || "beginner");
                 const selectedDrillMode = trainingSelections[focusId]?.drillMode || String(rec.drill_mode_options?.[0] || "");
+                const launchFeedback = trainingLaunchFeedback[focusId];
+                const selectedProfile = (rec.difficulty_profiles ?? []).find((profile) => profile.tier === selectedTier) || rec.difficulty_default || rec.difficulty_profiles?.[0] || {};
+                const selectedBotStatus = trainingPreflightBotStatusMap[String(selectedProfile.bot_profile_id || "")];
+                const selectedBotReady = !rec.bot_required || (selectedBotStatus ? Boolean(selectedBotStatus.ready) : true);
+                const canLaunchTraining = !launchingFocus && trainingLauncherRunning && sharedDependencyReady && selectedBotReady;
                 return (
                   <div key={focusId || rec.title} className="improvement-card">
                     <div className="improvement-card-header">
@@ -1251,15 +1594,34 @@ export default function ReplayDashboardPage() {
 
                     <button
                       type="button"
-                      disabled={launchingFocus === focusId || (Boolean(rec.bot_required) && !botTrainingReady)}
+                      disabled={launchingFocus === focusId || (Boolean(rec.bot_required) && !canLaunchTraining)}
                       onClick={() => void launchTraining(rec)}
-                      title={Boolean(rec.bot_required) && !botTrainingReady ? "RLBot preflight requirements are not satisfied yet." : ""}
+                      title={Boolean(rec.bot_required) && !canLaunchTraining ? "RLBot preflight requirements are not satisfied yet." : ""}
                     >
                       {launchingFocus === focusId ? "Launching..." : rec.bot_required ? "Train Against Bot" : "Start Drill"}
                     </button>
-                    {Boolean(rec.bot_required) && !botTrainingReady && (
+                    {Boolean(rec.bot_required) && (!trainingLauncherRunning || !sharedDependencyReady) && (
                       <div className="library-item-meta" style={{ marginTop: 8 }}>
-                        {(trainingPreflightMessages[0] || "RLBot setup is incomplete. Start the local trainer and install RLBot GUI to enable bot drills.")}
+                        {(trainingPreflightMessages[0] || "RLBot setup is incomplete. Start the local training launcher and install RLBot GUI to enable bot drills.")}
+                      </div>
+                    )}
+                    {Boolean(rec.bot_required) && selectedBotStatus && !selectedBotStatus.ready && (
+                      <div className="library-item-meta" style={{ marginTop: 8, color: "#ffb3b3", lineHeight: 1.6 }}>
+                        <div>{selectedBotStatus.bot_name || "This bot"} is not launch-ready.</div>
+                        {!!(selectedBotStatus.messages ?? []).length && <div>{selectedBotStatus.messages?.[0]}</div>}
+                      </div>
+                    )}
+                    {launchFeedback && (
+                      <div
+                        className="library-item-meta"
+                        style={{
+                          marginTop: 8,
+                          lineHeight: 1.6,
+                          color: launchFeedback.phase === "error" ? "#ffb3b3" : undefined,
+                        }}
+                      >
+                        <div>{launchFeedback.message}</div>
+                        {launchFeedback.detail && <div>{launchFeedback.detail}</div>}
                       </div>
                     )}
                   </div>

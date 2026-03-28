@@ -12,6 +12,7 @@ import {
 } from "./cognito";
 
 const REPLAY_PREFIX = "/api/replay";
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000;
 
 export type AuthUser = { id: number; email: string };
 export type Profile = {
@@ -51,6 +52,22 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: number | null = null;
+  try {
+    return await Promise.race<T>([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer != null) {
+      window.clearTimeout(timer);
+    }
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const devBypassAuth = String(import.meta.env.VITE_DEV_BYPASS_AUTH ?? "").trim() === "1";
   const [auth, setAuth] = useState<AuthUser | null>(null);
@@ -87,18 +104,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           return;
         }
-        const restored = devBypassAuth ? null : await cognitoRestoreSession();
+        const restored = devBypassAuth
+          ? null
+          : await withTimeout(cognitoRestoreSession(), AUTH_BOOTSTRAP_TIMEOUT_MS, "Cognito session restore");
         if (restored?.idToken) {
           if (!canceled) {
             setIdToken(restored.idToken);
           }
-          await apiPost(`${REPLAY_PREFIX}/auth/cognito/login`, { id_token: restored.idToken });
+          await withTimeout(
+            apiPost(`${REPLAY_PREFIX}/auth/cognito/login`, { id_token: restored.idToken }),
+            AUTH_BOOTSTRAP_TIMEOUT_MS,
+            "Cognito login handoff"
+          );
         }
-        await refresh();
+        await withTimeout(refresh(), AUTH_BOOTSTRAP_TIMEOUT_MS, "Dashboard auth refresh");
         if (!canceled) {
           setAuthError(null);
         }
       } catch (err) {
+        setIdToken("");
+        cognitoSignOut();
         if (!canceled) {
           setAuth(null);
           setProfile(null);

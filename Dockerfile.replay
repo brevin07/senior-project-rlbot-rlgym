@@ -22,13 +22,15 @@ RUN apt-get update && \
 COPY --from=rrrocket-build /usr/local/cargo/bin/rrrocket /usr/local/bin/rrrocket
 COPY requirements.txt ./requirements.txt
 COPY requirements ./requirements
-COPY rocketcoach ./rocketcoach
-COPY collision_meshes ./collision_meshes
+COPY configs ./configs
 
 RUN python -m pip install --no-cache-dir -r requirements.txt && \
     python -m pip install --no-cache-dir pandas "PyJWT[crypto]>=2.8,<3" && \
     mkdir -p /app/artifacts/data
 
+COPY rocketcoach ./rocketcoach
+COPY collision_meshes ./collision_meshes
+
 EXPOSE 8775
 
-CMD ["python", "rocketcoach/replay_dashboard/run_replay_dashboard.py", "--host", "0.0.0.0", "--port", "8775", "--no-browser"]
+CMD ["python", "-m", "rocketcoach.replay_dashboard.run_replay_dashboard", "--host", "0.0.0.0", "--port", "8775", "--no-browser"]

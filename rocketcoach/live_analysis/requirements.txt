@@ -1,0 +1,2 @@
+# RocketCoach Dojo wrapper dependencies.
+# RLDojo and RLBot supply the runtime context; the wrapper itself uses only stdlib.

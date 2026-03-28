@@ -1,0 +1,47 @@
+services:
+  replay:
+    build:
+      context: .
+      dockerfile: Dockerfile.replay
+    image: rlcoach-replay:local
+    working_dir: /app
+    environment:
+      - COGNITO_ISSUER=${COGNITO_ISSUER}
+      - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - RLCOACH_TRAINING_API_BASE=http://host.docker.internal:8766
+      - RLBOT_ENABLE_LLM_EXPLAIN=${RLBOT_ENABLE_LLM_EXPLAIN:-1}
+      - RLBOT_APP_DB_PATH=/app/artifacts/data/app.db
+      - RLBOT_LLM_MODEL=${RLBOT_LLM_MODEL:-gpt-4o-mini}
+      - RLBOT_LLM_MAX_TOKENS=${RLBOT_LLM_MAX_TOKENS:-56}
+      - RLBOT_LLM_BATCH_MAX_TOKENS=${RLBOT_LLM_BATCH_MAX_TOKENS:-480}
+      - RLBOT_LLM_BATCH_CHUNK_SIZE=${RLBOT_LLM_BATCH_CHUNK_SIZE:-12}
+      - RLBOT_LLM_TIMEOUT_S=${RLBOT_LLM_TIMEOUT_S:-5}
+      - RLBOT_LLM_BATCH_TIMEOUT_S=${RLBOT_LLM_BATCH_TIMEOUT_S:-6}
+    command: python -m rocketcoach.replay_dashboard.run_replay_dashboard --host 0.0.0.0 --port 8775 --no-browser
+    ports:
+      - "8775:8775"
+    volumes:
+      - rlcoach-data:/app/artifacts/data
+      - ./configs:/app/configs:ro
+      - ./dist:/app/dist:ro
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+      args:
+        VITE_COGNITO_CLIENT_ID: ${VITE_COGNITO_CLIENT_ID}
+        VITE_COGNITO_USER_POOL_ID: ${VITE_COGNITO_USER_POOL_ID}
+        VITE_COGNITO_AUTHORITY: ${VITE_COGNITO_AUTHORITY}
+        VITE_COGNITO_SCOPE: ${VITE_COGNITO_SCOPE:-openid}
+    image: rlcoach-gateway:local
+    working_dir: /app
+    depends_on:
+      - replay
+    command: python -m rocketcoach.dashboard_gateway.gateway_server --host 0.0.0.0 --port 8888 --replay http://replay:8775 --live http://host.docker.internal:8765
+    ports:
+      - "8888:8888"
+
+volumes:
+  rlcoach-data:

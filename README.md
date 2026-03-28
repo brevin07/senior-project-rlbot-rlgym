@@ -1,6 +1,6 @@
 # RocketCoach
 
-RocketCoach is a Rocket League coaching platform that combines replay parsing, mechanic grading, LLM-generated coaching feedback, progress tracking, and RLBot-based training scenarios.
+RocketCoach is a Rocket League coaching platform that combines replay parsing, mechanic grading, replay-backed coaching feedback, progress tracking, and RLBot/RLDojo-based training scenarios.
 
 The product goal is to help a player move through one continuous loop:
 
@@ -10,7 +10,7 @@ The product goal is to help a player move through one continuous loop:
 4. Track improvement over time.
 5. Practice the weakest mechanics against targeted bots and scenarios.
 
-This repository already includes the foundations for that flow. Some parts are implemented end to end today, while others are still represented by placeholder UI or backend training infrastructure that has not yet been fully connected to the main dashboard experience.
+This repository already includes that loop end to end for replay review, progress tracking, installer delivery, and RLBot-backed training launch. Some subsystems are still in migration, but the packaged dashboard now exposes the main user workflow directly.
 
 ## User Flow
 
@@ -31,12 +31,12 @@ This gives the replay pipeline enough information to match parsed replay data ba
 
 ### 3. Replay review and coaching
 
-Once the profile is configured, the player enters the dashboard and uploads or opens replays. The replay analysis flow is intended to show:
+Once the profile is configured, the player enters the dashboard and uploads or opens replays. The replay analysis flow shows:
 
 - replay history
 - a graded breakdown of mechanics
 - event-by-event feedback
-- LLM explanations of what happened and how to improve
+- event-by-event coaching explanations that continue generating in the background if needed
 
 ### 4. Improvement tracking
 
@@ -44,65 +44,46 @@ RocketCoach is intended to turn replay analysis into trend data over time, so th
 
 ### 5. Training against bots
 
-The end-state product experience is for the player to select a mechanic that needs work and launch a focused practice session against a hard-coded RL bot or scenario tailored to that skill.
+The player can select a replay-backed mechanic recommendation and launch a focused practice session against a mapped RLBot bot and RLDojo playlist tailored to that mechanic and difficulty tier.
 
 ## Dashboard Tabs
 
-The desired product language is:
+The current packaged dashboard uses these primary tabs:
 
+- `Home`
 - `Replay`
 - `Improvement`
 - `Training`
+- `Installer`
 
-The current implementation uses:
+### Home
 
-- `Home`
-- `Replays`
-- `Studio`
-- `Improvement`
-
-Here is how those concepts map today.
+- shows the latest replay, upload prompt, quick progress trend, and short replay-backed recommendations
+- acts as the main landing page after sign-in
 
 ### Replay
 
-Target behavior:
-
-- View replay history
-- Open past replays
-- Review graded mechanics
-- Read LLM explanations for specific events and mistakes
-
-Current implementation:
-
-- Replay library lives in `Replays`
-- Detailed replay review lives in `Studio`
-- Mechanic grades and coaching explanations are already available in the studio experience
+- combines the replay library and replay studio into one surface
+- supports upload, replay selection, 3D playback, mechanic grading, and coaching review
+- no longer blocks opening a replay just because priority coaching text is still generating
 
 ### Improvement
 
-Target behavior:
-
-- Show a graph of mechanic score changes over time based on replay analysis
-
-Current implementation:
-
-- Progress charting exists today
-- The graph currently appears in `Home`, not in `Improvement`
+- shows replay-derived progress trends and mechanic history
+- keeps the long-view tracking experience separate from the per-replay studio
 
 ### Training
 
-Target behavior:
+- ranks recommended mechanics to practice
+- lets the player choose difficulty and drill mode, then click `Train Against Bot`
+- runs RLBot preflight checks directly in the UI, including a `Re-run Checks` action
+- verifies both shared dependencies and mapped bot readiness before launch
+- launches RLDojo playlists through the dedicated Windows training bridge
 
-- Rank mechanics by how urgently the player should practice them
-- Show the replays or replay evidence behind each recommendation
-- Let the player click `Train against a bot`
-- Spawn a targeted training session against a hard-coded bot or scenario for that mechanic
+### Installer
 
-Current implementation:
-
-- The current `Improvement` tab contains placeholder `Top 3 Mechanics to Practice` cards
-- RLBot scenario and spawning infrastructure exists in the repository
-- The dashboard-level `Train against a bot` flow is not fully wired yet as a finished user-facing feature
+- exposes the downloadable Windows installer from the dashboard
+- gives new users a direct path to install RLBot GUI, RLBotPack, playlist assets, and Python dependencies
 
 ## Current Implementation Snapshot
 
@@ -111,21 +92,23 @@ The repository already contains these working or partially working pieces:
 - Cognito sign-up, sign-in, email verification, and session restore in the React frontend
 - Profile setup for username, aliases, rank, and platform
 - Replay upload / replay library flow
-- Replay studio with 3D playback
+- Unified replay tab with 3D playback and studio review
 - Mechanic grading from replay analysis
-- LLM-backed event explanations and coaching feedback
+- Event coaching that can continue generating after the replay is already open
 - Progress charting from replay-derived scores
-- RLBot live-analysis and scenario-loading infrastructure for training workflows
+- RLBot/RLDojo training launch through the packaged dashboard
+- Deep RLBot preflight that verifies launcher readiness, shared dependencies, and per-bot import readiness
+- Installer download flow in both `Training` and `Installer`
 
 ## Product Status Notes
 
-This README reflects both the current system and the intended product direction.
+This README reflects the current packaged app behavior.
 
 - The authentication and profile setup flow already matches the intended user journey closely.
-- Replay analysis is real today, but it is split across `Replays` and `Studio` instead of being presented as one unified `Replay` tab.
-- Improvement tracking exists, but the graph is currently on `Home`.
-- The current `Improvement` tab still uses placeholder recommendation cards.
-- Bot/scenario training support exists in backend and RLBot infrastructure, but the polished dashboard action for launching skill-specific bot practice is still a planned integration step.
+- Replay analysis, replay library, and studio playback now live under the same `Replay` tab.
+- Improvement tracking exists both in `Home` summaries and in the dedicated `Improvement` tab.
+- Training recommendations are replay-backed and can launch mapped RLBot/RLDojo drills from the dashboard.
+- RLBot launches depend on the Windows training bridge and host-side dependency verification, not on the replay container guessing host installs.
 
 ## Quick Start
 
@@ -146,7 +129,37 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 
 This creates the `venv` runtime virtual environment and installs the base Python dependencies.
 
-### 2. Build or run the React frontend
+### Optional: build a Windows bootstrap installer `.exe`
+
+If you want a user-run installer that prepares RLBot GUI, a local RLBotPack copy, and this repo's Python dependencies, build the standalone installer with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_rlbot_installer.ps1
+```
+
+This produces `dist/RLBotStackInstaller.exe`.
+
+Installer behavior:
+
+- downloads and installs the RLBot GUI MSI from the configured release URL
+- downloads the `RLBotPack` repository snapshot as a fallback to the GUI's `Download Bot Pack` action
+- creates the repo `venv` and installs `requirements/base.txt`
+- installs common bot-related extras such as `stable-baselines3==1.7.0` and `pygame`
+- attempts to install discovered bot-pack `requirements*.txt` files into the repo `venv`
+
+Current limitation:
+
+- RLBot GUI still owns its own bot-launch behavior, so some bots may still trigger first-run dependency setup inside RLBot depending on how that bot is packaged.
+
+If you only want to install the RocketCoach RLDojo playlists on a user's machine, build the smaller playlist installer with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_rldojo_playlists_installer.ps1
+```
+
+This produces `dist/RLDojoPlaylistsInstaller.exe`, which writes the generated RocketCoach `RC ...` playlists into the user's `AppData\Roaming\RLBot\Dojo\Playlists` folder.
+
+### 2. Build or run the React frontend for local development
 
 ```powershell
 cd frontend\dashboard
@@ -157,17 +170,34 @@ cd ..\..
 
 Use `npm run dev` during frontend development if you want the Vite development server instead of a production build.
 
-### 3. Start the gateway and replay services
+### 3. Start the packaged RLCoach app stack
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_rlcoach_app.ps1
+```
+
+This Docker-first launcher:
+
+- validates the required `.env` values
+- reuses previously built Docker images when the relevant inputs have not changed
+- rebuilds only the replay or gateway image whose inputs changed, unless `-RebuildContainers` is passed
+- starts the self-contained replay and gateway containers without repo bind mounts
+- is intended to be the canonical app entrypoint when using the ngrok-served dashboard
+- waits for the gateway health check, then starts ngrok for the dashboard surface
+
+Default local gateway URL:
+
+- `http://127.0.0.1:8888`
+
+For a full reset of the packaged stack, add `-ResetCompose`. For a forced rebuild, add `-RebuildContainers`.
+
+### 4. Start the gateway and replay services for local non-Docker development
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_gateway.ps1
 ```
 
-Default gateway URL:
-
-- `http://127.0.0.1:8888`
-
-This gateway fronts the dashboard experience and proxies the replay and live-analysis services behind a single entry point.
+This local wrapper expects the `venv` environment from `scripts/bootstrap.ps1` and fronts the dashboard experience without Docker.
 
 For the separate developer dashboard launcher that opens replay and gateway windows for you, use:
 
@@ -175,13 +205,27 @@ For the separate developer dashboard launcher that opens replay and gateway wind
 powershell -ExecutionPolicy Bypass -File scripts\start_dev_dashboard.ps1
 ```
 
-### 4. Optional: launch live analysis or training-related flows
+### 5. Optional: launch live analysis or the dedicated training bridge
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/launch_live_analysis.ps1
 ```
 
-### 5. Optional: run replay extraction directly
+For RLBot/RLDojo training from the dashboard, start the host training bridge with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/launch_training_bridge.ps1
+```
+
+The Training tab will verify:
+
+- `Dependencies installed`
+- `Training launcher running`
+- per-bot readiness for every mapped training bot
+
+If the cached training preflight is stale, the UI refreshes it before launching a drill. Users can also trigger the same host-side verification with `Re-run Checks`.
+
+### 6. Optional: run replay extraction directly
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/replay_extract.ps1
@@ -209,14 +253,15 @@ If you are deploying with Docker or running the hosted-style stack, copy `.env.e
 
 These are the main entry points still used in the repo:
 
-- `scripts/bootstrap.ps1` - create the Python environment and install dependencies
+- `scripts/bootstrap.ps1` - create the local Python environment for non-Docker workflows and install dependencies
 - `scripts/run_gateway.ps1` - start the gateway plus replay services
 - `scripts/launch_live_analysis.ps1` - launch live analysis with helper behavior
 - `scripts/replay_extract.ps1` - extract replay data from a `.replay` file
 - `scripts/replay_dashboard.ps1` - run the replay dashboard service
 - `scripts/train.ps1` - run the training entrypoint
 - `scripts/start_dev_dashboard.ps1` - one-step developer dashboard + gateway launcher
-- `scripts/start_rlcoach_app.ps1` - one-step startup flow for the broader app stack
+- `scripts/start_rlcoach_app.ps1` - packaged RLCoach launcher; uses self-contained Docker images, smart image reuse, gateway health checks, and ngrok startup by default
+- `scripts/launch_training_bridge.ps1` - start the Windows host training bridge used by RLBot/RLDojo bot drills from the dashboard
 - `scripts/prune_accounts.ps1` - remove local accounts, with optional Cognito cleanup
 
 ## Deployment Notes
@@ -226,6 +271,7 @@ Docker-based deployment is supported for the replay and gateway services.
 Relevant files:
 
 - `docker-compose.deploy.yml`
+- `docker-compose.rlcoach-app.yml`
 - `.github/workflows/docker-images.yml`
 - `Dockerfile.replay`
 - `Dockerfile.gateway`

@@ -11,12 +11,21 @@
 - `rocketcoach/extract_player_data.py`: rrrocket JSON -> gameplay CSV extraction.
 - `rocketcoach/replay_dashboard/run_replay_dashboard.py`: replay dashboard entrypoint.
 - `rocketcoach/live_analysis/run_live_analysis.py`: live telemetry dashboard / analysis entrypoint.
+- `rocketcoach/training/launcher_server.py`: Windows host bridge for RLBot/RLDojo preflight and training launch.
 
 ## Target Logical Boundaries
 - `rocketcoach/common/*`: persistence, shared contracts, and backend utilities.
 - `rocketcoach/live_analysis/*`: live, in-match metric analysis and dashboards.
 - `rocketcoach/replay_dashboard/*`: replay parsing, replay APIs, and coaching workflows.
+- `rocketcoach/training/*`: RLBot/RLDojo discovery, host-side verification, and training launch orchestration.
 - `src/*`: thin compatibility entrypoints only.
+
+## Dashboard And Training Boundary
+- The packaged app served by `scripts/start_rlcoach_app.ps1` is the canonical dashboard surface.
+- Replay and gateway run in Docker for the packaged flow.
+- RLBot and Rocket League remain Windows-host responsibilities and are verified from the host training bridge, not from inside Docker.
+- The `Training` tab consumes host-side readiness data from `rocketcoach/training/launcher_server.py` and should not guess host installs from container paths.
+- Replay opening should remain usable even if coaching text is still being generated in the background.
 
 ## Artifact Policy
 - Do not commit model binaries, checkpoint folders, replay dumps, or generated plots/csvs.

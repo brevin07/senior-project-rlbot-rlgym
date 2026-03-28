@@ -23,6 +23,10 @@ from rocketcoach.live_analysis.mechanic_grader import grade_game_mechanics, summ
 from rocketcoach.live_analysis.recommendation_engine import compute_recommendations
 from rocketcoach.replay_dashboard.replay_loader import DEBUG_METRIC_KEYS, METRIC_KEYS, ReplaySession, ensure_player_metrics, load_replay_bytes
 from rocketcoach.replay_dashboard.training_catalog import NON_BOT_DRILL_SUMMARIES, build_training_option
+from rocketcoach.training.rldojo_catalog import (
+    build_preflight,
+    rank_to_default_difficulty,
+)
 
 
 class DuplicateReplayError(RuntimeError):
@@ -1483,6 +1487,34 @@ def _rc_ensure_valid_current_replay_state(self: ReplayStateStore) -> dict:
     }
 
 
+def _rc_ensure_profile_analysis_ready(self: ReplayStateStore) -> str:
+    with self._lock:
+        session = self._state.session
+        current_player = str(self._state.analysis_player or "")
+        ready = bool(self._state.analysis_ready)
+        players = [str(p) for p in ((session.players if session else []) or []) if str(p or "").strip()]
+    if not session:
+        raise RuntimeError("No replay loaded yet.")
+    preferred = self._validated_analysis_player(players=players, payload={"analysis_player": current_player})
+    if not preferred:
+        profile = self.current_profile() or {}
+        wanted = str(profile.get("username", "") or "your profile username").strip()
+        raise RuntimeError(f"No player matching '{wanted}' was found in this replay.")
+
+    with self._lock:
+        if preferred not in self._state.player_metric_jobs:
+            self._state.player_metric_jobs[preferred] = {"status": "idle", "message": "Analysis queued.", "error": ""}
+        if self._state.analysis_player != preferred:
+            self._state.analysis_player = preferred
+            self._state.analysis_error = ""
+            self._state.analysis_locked = True
+
+    if not ready or current_player != preferred:
+        self.run_selected_analysis()
+
+    return preferred
+
+
 def _rc_load_prepared_replay_into_state(self: ReplayStateStore, *, row: Dict[str, Any]) -> bool:
     payload = self._deserialize_prepared_payload(bytes(row.get("prepared_payload", b"") or b""))
     if not payload:
@@ -1568,26 +1600,123 @@ def _rc_replay_session_data(self: ReplayStateStore) -> Dict[str, Any]:
     return payload
 
 
+def _rc_current_mechanics(self: ReplayStateStore) -> Dict[str, Any]:
+    with self._lock:
+        if self._state.mechanics and self._state.analysis_ready:
+            return dict(self._state.mechanics)
+    player = self._ensure_profile_analysis_ready()
+    with self._lock:
+        session = self._state.session
+        cached = dict(self._state.mechanics or {})
+    if cached:
+        return cached
+    if not session:
+        return {}
+    payload = self._compute_mechanics_for_selected_player(session, player)
+    with self._lock:
+        self._state.mechanics = dict(payload or {})
+    self._persist_analysis_summary(session, player, payload)
+    self._persist_prepared_replay(session=session, player=player, mechanics_payload=payload)
+    return payload
+
+
+def _rc_player_metrics_data(self: ReplayStateStore, player: str) -> Dict[str, Any]:
+    wanted = str(player or "").strip()
+    selected = self._ensure_profile_analysis_ready()
+    with self._lock:
+        session = self._state.session
+        if not session:
+            raise RuntimeError("No replay loaded yet.")
+        if wanted and wanted != selected:
+            raise RuntimeError(f"Metrics are locked to analysis player '{selected}'.")
+        player_name = selected
+        if player_name not in session.players:
+            raise RuntimeError(f"Unknown player '{player_name}'")
+        return {
+            "session_id": session.session_id,
+            "replay_name": session.replay_name,
+            "metrics_timeline": session.metrics_by_player.get(player_name, []) or [],
+            "events": session.events_by_player.get(player_name, []) or [],
+        }
+
+
+def _rc_metrics_seek(self: ReplayStateStore, player: str, replay_t: float) -> Dict[str, Any]:
+    wanted = str(player or "").strip()
+    selected = self._ensure_profile_analysis_ready()
+    with self._lock:
+        session = self._state.session
+        if not session:
+            raise RuntimeError("No replay loaded yet.")
+        if wanted and wanted != selected:
+            raise RuntimeError(f"Metrics are locked to analysis player '{selected}'.")
+        timeline = session.metrics_by_player.get(selected) or []
+        if not timeline:
+            raise RuntimeError("Replay timeline is empty.")
+        times = [float(x.get("t", 0.0)) for x in timeline]
+        target_idx = max(0, min(len(times) - 1, bisect_right(times, float(replay_t)) - 1))
+        point = timeline[target_idx]
+        events = session.events_by_player.get(selected) or []
+        return {
+            "session_id": session.session_id,
+            "replay_name": session.replay_name,
+            "metric_point": point,
+            "events": events,
+            "idx": target_idx,
+        }
+
+
 def _rc_live_base_url(self: ReplayStateStore) -> str:
     return str(os.environ.get("RLCOACH_LIVE_API_BASE", "http://127.0.0.1:8765")).rstrip("/")
 
 
-def _rc_post_live_json(self: ReplayStateStore, path: str, payload: dict) -> dict:
+def _rc_training_base_url(self: ReplayStateStore) -> str:
+    return str(os.environ.get("RLCOACH_TRAINING_API_BASE", "http://127.0.0.1:8766")).rstrip("/")
+
+
+def _rc_post_training_json(self: ReplayStateStore, path: str, payload: dict) -> dict:
     req = request.Request(
-        f"{self._live_base_url()}{path}",
+        f"{self._training_base_url()}{path}",
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
     try:
-        with request.urlopen(req, timeout=20) as resp:
+        with request.urlopen(req, timeout=120) as resp:
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else {}
     except error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(body or str(exc)) from exc
+        try:
+            payload = json.loads(body) if body else {}
+        except Exception:
+            payload = {}
+        message = str(payload.get("error", "") or body or str(exc))
+        raise RuntimeError(message) from exc
     except Exception as exc:
-        raise RuntimeError(f"Unable to reach live trainer at {self._live_base_url()}") from exc
+        raise RuntimeError(f"Unable to reach training launcher at {self._training_base_url()}") from exc
+
+
+def _rc_get_training_json(self: ReplayStateStore, path: str) -> dict:
+    req = request.Request(
+        f"{self._training_base_url()}{path}",
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with request.urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8")
+            payload = json.loads(raw) if raw else {}
+            return dict(payload.get("data", {}) or {})
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(body) if body else {}
+        except Exception:
+            payload = {}
+        message = str(payload.get("error", "") or body or str(exc))
+        raise RuntimeError(message) from exc
+    except Exception as exc:
+        raise RuntimeError(f"Unable to reach training launcher at {self._training_base_url()}") from exc
 
 
 def _rc_record_drill_run(self: ReplayStateStore, *, user_id: int, focus_id: str, bot_profile_id: str, scenario_ids: list[str], outcome: dict | None = None) -> int:
@@ -1611,13 +1740,16 @@ def _rc_training_plan(self: ReplayStateStore) -> dict:
     recs = self.current_recommendations() or {}
     ranked = list(recs.get("recommendations", []) or [])
     items = []
+    default_tier = rank_to_default_difficulty(str(profile.get("rank_tier", "")))
     for idx, rec in enumerate(ranked, start=1):
         focus_id = str(rec.get("focus_id", "") or "").strip()
         option = build_training_option(focus_id)
         if not option:
             continue
         difficulty_profiles = option.get("difficulty_profiles", [])
-        default_profile = difficulty_profiles[1] if len(difficulty_profiles) > 1 else (difficulty_profiles[0] if difficulty_profiles else {})
+        default_profile = next((x for x in difficulty_profiles if str(x.get("tier", "")) == default_tier), {})
+        if not default_profile:
+            default_profile = difficulty_profiles[0] if difficulty_profiles else {}
         drill_modes = option.get("drill_mode_options", [])
         items.append(
             {
@@ -1677,98 +1809,115 @@ def _rc_launch_training(self: ReplayStateStore, *, focus_id: str, difficulty_tie
     option = build_training_option(focus_id)
     if not option:
         raise RuntimeError("Unknown focus_id")
-    clean_scenarios = [str(x).strip() for x in (scenario_ids or option.get("scenario_ids", [])) if str(x).strip()]
-    if not clean_scenarios:
-        raise RuntimeError("At least one scenario is required")
+    selected_profile = next(
+        (x for x in (option.get("difficulty_profiles", []) or []) if str(x.get("tier", "") or "").strip().lower() == str(difficulty_tier or "").strip().lower()),
+        {},
+    )
+    if not selected_profile:
+        raise RuntimeError("Unknown difficulty tier for this training focus.")
     run_id = self._record_drill_run(
         user_id=int(profile["id"]),
         focus_id=str(focus_id),
-        bot_profile_id=str(bot_profile_id),
-        scenario_ids=clean_scenarios,
+        bot_profile_id=str(selected_profile.get("bot_profile_id", "") or bot_profile_id),
+        scenario_ids=[str(focus_id)],
         outcome={
             "status": "queued",
             "difficulty_tier": str(difficulty_tier),
-            "difficulty_value": float(difficulty_value),
+            "difficulty_value": float(selected_profile.get("difficulty_value", difficulty_value) or difficulty_value),
             "drill_mode": str(drill_mode),
             "bot_required": bool(bot_required),
+            "bot_name": str(selected_profile.get("bot_name", "") or ""),
+            "playlist_name": str(selected_profile.get("playlist_name", "") or ""),
         },
     )
-    self._post_live_json(
-        "/api/training/launch",
-        {
-            "focus_id": str(focus_id),
-            "difficulty_tier": str(difficulty_tier),
-            "difficulty_value": float(difficulty_value),
-            "bot_profile_id": str(bot_profile_id),
-            "scenario_ids": clean_scenarios,
-            "drill_mode": str(drill_mode),
-            "bot_required": bool(bot_required),
-            "drill_run_id": int(run_id),
-        },
+    launch_resp = dict(
+        (
+            self._post_training_json(
+                "/api/training/launch",
+                {
+                    "focus_id": str(focus_id),
+                    "difficulty_tier": str(difficulty_tier),
+                    "difficulty_value": float(selected_profile.get("difficulty_value", difficulty_value) or difficulty_value),
+                    "bot_profile_id": str(selected_profile.get("bot_profile_id", "") or bot_profile_id),
+                    "drill_mode": str(drill_mode),
+                    "bot_required": bool(bot_required),
+                    "drill_run_id": int(run_id),
+                },
+            ).get("data", {})
+            or {}
+        )
     )
-    return {"queued": True, "drill_run_id": int(run_id), "focus_id": str(focus_id), "route": "/live"}
+    return {
+        "queued": True,
+        "drill_run_id": int(run_id),
+        "focus_id": str(focus_id),
+        "route": str(launch_resp.get("route", "/training") or "/training"),
+        "launcher_kind": str(launch_resp.get("launcher_kind", "training_bridge") or "training_bridge"),
+        "bot_name": str(launch_resp.get("bot_name", "") or selected_profile.get("bot_name", "") or ""),
+        "playlist_name": str(launch_resp.get("playlist_name", "") or selected_profile.get("playlist_name", "") or ""),
+        "status_message": str(
+            launch_resp.get("status_message", "")
+            or "Training match requested. Check Rocket League. If nothing takes focus within a few seconds, check the training bridge console window for the exact error."
+        ),
+    }
 
 
 def _rc_training_preflight(self: ReplayStateStore) -> dict:
-    def _path_exists(candidates: list[str]) -> bool:
-        return any(Path(path).exists() for path in candidates if path)
-
-    def _port_open(host: str, port: int) -> bool:
+    containerized = Path("/.dockerenv").exists()
+    if containerized:
         try:
-            with socket.create_connection((host, port), timeout=1.0):
-                return True
-        except OSError:
-            return False
-
-    local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
-    program_files = os.environ.get("ProgramFiles", "").strip()
-    rlbot_import_ok = __import__("importlib.util").util.find_spec("rlbot") is not None
-    rlbot_gui_detected = _path_exists(
-        [
-            str(Path(local_appdata) / "RLBotGUIX") if local_appdata else "",
-            str(Path(program_files) / "RLBot") if program_files else "",
-        ]
+            return self._get_training_json("/api/training/preflight")
+        except Exception:
+            return {
+                "host_checks_available": False,
+                "launcher_kind": "training_bridge",
+                "launcher_running": False,
+                "dependency_ready": False,
+                "shared_dependency_ready": False,
+                "python_ready": True,
+                "rlbot_import_ok": None,
+                "rlbot_gui_detected": None,
+                "rlbot_gui_path": "",
+                "rlbot_gui_detection_source": "training_launcher_unavailable",
+                "rocket_league_detected": None,
+                "scenario_count": 28,
+                "last_checked_at": 0,
+                "bot_statuses": [],
+                "ready_to_launch": False,
+                "messages": [
+                    "The local training launcher is not running on http://127.0.0.1:8766.",
+                    "RocketCoach cannot verify your Windows RLBot and Rocket League installs from Docker until the host training launcher is running.",
+                ],
+            }
+    payload = dict(build_preflight(live_host="127.0.0.1", live_port=8766, service_label="local training launcher") or {})
+    blocked_bots = [status for status in list(payload.get("bot_statuses", []) or []) if not bool(status.get("ready"))]
+    dependency_ready = bool(
+        payload.get("shared_dependency_ready")
+        and not list(payload.get("missing_bots", []) or [])
+        and not blocked_bots
     )
-    rocket_league_detected = _path_exists(
-        [
-            str(Path(program_files) / "Epic Games" / "rocketleague") if program_files else "",
-            str(Path(program_files) / "Steam" / "steamapps" / "common" / "rocketleague") if program_files else "",
-        ]
-    )
-    scenario_ids = set()
-    for focus_id in ["shadow_defense", "challenge", "fifty_fifty_control", "aerial_defense", "aerial_offense", "flicking", "carrying_dribbling"]:
-        scenario_ids.update(build_training_option(focus_id).get("scenario_ids", []))
-    live_trainer_running = _port_open("127.0.0.1", 8765)
-    messages = []
-    if not rlbot_import_ok:
-        messages.append("Python RLBot package is missing from the current environment.")
-    if not rlbot_gui_detected:
-        messages.append("RLBot GUI was not detected in the standard Windows install locations.")
-    if not rocket_league_detected:
-        messages.append("Rocket League was not detected in the standard Windows install locations.")
-    if not live_trainer_running:
-        messages.append("The live trainer is not running on http://127.0.0.1:8765.")
-    return {
-        "live_trainer_running": live_trainer_running,
-        "python_ready": True,
-        "rlbot_import_ok": rlbot_import_ok,
-        "rlbot_gui_detected": rlbot_gui_detected,
-        "rocket_league_detected": rocket_league_detected,
-        "scenario_count": len(scenario_ids),
-        "ready_to_launch": bool(rlbot_import_ok and rocket_league_detected and scenario_ids),
-        "messages": messages,
-    }
+    payload["launcher_kind"] = "training_bridge"
+    payload["launcher_running"] = False
+    payload["dependency_ready"] = dependency_ready
+    payload["ready_to_launch"] = dependency_ready
+    return payload
 
 
 ReplayStateStore._validated_analysis_player = _rc_validated_analysis_player
 ReplayStateStore._apply_validated_replay_state = _rc_apply_validated_replay_state
 ReplayStateStore._ensure_valid_current_replay_state = _rc_ensure_valid_current_replay_state
+ReplayStateStore._ensure_profile_analysis_ready = _rc_ensure_profile_analysis_ready
 ReplayStateStore._load_prepared_replay_into_state = _rc_load_prepared_replay_into_state
 ReplayStateStore.explain_mechanic_events_batch = _rc_explain_mechanic_events_batch
 ReplayStateStore.status_snapshot = _rc_status_snapshot
 ReplayStateStore.replay_session_data = _rc_replay_session_data
+ReplayStateStore.current_mechanics = _rc_current_mechanics
+ReplayStateStore.player_metrics_data = _rc_player_metrics_data
+ReplayStateStore.metrics_seek = _rc_metrics_seek
 ReplayStateStore._live_base_url = _rc_live_base_url
-ReplayStateStore._post_live_json = _rc_post_live_json
+ReplayStateStore._training_base_url = _rc_training_base_url
+ReplayStateStore._post_training_json = _rc_post_training_json
+ReplayStateStore._get_training_json = _rc_get_training_json
 ReplayStateStore._record_drill_run = _rc_record_drill_run
 ReplayStateStore.training_plan = _rc_training_plan
 ReplayStateStore.home_summary = _rc_home_summary
