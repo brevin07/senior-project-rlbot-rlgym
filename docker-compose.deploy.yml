@@ -19,12 +19,19 @@ services:
       - rlcoach-data:/app/artifacts/data
     ports:
       - "8775:8775"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8775/api/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
 
   gateway:
     image: ${GATEWAY_IMAGE:?set GATEWAY_IMAGE}
     restart: unless-stopped
     depends_on:
-      - replay
+      replay:
+        condition: service_healthy
     ports:
       - "8888:8888"
 

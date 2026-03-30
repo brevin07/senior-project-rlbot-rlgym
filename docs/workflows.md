@@ -53,6 +53,7 @@ The bridge:
 - launches or swaps RLBot/RLDojo sessions when the user presses `Train Against Bot`
 
 The Training tab auto-runs this deep preflight, caches it briefly, and exposes `Re-run Checks` for a manual refresh after the user installs missing dependencies.
+When the RocketCoach installer has been run on a machine, the website can also use `Verify Dependencies` to wake the local companion through the registered `rocketcoach://` protocol before polling the bridge for fresh results.
 
 ## 4) Train
 ```powershell

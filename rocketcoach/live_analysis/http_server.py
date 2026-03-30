@@ -13,6 +13,7 @@ from rocketcoach.live_analysis.review_store import ReviewStore
 from rocketcoach.live_analysis.recommendation_engine import TRAINING_CATALOG, compute_recommendations
 from rocketcoach.live_analysis.mechanic_grader import grade_game_mechanics
 from rocketcoach.live_analysis.state_store import StateStore
+from rocketcoach.training.rldojo_catalog import build_preflight
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
@@ -432,6 +433,11 @@ class _DashboardHandler(_BaseDashboardHandler):
         return profile
 
     def do_GET(self):
+        if self.path == "/api/training/preflight":
+            try:
+                return self._send_json({"ok": True, "data": build_preflight(live_host="127.0.0.1", live_port=8765)})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/training/current":
             try:
                 return self._send_json({"ok": True, "data": self.store.current_training_launch()})
@@ -448,13 +454,9 @@ class _DashboardHandler(_BaseDashboardHandler):
             except json.JSONDecodeError:
                 body = {}
             focus_id = str(body.get("focus_id", "")).strip()
-            scenario_ids = [str(x).strip() for x in (body.get("scenario_ids", []) or []) if str(x).strip()]
             if not focus_id:
                 return self._send_json({"ok": False, "error": "Missing focus_id"}, status=400)
-            if not scenario_ids:
-                return self._send_json({"ok": False, "error": "Select at least one scenario."}, status=400)
             self.store.queue_training_launch(body)
-            self.store.queue_scenario(str(scenario_ids[0]))
             return self._send_json({"ok": True, "data": self.store.current_training_launch()})
         return super().do_POST()
 

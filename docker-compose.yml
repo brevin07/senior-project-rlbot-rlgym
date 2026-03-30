@@ -19,7 +19,7 @@ services:
       - RLBOT_LLM_BATCH_CHUNK_SIZE=${RLBOT_LLM_BATCH_CHUNK_SIZE:-12}
       - RLBOT_LLM_TIMEOUT_S=${RLBOT_LLM_TIMEOUT_S:-5}
       - RLBOT_LLM_BATCH_TIMEOUT_S=${RLBOT_LLM_BATCH_TIMEOUT_S:-6}
-    command: python rocketcoach/replay_dashboard/run_replay_dashboard.py --host 0.0.0.0 --port 8775 --no-browser
+    command: python -m rocketcoach.replay_dashboard.run_replay_dashboard --host 0.0.0.0 --port 8775 --no-browser
     ports:
       - "8775:8775"
 
@@ -31,6 +31,6 @@ services:
     working_dir: /app
     volumes:
       - .:/app
-    command: python rocketcoach/dashboard_gateway/gateway_server.py --host 0.0.0.0 --port 8888 --replay http://replay:8775 --live http://host.docker.internal:8765
+    command: python -m rocketcoach.dashboard_gateway.gateway_server --host 0.0.0.0 --port 8888 --replay http://replay:8775 --live http://host.docker.internal:8765
     ports:
       - "8888:8888"

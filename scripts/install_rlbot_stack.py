@@ -11,6 +11,7 @@ import argparse
 import configparser
 import os
 import json
+import textwrap
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,7 @@ DEFAULT_EXTRA_PACKAGES = [
     "stable-baselines3==1.7.0",
     "pygame",
 ]
+DEFAULT_TRAINING_BRIDGE_PROTOCOL = "rocketcoach"
 
 
 def log(message: str) -> None:
@@ -54,6 +56,15 @@ def resolve_install_root(cli_value: str | None) -> Path:
     if cli_value:
         return Path(cli_value).resolve()
     return default_install_root().resolve()
+
+
+def copytree_contents(source: Path, destination: Path) -> None:
+    if not source.exists():
+        raise FileNotFoundError(f"Bundled resource folder is missing: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(source, destination)
 
 
 def download_file(url: str, destination: Path) -> Path:
@@ -180,6 +191,14 @@ def ensure_project_venv(install_root: Path, host_python: Path) -> Path:
     return venv_python
 
 
+def install_bundled_project_files(resource_root: Path, install_root: Path) -> None:
+    for folder_name in ("rocketcoach", "configs"):
+        source = resource_root / folder_name
+        destination = install_root / folder_name
+        copytree_contents(source, destination)
+        log(f"Installed bundled {folder_name} into {destination}")
+
+
 def install_python_requirements(resource_root: Path, python_exe: Path, extra_packages: list[str]) -> None:
     requirements_file = resource_root / "requirements" / "base.txt"
     if not requirements_file.exists():
@@ -191,6 +210,98 @@ def install_python_requirements(resource_root: Path, python_exe: Path, extra_pac
 
     if extra_packages:
         run([str(python_exe), "-m", "pip", "install", *extra_packages])
+
+
+def write_training_bridge_launcher(install_root: Path) -> tuple[Path, Path]:
+    launcher_script = install_root / "RocketCoachTrainingBridgeLauncher.ps1"
+    launcher_vbs = install_root / "RocketCoachProtocolLauncher.vbs"
+    escaped_launcher_script = str(launcher_script).replace('"', '""')
+    launcher_script.write_text(
+        textwrap.dedent(
+            f"""\
+            param(
+                [string]$ProtocolUrl = ""
+            )
+
+            $ErrorActionPreference = "Stop"
+            $installRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+            $logDir = Join-Path $installRoot "logs"
+            $stdoutLog = Join-Path $logDir "training_bridge_stdout.log"
+            $stderrLog = Join-Path $logDir "training_bridge_stderr.log"
+            $pythonExe = Join-Path $installRoot "venv\\Scripts\\python.exe"
+            if (-not (Test-Path $pythonExe)) {{
+                throw "RocketCoach training runtime was not found at $pythonExe"
+            }}
+
+            function Test-BridgeHealth {{
+                try {{
+                    $response = Invoke-WebRequest -Uri "http://127.0.0.1:8766/api/health" -UseBasicParsing -TimeoutSec 2
+                    return ($response.StatusCode -eq 200)
+                }}
+                catch {{
+                    return $false
+                }}
+            }}
+
+            if (Test-BridgeHealth) {{
+                exit 0
+            }}
+
+            New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+            $argumentList = @(
+                '-m',
+                'rocketcoach.training.launcher_server',
+                '--host',
+                '127.0.0.1',
+                '--port',
+                '8766',
+                '--launcher',
+                'auto'
+            )
+
+            Start-Process -FilePath $pythonExe -ArgumentList $argumentList -WorkingDirectory $installRoot -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog | Out-Null
+
+            for ($i = 0; $i -lt 20; $i++) {{
+                Start-Sleep -Milliseconds 750
+                if (Test-BridgeHealth) {{
+                    exit 0
+                }}
+            }}
+
+            throw "RocketCoach training bridge did not become healthy after launch."
+            """
+        ),
+        encoding="utf-8",
+    )
+    launcher_vbs_content = "\n".join(
+        [
+            "Dim shell, args, command, i",
+            'Set shell = CreateObject("WScript.Shell")',
+            f'command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{escaped_launcher_script}"""',
+            "Set args = WScript.Arguments",
+            "For i = 0 To args.Count - 1",
+            '    command = command & " " & Chr(34) & Replace(args.Item(i), Chr(34), """""") & Chr(34)',
+            "Next",
+            "shell.Run command, 0, False",
+            "",
+        ]
+    )
+    launcher_vbs.write_text(launcher_vbs_content, encoding="utf-8")
+    return launcher_script, launcher_vbs
+
+
+def register_training_bridge_protocol(protocol_name: str, launcher_vbs: Path) -> None:
+    if os.name != "nt":
+        return
+    if not protocol_name:
+        return
+    key = rf"HKCU\Software\Classes\{protocol_name}"
+    command_key = rf"{key}\shell\open\command"
+    run(["reg", "add", key, "/ve", "/d", "URL:RocketCoach Protocol", "/f"])
+    run(["reg", "add", key, "/v", "URL Protocol", "/d", "", "/f"])
+    command_value = f'wscript.exe "{launcher_vbs}" "%1"'
+    run(["reg", "add", command_key, "/ve", "/d", command_value, "/f"])
+    log(f"Registered {protocol_name}:// protocol handler")
 
 
 def default_botpack_dir() -> Path:
@@ -301,6 +412,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Stop on the first bot requirement install failure instead of continuing.",
     )
+    parser.add_argument(
+        "--skip-protocol-registration",
+        action="store_true",
+        help="Skip Windows custom protocol registration for rocketcoach:// helper launches.",
+    )
+    parser.add_argument(
+        "--protocol-name",
+        default=DEFAULT_TRAINING_BRIDGE_PROTOCOL,
+        help="Custom protocol name to register for starting the local RocketCoach helper.",
+    )
     return parser.parse_args()
 
 
@@ -311,6 +432,8 @@ def main() -> int:
     install_root.mkdir(parents=True, exist_ok=True)
     log(f"Using bundled resources from {resource_root}")
     log(f"Installing RocketCoach runtime into {install_root}")
+
+    install_bundled_project_files(resource_root, install_root)
 
     extra_packages = list(DEFAULT_EXTRA_PACKAGES)
     extra_packages.extend(args.extra_package)
@@ -347,6 +470,10 @@ def main() -> int:
             )
         else:
             log("Skipping bot pack pip requirements because project Python setup was skipped.")
+
+    _, launcher_vbs = write_training_bridge_launcher(install_root)
+    if not args.skip_protocol_registration:
+        register_training_bridge_protocol(str(args.protocol_name or DEFAULT_TRAINING_BRIDGE_PROTOCOL), launcher_vbs)
 
     log("Install flow complete.")
     if failures:

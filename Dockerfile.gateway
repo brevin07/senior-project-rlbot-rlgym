@@ -5,10 +5,12 @@ WORKDIR /app/frontend/dashboard
 ARG VITE_COGNITO_CLIENT_ID
 ARG VITE_COGNITO_USER_POOL_ID
 ARG VITE_COGNITO_AUTHORITY
+ARG VITE_COGNITO_SCOPE
 
 ENV VITE_COGNITO_CLIENT_ID=$VITE_COGNITO_CLIENT_ID
 ENV VITE_COGNITO_USER_POOL_ID=$VITE_COGNITO_USER_POOL_ID
 ENV VITE_COGNITO_AUTHORITY=$VITE_COGNITO_AUTHORITY
+ENV VITE_COGNITO_SCOPE=$VITE_COGNITO_SCOPE
 
 COPY frontend/dashboard/package.json frontend/dashboard/package-lock.json ./
 RUN npm ci
@@ -21,11 +23,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUTF8=1
 
 COPY rocketcoach ./rocketcoach
 COPY --from=frontend-build /app/frontend/dashboard/dist ./frontend/dashboard/dist
 
 EXPOSE 8888
 
-CMD ["python", "rocketcoach/dashboard_gateway/gateway_server.py", "--host", "0.0.0.0", "--port", "8888", "--replay", "http://replay:8775", "--live", "http://host.docker.internal:8765"]
+CMD ["python", "-m", "rocketcoach.dashboard_gateway.gateway_server", "--host", "0.0.0.0", "--port", "8888", "--replay", "http://replay:8775", "--live", "http://host.docker.internal:8765"]

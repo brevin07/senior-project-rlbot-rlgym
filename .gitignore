@@ -32,6 +32,10 @@ reward_logs/
 tmp/
 temp/
 *.tmp
+.cache/
+build/
+dist/
+*.spec
 
 # Training artifacts and experiment logs
 rlbot_training/data/
@@ -79,6 +83,7 @@ Milestone_1/rrrocket-*.tar.gz
 artifacts/live_sessions/
 artifacts/replay_library/
 artifacts/arena_dumper_zip/
+artifacts/installer_downloads/
 !artifacts/
 !artifacts/pointers/
 !artifacts/pointers/**

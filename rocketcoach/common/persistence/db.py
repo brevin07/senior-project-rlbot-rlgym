@@ -479,15 +479,23 @@ class AppDB:
         rank_tier = normalize_rank(rank_tier)
         now = _utc_now_iso()
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM users WHERE username_norm = ?", (username_norm,)).fetchone()
-            if row:
-                if auth_user_id is not None and row["auth_user_id"] not in (None, int(auth_user_id)):
+            target_row = None
+            if auth_user_id is not None:
+                target_row = conn.execute("SELECT * FROM users WHERE auth_user_id = ?", (int(auth_user_id),)).fetchone()
+
+            conflict_row = conn.execute("SELECT * FROM users WHERE username_norm = ?", (username_norm,)).fetchone()
+            if conflict_row:
+                conflict_id = int(conflict_row["id"])
+                target_id = int(target_row["id"]) if target_row else None
+                if target_id is None or conflict_id != target_id:
                     raise RuntimeError("username is already in use")
+
+            if target_row:
                 conn.execute(
-                    "UPDATE users SET username = ?, rank_tier = ?, platform = ?, updated_at = ?, auth_user_id = COALESCE(auth_user_id, ?) WHERE id = ?",
-                    (username, rank_tier, platform, now, auth_user_id, int(row["id"])),
+                    "UPDATE users SET username = ?, username_norm = ?, rank_tier = ?, platform = ?, updated_at = ?, auth_user_id = ? WHERE id = ?",
+                    (username, username_norm, rank_tier, platform, now, int(auth_user_id), int(target_row["id"])),
                 )
-                out = conn.execute("SELECT * FROM users WHERE id = ?", (int(row["id"]),)).fetchone()
+                out = conn.execute("SELECT * FROM users WHERE id = ?", (int(target_row["id"]),)).fetchone()
             else:
                 conn.execute(
                     "INSERT INTO users (username, username_norm, rank_tier, platform, created_at, updated_at, auth_user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",

@@ -13,10 +13,18 @@ class ScenarioRef:
 
 @dataclass
 class TrainingLaunch:
+    launcher_kind: str = ""
     focus_id: str = ""
     difficulty_tier: str = ""
     difficulty_value: float = 0.0
     bot_profile_id: str = ""
+    bot_name: str = ""
+    bot_config_path: str = ""
+    playlist_name: str = ""
+    playlist_file: str = ""
+    playlist_id: str = ""
+    dojo_source_root: str = ""
+    dojo_wrapper_config_path: str = ""
     scenario_ids: List[str] = field(default_factory=list)
     drill_mode: str = ""
     bot_required: bool = False
@@ -40,6 +48,7 @@ class SharedState:
     active_focus: str = ""
     active_bot_profile: str = ""
     training_launch: TrainingLaunch = field(default_factory=TrainingLaunch)
+    pending_training_launch: Optional[TrainingLaunch] = None
 
 
 class StateStore:
@@ -86,16 +95,25 @@ class StateStore:
         clean_ids = [str(x).strip() for x in (payload.get("scenario_ids", []) or []) if str(x).strip()]
         with self._lock:
             self._state.training_launch = TrainingLaunch(
+                launcher_kind=str(payload.get("launcher_kind", "") or ""),
                 focus_id=str(payload.get("focus_id", "") or ""),
                 difficulty_tier=str(payload.get("difficulty_tier", "") or ""),
                 difficulty_value=float(payload.get("difficulty_value", 0.0) or 0.0),
                 bot_profile_id=str(payload.get("bot_profile_id", "") or ""),
+                bot_name=str(payload.get("bot_name", "") or ""),
+                bot_config_path=str(payload.get("bot_config_path", "") or ""),
+                playlist_name=str(payload.get("playlist_name", "") or ""),
+                playlist_file=str(payload.get("playlist_file", "") or ""),
+                playlist_id=str(payload.get("playlist_id", "") or ""),
+                dojo_source_root=str(payload.get("dojo_source_root", "") or ""),
+                dojo_wrapper_config_path=str(payload.get("dojo_wrapper_config_path", "") or ""),
                 scenario_ids=clean_ids,
                 drill_mode=str(payload.get("drill_mode", "") or ""),
                 bot_required=bool(payload.get("bot_required", False)),
                 drill_run_id=int(payload.get("drill_run_id", 0) or 0),
             )
-        if clean_ids:
+            self._state.pending_training_launch = TrainingLaunch(**self._state.training_launch.__dict__)
+        if clean_ids and str(payload.get("launcher_kind", "") or "").strip().lower() != "rldojo":
             self.queue_training(
                 focus_id=self._state.training_launch.focus_id,
                 bot_profile=self._state.training_launch.bot_profile_id,
@@ -106,10 +124,43 @@ class StateStore:
         with self._lock:
             launch = self._state.training_launch
             return {
+                "launcher_kind": launch.launcher_kind,
                 "focus_id": launch.focus_id,
                 "difficulty_tier": launch.difficulty_tier,
                 "difficulty_value": launch.difficulty_value,
                 "bot_profile_id": launch.bot_profile_id,
+                "bot_name": launch.bot_name,
+                "bot_config_path": launch.bot_config_path,
+                "playlist_name": launch.playlist_name,
+                "playlist_file": launch.playlist_file,
+                "playlist_id": launch.playlist_id,
+                "dojo_source_root": launch.dojo_source_root,
+                "dojo_wrapper_config_path": launch.dojo_wrapper_config_path,
+                "scenario_ids": list(launch.scenario_ids),
+                "drill_mode": launch.drill_mode,
+                "bot_required": launch.bot_required,
+                "drill_run_id": launch.drill_run_id,
+            }
+
+    def pop_pending_training_launch(self) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            launch = self._state.pending_training_launch
+            self._state.pending_training_launch = None
+            if not launch:
+                return None
+            return {
+                "launcher_kind": launch.launcher_kind,
+                "focus_id": launch.focus_id,
+                "difficulty_tier": launch.difficulty_tier,
+                "difficulty_value": launch.difficulty_value,
+                "bot_profile_id": launch.bot_profile_id,
+                "bot_name": launch.bot_name,
+                "bot_config_path": launch.bot_config_path,
+                "playlist_name": launch.playlist_name,
+                "playlist_file": launch.playlist_file,
+                "playlist_id": launch.playlist_id,
+                "dojo_source_root": launch.dojo_source_root,
+                "dojo_wrapper_config_path": launch.dojo_wrapper_config_path,
                 "scenario_ids": list(launch.scenario_ids),
                 "drill_mode": launch.drill_mode,
                 "bot_required": launch.bot_required,

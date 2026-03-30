@@ -76,9 +76,9 @@ The current packaged dashboard uses these primary tabs:
 
 - ranks recommended mechanics to practice
 - lets the player choose difficulty and drill mode, then click `Train Against Bot`
-- runs RLBot preflight checks directly in the UI, including a `Re-run Checks` action
+- runs RLBot preflight checks directly in the UI, including `Verify Dependencies` and `Re-run Checks`
 - verifies both shared dependencies and mapped bot readiness before launch
-- launches RLDojo playlists through the dedicated Windows training bridge
+- launches RLDojo playlists through the dedicated Windows local companion / training bridge
 
 ### Installer
 
@@ -224,6 +224,8 @@ The Training tab will verify:
 - per-bot readiness for every mapped training bot
 
 If the cached training preflight is stale, the UI refreshes it before launching a drill. Users can also trigger the same host-side verification with `Re-run Checks`.
+
+For end users, the intended flow is the website `Verify Dependencies` button. The Windows installer now registers a `rocketcoach://` protocol handler so the dashboard can ask the local RocketCoach companion to start in the background and then poll for readiness.
 
 ### 6. Optional: run replay extraction directly
 

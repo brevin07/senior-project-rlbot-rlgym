@@ -46,6 +46,8 @@ try {
         --name "RLBotStackInstaller" `
         --add-data ".\requirements;requirements" `
         --add-data ".\requirements.txt;." `
+        --add-data ".\rocketcoach;rocketcoach" `
+        --add-data ".\configs;configs" `
         ".\scripts\install_rlbot_stack.py"
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller build failed."

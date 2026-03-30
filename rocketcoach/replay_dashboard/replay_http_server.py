@@ -823,6 +823,27 @@ class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
                 return self._send_json({"ok": True, "data": self.store.training_preflight()})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path == "/api/installer/info":
+            repo_root = Path(__file__).resolve().parents[2]
+            installer_path = repo_root / "dist" / "RLBotStackInstaller.exe"
+            if installer_path.exists():
+                size_mb = round(installer_path.stat().st_size / (1024 * 1024), 1)
+                return self._send_json({"ok": True, "data": {"available": True, "filename": "RLBotStackInstaller.exe", "size_mb": size_mb}})
+            return self._send_json({"ok": True, "data": {"available": False}})
+        if self.path == "/api/installer/download":
+            repo_root = Path(__file__).resolve().parents[2]
+            installer_path = repo_root / "dist" / "RLBotStackInstaller.exe"
+            if not installer_path.exists():
+                self.send_error(HTTPStatus.NOT_FOUND, "Installer not found")
+                return
+            data = installer_path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", 'attachment; filename="RLBotStackInstaller.exe"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         return super().do_GET()
 
     def do_POST(self):

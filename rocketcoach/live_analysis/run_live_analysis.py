@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import signal
@@ -8,6 +9,8 @@ import subprocess
 import time
 import webbrowser
 from pathlib import Path
+
+from rocketcoach.training.rldojo_catalog import dojo_request_path
 
 LAUNCH_ENV_FLAG = "RLBOT_LIVE_ANALYSIS_LAUNCHED"
 
@@ -188,6 +191,37 @@ def _build_match_config(bot_skill: float):
     return match_config
 
 
+def _build_rldojo_match_config(*, bot_config_path: str, dojo_wrapper_config_path: str):
+    from rlbot.matchconfig.match_config import MatchConfig, PlayerConfig, ScriptConfig, Team
+
+    match_config = MatchConfig()
+    match_config.networking_role = "none"
+    match_config.network_address = "127.0.0.1"
+
+    human = PlayerConfig()
+    human.bot = False
+    human.rlbot_controlled = False
+    human.human_index = 0
+    human.team = Team.BLUE.value
+    human.name = "Human"
+
+    orange_bot = PlayerConfig.bot_config(Path(bot_config_path), Team.ORANGE)
+    orange_bot.name = str(getattr(orange_bot, "name", "") or "Training Bot")
+
+    match_config.player_configs = [human, orange_bot]
+    match_config.script_configs = [ScriptConfig(Path(dojo_wrapper_config_path))]
+    match_config.game_mode = "Soccer"
+    match_config.game_map = "DFHStadium"
+    match_config.instant_start = True
+    match_config.skip_replays = True
+    match_config.enable_rendering = True
+    match_config.enable_state_setting = True
+    match_config.existing_match_behavior = "Restart"
+    match_config.mutators.match_length = "Unlimited"
+    match_config.mutators.respawn_time = "Disable Goal Reset"
+    return match_config
+
+
 def _launcher_preference(launcher_name: str):
     from rlbot.setup_manager import RocketLeagueLauncherPreference
 
@@ -206,6 +240,51 @@ def _connect_for_live_analysis(manager: SetupManager, args) -> None:
     else:
         manager.connect_to_game(launcher_preference=_launcher_preference(args.launcher))
         print("[live_analysis] attached to live Rocket League session")
+
+
+def _launch_rldojo_training(manager: SetupManager, args, launch: dict) -> None:
+    playlist_name = str(launch.get("playlist_name", "") or "").strip()
+    bot_config_path = str(launch.get("bot_config_path", "") or "").strip()
+    dojo_source_root = str(launch.get("dojo_source_root", "") or "").strip()
+    dojo_wrapper_config_path = str(launch.get("dojo_wrapper_config_path", "") or "").strip()
+    if not playlist_name:
+        raise RuntimeError("Training launch is missing playlist_name.")
+    if not bot_config_path or not Path(bot_config_path).exists():
+        raise RuntimeError(f"Training bot config was not found: {bot_config_path}")
+    if not dojo_source_root or not Path(dojo_source_root).exists():
+        raise RuntimeError(f"RLDojo source root was not found: {dojo_source_root}")
+    if not dojo_wrapper_config_path or not Path(dojo_wrapper_config_path).exists():
+        raise RuntimeError(f"Dojo wrapper config was not found: {dojo_wrapper_config_path}")
+
+    request_path = dojo_request_path()
+    request_path.parent.mkdir(parents=True, exist_ok=True)
+    request_path.write_text(
+        json.dumps(
+            {
+                "playlist_name": playlist_name,
+                "focus_id": str(launch.get("focus_id", "") or ""),
+                "difficulty_tier": str(launch.get("difficulty_tier", "") or ""),
+                "requested_at": time.time(),
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+    os.environ["ROCKETCOACH_DOJO_SOURCE_ROOT"] = dojo_source_root
+    os.environ["ROCKETCOACH_DOJO_REQUEST_PATH"] = str(request_path)
+
+    match_config = _build_rldojo_match_config(
+        bot_config_path=bot_config_path,
+        dojo_wrapper_config_path=dojo_wrapper_config_path,
+    )
+    manager.load_match_config(match_config)
+    manager.connect_to_game(launcher_preference=_launcher_preference(args.launcher))
+    manager.start_match()
+    print(
+        f"[live_analysis] launched RLDojo playlist '{playlist_name}' against "
+        f"{str(launch.get('bot_name', '') or Path(bot_config_path).stem)}"
+    )
 
 
 def main():
@@ -308,6 +387,13 @@ def main():
             if args.review_only:
                 time.sleep(0.1)
                 continue
+
+            pending_launch = store.pop_pending_training_launch()
+            if pending_launch and str(pending_launch.get("launcher_kind", "") or "").strip().lower() == "rldojo":
+                try:
+                    _launch_rldojo_training(manager, args, pending_launch)
+                except Exception as exc:
+                    print(f"[live_analysis] RLDojo training launch failed: {exc}")
 
             pending_name = store.pop_pending_scenario()
             if not pending_name:

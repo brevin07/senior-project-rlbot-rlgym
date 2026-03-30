@@ -380,6 +380,8 @@ export default function ReplayDashboardPage() {
   const [trainingPreflight, setTrainingPreflight] = useState<TrainingPreflightResponse | null>(null);
   const [trainingPreflightFetchedAt, setTrainingPreflightFetchedAt] = useState(0);
   const [trainingPreflightChecking, setTrainingPreflightChecking] = useState(false);
+  const [trainingVerificationRunning, setTrainingVerificationRunning] = useState(false);
+  const [trainingVerificationMessage, setTrainingVerificationMessage] = useState("");
   const [selectedPlayer, setSelectedPlayer] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
@@ -467,6 +469,62 @@ export default function ReplayDashboardPage() {
       setTrainingPreflightChecking(false);
     }
   }, [trainingPreflight, trainingPreflightFetchedAt]);
+
+  const wakeTrainingCompanion = useCallback(async () => {
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.src = "rocketcoach://verify-deps";
+    document.body.appendChild(iframe);
+    await sleep(1200);
+    document.body.removeChild(iframe);
+  }, []);
+
+  const verifyDependencies = useCallback(async () => {
+    setError("");
+    setTrainingVerificationRunning(true);
+    try {
+      setTrainingVerificationMessage("Checking for an active RocketCoach Companion...");
+      const immediate = await loadTrainingPreflight({ force: true });
+      if (immediate?.data?.launcher_running) {
+        setTrainingVerificationMessage("RocketCoach Companion is running. Refreshing dependency checks...");
+        const refreshed = await loadTrainingPreflight({ force: true });
+        if (refreshed?.data?.dependency_ready) {
+          setTrainingVerificationMessage("Dependencies verified. Bot drills are ready to launch.");
+        } else {
+          setTrainingVerificationMessage("Dependency scan finished. Review the missing items below.");
+        }
+        return refreshed;
+      }
+
+      setTrainingVerificationMessage("Starting the local RocketCoach Companion...");
+      await wakeTrainingCompanion();
+
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await sleep(1000);
+        setTrainingVerificationMessage(`Waiting for the local RocketCoach Companion... (${attempt + 1}/20)`);
+        const polled = await loadTrainingPreflight({ force: true });
+        if (polled?.data?.launcher_running) {
+          if (polled?.data?.dependency_ready) {
+            setTrainingVerificationMessage("Dependencies verified. Bot drills are ready to launch.");
+          } else {
+            setTrainingVerificationMessage("RocketCoach Companion connected. Review the dependency results below.");
+          }
+          return polled;
+        }
+      }
+
+      throw new Error(
+        "RocketCoach Companion did not respond. Install the RLBot stack installer, then try Verify Dependencies again."
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setTrainingVerificationMessage(message);
+      throw err;
+    } finally {
+      setTrainingVerificationRunning(false);
+    }
+  }, [loadTrainingPreflight, wakeTrainingCompanion]);
 
   const loadMechanics = useCallback(async () => {
     const resp = await apiGet<MechanicsResponse>(`${REPLAY_PREFIX}/mechanics/current`, { suppressErrorWindow: true });
@@ -902,11 +960,11 @@ export default function ReplayDashboardPage() {
       const selectedBotStatus = (preflightData.bot_statuses ?? []).find(
         (status) => String(status.bot_profile_id || "") === String(profileChoice.bot_profile_id || "")
       );
-      if (rec.bot_required && (!launcherRunning || !sharedReady)) {
-        const message = preflightMessages[0] || "RLBot setup is incomplete. Complete the preflight checks before launching bot drills.";
-        setTrainingLaunchFeedback((prev) => ({
-          ...prev,
-          [focusId]: {
+        if (rec.bot_required && (!launcherRunning || !sharedReady)) {
+          const message = preflightMessages[0] || "RLBot setup is incomplete. Run Verify Dependencies before launching bot drills.";
+          setTrainingLaunchFeedback((prev) => ({
+            ...prev,
+            [focusId]: {
             phase: "error",
             message,
           },
@@ -1485,15 +1543,31 @@ export default function ReplayDashboardPage() {
                 <div>Last checked: {trainingPreflightLastChecked ? new Date(trainingPreflightLastChecked * 1000).toLocaleString() : "Not yet checked"}</div>
               </div>
               <div className="controls" style={{ marginTop: 0, marginBottom: 12 }}>
-                <button type="button" onClick={() => void loadTrainingPreflight({ force: true }).catch((err) => setError(err instanceof Error ? err.message : String(err)))} disabled={trainingPreflightChecking}>
+                <button
+                  type="button"
+                  onClick={() => void verifyDependencies().catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+                  disabled={trainingPreflightChecking || trainingVerificationRunning}
+                >
+                  {trainingVerificationRunning ? "Starting Companion..." : "Verify Dependencies"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadTrainingPreflight({ force: true }).catch((err) => setError(err instanceof Error ? err.message : String(err)))}
+                  disabled={trainingPreflightChecking || trainingVerificationRunning}
+                >
                   {trainingPreflightChecking ? "Checking..." : "Re-run Checks"}
                 </button>
                 {trainingPreflightFresh && !trainingPreflightChecking && <div className="library-item-meta">Cached result is fresh.</div>}
               </div>
+              {trainingVerificationMessage && (
+                <div className="library-item-meta" style={{ marginBottom: 8, lineHeight: 1.6 }}>
+                  {trainingVerificationMessage}
+                </div>
+              )}
               <div className="library-item-meta" style={{ lineHeight: 1.6, marginBottom: 8 }}>
                 {!hostChecksAvailable ? (
                   <div>
-                    Host RLBot and Rocket League installs cannot be verified from the Docker app until the Windows training launcher is running.
+                    Host RLBot and Rocket League installs cannot be verified from the Docker app until the local RocketCoach Companion starts on this machine.
                   </div>
                 ) : trainingPreflight?.data?.rlbot_gui_detected ? (
                   <div>
@@ -1507,7 +1581,7 @@ export default function ReplayDashboardPage() {
               </div>
               {!trainingLauncherRunning && (
                 <div className="library-item-meta" style={{ marginBottom: 8 }}>
-                  Start it with <code>powershell -ExecutionPolicy Bypass -File scripts\launch_training_bridge.ps1</code>
+                  If the RocketCoach Companion is installed, use <strong>Verify Dependencies</strong> to start it automatically. If this is a new machine, install <code>RLBotStackInstaller.exe</code> first.
                 </div>
               )}
               {trainingPreflightMessages.length ? (
@@ -1602,7 +1676,7 @@ export default function ReplayDashboardPage() {
                     </button>
                     {Boolean(rec.bot_required) && (!trainingLauncherRunning || !sharedDependencyReady) && (
                       <div className="library-item-meta" style={{ marginTop: 8 }}>
-                        {(trainingPreflightMessages[0] || "RLBot setup is incomplete. Start the local training launcher and install RLBot GUI to enable bot drills.")}
+                        {(trainingPreflightMessages[0] || "RLBot setup is incomplete. Use Verify Dependencies to start the RocketCoach Companion and scan this machine.")}
                       </div>
                     )}
                     {Boolean(rec.bot_required) && selectedBotStatus && !selectedBotStatus.ready && (
