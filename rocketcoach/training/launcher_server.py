@@ -143,6 +143,21 @@ class TrainingLauncher:
         self._lock = threading.Lock()
         self._active_training: Dict[str, Any] = {}
 
+    def _reset_manager(self, *, quiet: bool = True) -> None:
+        manager = self._setup_manager
+        if manager is not None:
+            try:
+                manager.shut_down(time_limit=1, kill_all_pids=True, quiet=quiet)
+            except Exception:
+                pass
+        self._setup_manager = None
+        try:
+            from rlbot.setup_manager import SetupManager
+
+            SetupManager.has_started = False
+        except Exception:
+            pass
+
     def _manager(self):
         if self._setup_manager is None:
             _patch_matchcomms_server()
@@ -150,6 +165,14 @@ class TrainingLauncher:
 
             self._setup_manager = SetupManager()
         return self._setup_manager
+
+    def _start_training_match(self, *, manager, match_config, launcher_name: str) -> None:
+        manager.load_match_config(match_config)
+        manager.connect_to_game(launcher_preference=_launcher_preference(launcher_name))
+        manager.launch_early_start_bot_processes()
+        manager.start_match()
+        manager.launch_bot_processes()
+        manager.try_recieve_agent_metadata()
 
     def preflight(self) -> Dict[str, Any]:
         payload = dict(build_preflight(live_host="127.0.0.1", live_port=8766, service_label="local training launcher") or {})
@@ -236,17 +259,33 @@ class TrainingLauncher:
                         f"playlist={str(self._active_training.get('playlist_name', '') or '')}",
                         flush=True,
                     )
-                    manager.shut_down(time_limit=1, kill_all_pids=True, quiet=True)
+                    self._reset_manager(quiet=True)
+                    manager = self._manager()
                 match_config = _build_rldojo_match_config(
                     bot_config_path=bot_config_path,
                     dojo_wrapper_config_path_value=wrapper_cfg,
                 )
-                manager.load_match_config(match_config)
-                manager.connect_to_game(launcher_preference=_launcher_preference(self.launcher))
-                manager.launch_early_start_bot_processes()
-                manager.start_match()
-                manager.launch_bot_processes()
-                manager.try_recieve_agent_metadata()
+                try:
+                    self._start_training_match(
+                        manager=manager,
+                        match_config=match_config,
+                        launcher_name=self.launcher,
+                    )
+                except Exception as exc:
+                    message = str(exc)
+                    if "Rocket League is not running even though we started it once." not in message:
+                        raise
+                    print(
+                        "[training_launcher] stale RLBot launcher state detected; resetting and retrying once",
+                        flush=True,
+                    )
+                    self._reset_manager(quiet=True)
+                    manager = self._manager()
+                    self._start_training_match(
+                        manager=manager,
+                        match_config=match_config,
+                        launcher_name=self.launcher,
+                    )
                 self._active_training = {
                     "focus_id": focus_id,
                     "difficulty_tier": difficulty_tier,
@@ -296,6 +335,18 @@ class TrainingLauncher:
 class _Handler(BaseHTTPRequestHandler):
     launcher: TrainingLauncher = None
 
+    def end_headers(self) -> None:
+        origin = str(self.headers.get("Origin", "") or "").strip()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        else:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        super().end_headers()
+
     def _send_json(self, payload: Dict[str, Any], status: int = 200) -> None:
         data = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -303,6 +354,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def do_OPTIONS(self):
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self):
         if self.path == "/api/health":

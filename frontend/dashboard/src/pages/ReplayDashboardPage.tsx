@@ -277,6 +277,56 @@ type ExplainBatchResponse = {
   };
 };
 
+type BridgeSessionStartResponse = {
+  ok: boolean;
+  data?: {
+    token?: string;
+    action?: string;
+    callback_url?: string;
+  };
+};
+
+type BridgeSessionStatusResponse = {
+  ok: boolean;
+  data?: {
+    token?: string;
+    status?: string;
+    action?: string;
+    result?: {
+      preflight?: TrainingPreflightResponse["data"];
+      launch?: TrainingLaunchResponse["data"];
+    };
+    error?: string;
+  };
+};
+
+function unavailableTrainingPreflight(): TrainingPreflightResponse {
+  return {
+    ok: true,
+    data: {
+      host_checks_available: false,
+      launcher_kind: "training_bridge",
+      launcher_running: false,
+      dependency_ready: false,
+      shared_dependency_ready: false,
+      python_ready: false,
+      rlbot_import_ok: false,
+      rlbot_gui_detected: false,
+      rlbot_gui_path: "",
+      rlbot_gui_detection_source: "launcher_unavailable",
+      rocket_league_detected: false,
+      last_checked_at: 0,
+      scenario_count: 0,
+      bot_statuses: [],
+      ready_to_launch: false,
+      messages: [
+        "The local RocketCoach Companion is not running on this machine yet.",
+        "Use Verify Dependencies to start it, then rerun the checks.",
+      ],
+    },
+  };
+}
+
 const metricMeta = [
   { key: "speed", label: "Speed" },
   { key: "hesitation_percent", label: "Hesitation %" },
@@ -461,7 +511,8 @@ export default function ReplayDashboardPage() {
     }
     setTrainingPreflightChecking(true);
     try {
-      const resp = await apiGet<TrainingPreflightResponse>(`${REPLAY_PREFIX}/training/preflight`, { suppressErrorWindow: true });
+      const resp = await apiGet<TrainingPreflightResponse>(`${REPLAY_PREFIX}/training/preflight`, { suppressErrorWindow: true })
+        .catch(() => unavailableTrainingPreflight());
       setTrainingPreflight(resp);
       setTrainingPreflightFetchedAt(Date.now());
       return resp;
@@ -470,53 +521,76 @@ export default function ReplayDashboardPage() {
     }
   }, [trainingPreflight, trainingPreflightFetchedAt]);
 
-  const wakeTrainingCompanion = useCallback(async () => {
+  const wakeTrainingCompanion = useCallback(async (launchUrl = "rocketcoach://verify-deps") => {
+    const anchor = document.createElement("a");
+    anchor.href = launchUrl;
+    anchor.style.display = "none";
+    anchor.setAttribute("aria-hidden", "true");
+    document.body.appendChild(anchor);
+    anchor.click();
+    await sleep(500);
+    document.body.removeChild(anchor);
+
     const iframe = document.createElement("iframe");
     iframe.style.display = "none";
     iframe.setAttribute("aria-hidden", "true");
-    iframe.src = "rocketcoach://verify-deps";
+    iframe.src = launchUrl;
     document.body.appendChild(iframe);
     await sleep(1200);
     document.body.removeChild(iframe);
+  }, []);
+
+  const createBridgeSession = useCallback(async (action: "verify" | "launch", payload?: Record<string, unknown>) => {
+    return apiPost<BridgeSessionStartResponse>(
+      `${REPLAY_PREFIX}/training/bridge_session/start`,
+      { action, payload: payload || {} },
+      { suppressErrorWindow: true }
+    );
+  }, []);
+
+  const pollBridgeSession = useCallback(async (token: string) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await sleep(1000);
+      const status = await apiGet<BridgeSessionStatusResponse>(
+        `${REPLAY_PREFIX}/training/bridge_session/status?token=${encodeURIComponent(token)}`,
+        { suppressErrorWindow: true }
+      );
+      const state = String(status?.data?.status || "");
+      if (state === "completed" || state === "error") {
+        return status;
+      }
+    }
+    throw new Error("RocketCoach Companion did not report back in time. Check the local RocketCoach callback log and try again.");
   }, []);
 
   const verifyDependencies = useCallback(async () => {
     setError("");
     setTrainingVerificationRunning(true);
     try {
-      setTrainingVerificationMessage("Checking for an active RocketCoach Companion...");
-      const immediate = await loadTrainingPreflight({ force: true });
-      if (immediate?.data?.launcher_running) {
-        setTrainingVerificationMessage("RocketCoach Companion is running. Refreshing dependency checks...");
-        const refreshed = await loadTrainingPreflight({ force: true });
-        if (refreshed?.data?.dependency_ready) {
-          setTrainingVerificationMessage("Dependencies verified. Bot drills are ready to launch.");
-        } else {
-          setTrainingVerificationMessage("Dependency scan finished. Review the missing items below.");
-        }
-        return refreshed;
-      }
-
       setTrainingVerificationMessage("Starting the local RocketCoach Companion...");
-      await wakeTrainingCompanion();
-
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        await sleep(1000);
-        setTrainingVerificationMessage(`Waiting for the local RocketCoach Companion... (${attempt + 1}/20)`);
-        const polled = await loadTrainingPreflight({ force: true });
-        if (polled?.data?.launcher_running) {
-          if (polled?.data?.dependency_ready) {
-            setTrainingVerificationMessage("Dependencies verified. Bot drills are ready to launch.");
-          } else {
-            setTrainingVerificationMessage("RocketCoach Companion connected. Review the dependency results below.");
-          }
-          return polled;
-        }
+      const session = await createBridgeSession("verify");
+      const token = String(session?.data?.token || "");
+      const callbackUrl = String(session?.data?.callback_url || "");
+      if (!token || !callbackUrl) {
+        throw new Error("RocketCoach could not prepare a verification session.");
       }
-
-      throw new Error(
-        "RocketCoach Companion did not respond. Install the RLBot stack installer, then try Verify Dependencies again."
-      );
+      const protocolUrl = `rocketcoach://verify-deps?action=verify-deps&callback=${encodeURIComponent(callbackUrl)}`;
+      await wakeTrainingCompanion(protocolUrl);
+      setTrainingVerificationMessage("Waiting for RocketCoach Companion to verify this machine...");
+      const completed = await pollBridgeSession(token);
+      if (String(completed?.data?.status || "") === "error") {
+        throw new Error(String(completed?.data?.error || "RocketCoach Companion verification failed."));
+      }
+      const preflight = completed?.data?.result?.preflight;
+      const wrapped: TrainingPreflightResponse = { ok: true, data: preflight };
+      setTrainingPreflight(wrapped);
+      setTrainingPreflightFetchedAt(Date.now());
+      if (preflight?.dependency_ready) {
+        setTrainingVerificationMessage("Dependencies verified. Bot drills are ready to launch.");
+      } else {
+        setTrainingVerificationMessage("Dependency scan finished. Review the missing items below.");
+      }
+      return wrapped;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setTrainingVerificationMessage(message);
@@ -524,7 +598,7 @@ export default function ReplayDashboardPage() {
     } finally {
       setTrainingVerificationRunning(false);
     }
-  }, [loadTrainingPreflight, wakeTrainingCompanion]);
+  }, [createBridgeSession, pollBridgeSession, wakeTrainingCompanion]);
 
   const loadMechanics = useCallback(async () => {
     const resp = await apiGet<MechanicsResponse>(`${REPLAY_PREFIX}/mechanics/current`, { suppressErrorWindow: true });
@@ -917,14 +991,16 @@ export default function ReplayDashboardPage() {
 
   const recommendations = trainingPlan?.data?.recommendations ?? homeSummary?.data?.recommendations ?? [];
   const latestReplay = homeSummary?.data?.latest_replay || (library?.data?.sessions ?? [])[0];
-  const botTrainingReady = Boolean(trainingPreflight?.data?.ready_to_launch);
+  const trainingPreflightKnown = trainingPreflightFetchedAt > 0;
+  const botTrainingReady = trainingPreflightKnown && Boolean(trainingPreflight?.data?.ready_to_launch);
   const trainingPreflightMessages = trainingPreflight?.data?.messages ?? [];
   const hostChecksAvailable = trainingPreflight?.data?.host_checks_available !== false;
-  const trainingLauncherRunning = Boolean(trainingPreflight?.data?.launcher_running);
-  const dependencyReady = Boolean(trainingPreflight?.data?.dependency_ready);
-  const sharedDependencyReady = Boolean(trainingPreflight?.data?.shared_dependency_ready);
+  const trainingLauncherRunning = trainingPreflightKnown ? Boolean(trainingPreflight?.data?.launcher_running) : false;
+  const dependencyReady = trainingPreflightKnown ? Boolean(trainingPreflight?.data?.dependency_ready) : false;
+  const sharedDependencyReady = trainingPreflightKnown ? Boolean(trainingPreflight?.data?.shared_dependency_ready) : false;
   const rlbotGuiPath = String(trainingPreflight?.data?.rlbot_gui_path || "");
   const rlbotGuiSource = String(trainingPreflight?.data?.rlbot_gui_detection_source || "");
+  const showTrainingInstallerCard = trainingPreflightKnown && !trainingLauncherRunning && !dependencyReady;
 
   const setTrainingTier = (focusId: string, tier: string) => {
     setTrainingSelections((prev) => ({
@@ -1004,9 +1080,7 @@ export default function ReplayDashboardPage() {
           };
         });
       }, 500);
-      const resp = await apiPost<TrainingLaunchResponse>(
-        `${REPLAY_PREFIX}/training/launch`,
-        {
+      const bridgeSession = await createBridgeSession("launch", {
           focus_id: focusId,
           difficulty_tier: tier,
           difficulty_value: Number(profileChoice.difficulty_value || 0.3),
@@ -1014,10 +1088,28 @@ export default function ReplayDashboardPage() {
           scenario_ids: rec.scenario_ids || [],
           drill_mode: drillMode,
           bot_required: Boolean(rec.bot_required),
-        },
-        { suppressErrorWindow: true }
-      );
-      const launchData = resp?.data ?? {};
+      });
+      const token = String(bridgeSession?.data?.token || "");
+      const callbackUrl = String(bridgeSession?.data?.callback_url || "");
+      if (!token || !callbackUrl) {
+        throw new Error("RocketCoach could not prepare a training launch session.");
+      }
+      const launchPayload = encodeURIComponent(JSON.stringify({
+        focus_id: focusId,
+        difficulty_tier: tier,
+        difficulty_value: Number(profileChoice.difficulty_value || 0.3),
+        bot_profile_id: String(profileChoice.bot_profile_id || ""),
+        scenario_ids: rec.scenario_ids || [],
+        drill_mode: drillMode,
+        bot_required: Boolean(rec.bot_required),
+      }));
+      const protocolUrl = `rocketcoach://train?action=train&callback=${encodeURIComponent(callbackUrl)}&payload=${launchPayload}`;
+      await wakeTrainingCompanion(protocolUrl);
+      const resp = await pollBridgeSession(token);
+      if (String(resp?.data?.status || "") === "error") {
+        throw new Error(String(resp?.data?.error || "RocketCoach training launch failed."));
+      }
+      const launchData = resp?.data?.result?.launch ?? {};
       const detailParts = [
         launchData.playlist_name ? `Playlist: ${launchData.playlist_name}` : "",
         launchData.bot_name ? `Bot: ${launchData.bot_name}` : "",
@@ -1505,19 +1597,21 @@ export default function ReplayDashboardPage() {
               <h2>Training</h2>
               <p className="library-item-meta">Prescriptive practice planning based on replay-backed weaknesses and evidence.</p>
             </div>
-            <div className="metrics-card">
-              <h3>RLBot Setup Installer</h3>
-              <p className="library-item-meta" style={{ marginBottom: 16 }}>
-                If this machine still needs RLBot GUI, RLBotPack, bot dependencies, or the training runtime, install the full stack first.
-              </p>
-              <a
-                href={`${REPLAY_PREFIX}/installer/download`}
-                download="RLBotStackInstaller.exe"
-                className="installer-download-link"
-              >
-                Download RLBotStackInstaller.exe
-              </a>
-            </div>
+            {showTrainingInstallerCard && (
+              <div className="metrics-card">
+                <h3>RLBot Setup Installer</h3>
+                <p className="library-item-meta" style={{ marginBottom: 16 }}>
+                  RocketCoach could not start the local companion and the training dependencies are not ready on this machine yet.
+                </p>
+                <a
+                  href={`${REPLAY_PREFIX}/installer/download`}
+                  download="RLBotStackInstaller.exe"
+                  className="installer-download-link"
+                >
+                  Download RLBotStackInstaller.exe
+                </a>
+              </div>
+            )}
             <div className={`metrics-card ${botTrainingReady ? "" : "empty-state"}`}>
               <div className="card-header">
                 <h3>RLBot Preflight</h3>
@@ -1533,11 +1627,17 @@ export default function ReplayDashboardPage() {
               </p>
               <div className="library-item-meta" style={{ lineHeight: 1.6, marginBottom: 8 }}>
                 <div className="preflight-check">
-                  <i className={`fa-solid ${dependencyReady ? "fa-circle-check" : "fa-circle-xmark"}`} style={{ color: dependencyReady ? "var(--success)" : "var(--danger)" }} />
+                  <i
+                    className={`fa-solid ${!trainingPreflightKnown ? "fa-circle-question" : dependencyReady ? "fa-circle-check" : "fa-circle-xmark"}`}
+                    style={{ color: !trainingPreflightKnown ? "var(--text-muted)" : dependencyReady ? "var(--success)" : "var(--danger)" }}
+                  />
                   <span>Dependencies installed</span>
                 </div>
                 <div className="preflight-check">
-                  <i className={`fa-solid ${trainingLauncherRunning ? "fa-circle-check" : "fa-circle-xmark"}`} style={{ color: trainingLauncherRunning ? "var(--success)" : "var(--danger)" }} />
+                  <i
+                    className={`fa-solid ${!trainingPreflightKnown ? "fa-circle-question" : trainingLauncherRunning ? "fa-circle-check" : "fa-circle-xmark"}`}
+                    style={{ color: !trainingPreflightKnown ? "var(--text-muted)" : trainingLauncherRunning ? "var(--success)" : "var(--danger)" }}
+                  />
                   <span>Training launcher running</span>
                 </div>
                 <div>Last checked: {trainingPreflightLastChecked ? new Date(trainingPreflightLastChecked * 1000).toLocaleString() : "Not yet checked"}</div>
@@ -1557,7 +1657,7 @@ export default function ReplayDashboardPage() {
                 >
                   {trainingPreflightChecking ? "Checking..." : "Re-run Checks"}
                 </button>
-                {trainingPreflightFresh && !trainingPreflightChecking && <div className="library-item-meta">Cached result is fresh.</div>}
+                {trainingPreflightKnown && trainingPreflightFresh && !trainingPreflightChecking && <div className="library-item-meta">Cached result is fresh.</div>}
               </div>
               {trainingVerificationMessage && (
                 <div className="library-item-meta" style={{ marginBottom: 8, lineHeight: 1.6 }}>
@@ -1591,7 +1691,9 @@ export default function ReplayDashboardPage() {
                   ))}
                 </div>
               ) : (
-                <div className="library-item-meta">No preflight details were returned yet.</div>
+                <div className="library-item-meta">
+                  {trainingPreflightKnown ? "No preflight details were returned yet." : "RocketCoach is still checking this machine."}
+                </div>
               )}
               {!!trainingPreflightBotStatuses.length && (
                 <div className="library-list" style={{ marginTop: 12 }}>

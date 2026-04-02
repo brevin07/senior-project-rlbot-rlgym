@@ -86,6 +86,9 @@ class ReplayStateStore:
         self._db = db
         self._artifact_root = Path(__file__).resolve().parents[2] / "artifacts" / "replay_library"
         self._artifact_root.mkdir(parents=True, exist_ok=True)
+        self._training_bridge_lock = threading.Lock()
+        self._training_bridge_sessions: Dict[str, Dict[str, Any]] = {}
+        self._latest_training_preflight_by_auth_user: Dict[int, Dict[str, Any]] = {}
 
     @staticmethod
     def _discover_replay_dirs() -> list[Path]:
@@ -1903,6 +1906,58 @@ def _rc_training_preflight(self: ReplayStateStore) -> dict:
     return payload
 
 
+def _rc_start_training_bridge_session(self: ReplayStateStore, *, auth_user_id: int, action: str, payload: dict | None = None) -> dict:
+    token = uuid.uuid4().hex
+    record = {
+        "token": token,
+        "auth_user_id": int(auth_user_id),
+        "action": str(action or "").strip().lower(),
+        "payload": dict(payload or {}),
+        "status": "pending",
+        "created_at": time.time(),
+        "updated_at": time.time(),
+        "result": {},
+        "error": "",
+    }
+    with self._training_bridge_lock:
+        self._training_bridge_sessions[token] = record
+    return dict(record)
+
+
+def _rc_complete_training_bridge_session(self: ReplayStateStore, *, token: str, ok: bool, payload: dict | None = None, error_message: str = "") -> dict:
+    token_key = str(token or "").strip()
+    if not token_key:
+        raise RuntimeError("Missing training bridge session token.")
+    with self._training_bridge_lock:
+        record = dict(self._training_bridge_sessions.get(token_key, {}) or {})
+        if not record:
+            raise RuntimeError("Unknown training bridge session token.")
+        record["status"] = "completed" if ok else "error"
+        record["updated_at"] = time.time()
+        record["result"] = dict(payload or {})
+        record["error"] = str(error_message or "")
+        if ok and str(record.get("action", "")) == "verify":
+            preflight = dict((payload or {}).get("preflight", {}) or {})
+            if preflight:
+                preflight["last_checked_at"] = int(time.time())
+                self._latest_training_preflight_by_auth_user[int(record["auth_user_id"])] = preflight
+                record["result"] = dict(record["result"] or {})
+                record["result"]["preflight"] = preflight
+        self._training_bridge_sessions[token_key] = record
+        return dict(record)
+
+
+def _rc_get_training_bridge_session(self: ReplayStateStore, *, token: str) -> dict:
+    token_key = str(token or "").strip()
+    with self._training_bridge_lock:
+        return dict(self._training_bridge_sessions.get(token_key, {}) or {})
+
+
+def _rc_latest_training_preflight_for_auth_user(self: ReplayStateStore, *, auth_user_id: int) -> dict:
+    with self._training_bridge_lock:
+        return dict(self._latest_training_preflight_by_auth_user.get(int(auth_user_id), {}) or {})
+
+
 ReplayStateStore._validated_analysis_player = _rc_validated_analysis_player
 ReplayStateStore._apply_validated_replay_state = _rc_apply_validated_replay_state
 ReplayStateStore._ensure_valid_current_replay_state = _rc_ensure_valid_current_replay_state
@@ -1923,3 +1978,7 @@ ReplayStateStore.training_plan = _rc_training_plan
 ReplayStateStore.home_summary = _rc_home_summary
 ReplayStateStore.launch_training = _rc_launch_training
 ReplayStateStore.training_preflight = _rc_training_preflight
+ReplayStateStore.start_training_bridge_session = _rc_start_training_bridge_session
+ReplayStateStore.complete_training_bridge_session = _rc_complete_training_bridge_session
+ReplayStateStore.get_training_bridge_session = _rc_get_training_bridge_session
+ReplayStateStore.latest_training_preflight_for_auth_user = _rc_latest_training_preflight_for_auth_user

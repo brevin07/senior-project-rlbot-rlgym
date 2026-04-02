@@ -770,6 +770,15 @@ _BaseReplayDashboardServer = ReplayDashboardServer
 
 
 class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
+    def _external_base_url(self) -> str:
+        host = str(self.headers.get("X-Forwarded-Host", "") or self.headers.get("Host", "") or "").strip()
+        if not host:
+            host = f"{self.server.server_address[0]}:{self.server.server_address[1]}"
+        proto = str(self.headers.get("X-Forwarded-Proto", "") or "").strip().lower()
+        if not proto:
+            proto = "https" if host.endswith(".ngrok.app") else "http"
+        return f"{proto}://{host}"
+
     def _ensure_dev_profile(self) -> Dict[str, Any]:
         auth = self.store._db.get_auth_user_by_email(email="brevintating1@gmail.com")
         if not auth:
@@ -820,7 +829,48 @@ class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/training/preflight":
             try:
-                return self._send_json({"ok": True, "data": self.store.training_preflight()})
+                ctx = self._require_auth()
+                auth = ctx["auth"]
+                cached = self.store.latest_training_preflight_for_auth_user(auth_user_id=int(auth["id"])) or {}
+                if cached:
+                    return self._send_json({"ok": True, "data": cached})
+                return self._send_json(
+                    {
+                        "ok": True,
+                        "data": {
+                            "host_checks_available": False,
+                            "launcher_kind": "training_bridge",
+                            "launcher_running": False,
+                            "dependency_ready": False,
+                            "shared_dependency_ready": False,
+                            "python_ready": False,
+                            "rlbot_import_ok": False,
+                            "rlbot_gui_detected": False,
+                            "rlbot_gui_path": "",
+                            "rlbot_gui_detection_source": "not_checked_yet",
+                            "rocket_league_detected": False,
+                            "last_checked_at": 0,
+                            "scenario_count": 0,
+                            "bot_statuses": [],
+                            "ready_to_launch": False,
+                            "messages": [
+                                "RocketCoach has not verified this machine yet.",
+                                "Use Verify Dependencies to start the local companion and scan this machine.",
+                            ],
+                        },
+                    }
+                )
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path.startswith("/api/training/bridge_session/status"):
+            token = str((parse_qs(urlparse(self.path).query).get("token", [""])[0] or "")).strip()
+            if not token:
+                return self._send_json({"ok": False, "error": "Missing token"}, status=400)
+            try:
+                data = self.store.get_training_bridge_session(token=token)
+                if not data:
+                    return self._send_json({"ok": False, "error": "Unknown token"}, status=404)
+                return self._send_json({"ok": True, "data": data})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/installer/info":
@@ -881,6 +931,48 @@ class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
                     scenario_ids=[str(x) for x in (body.get("scenario_ids", []) or [])],
                     drill_mode=str(body.get("drill_mode", "")).strip(),
                     bot_required=bool(body.get("bot_required", False)),
+                )
+                return self._send_json({"ok": True, "data": data})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path == "/api/training/bridge_session/start":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                ctx = self._require_auth()
+                auth = ctx["auth"]
+                action = str(body.get("action", "")).strip().lower()
+                if action not in {"verify", "launch"}:
+                    raise RuntimeError("Unsupported bridge session action.")
+                payload = dict(body.get("payload", {}) or {})
+                session = self.store.start_training_bridge_session(
+                    auth_user_id=int(auth["id"]),
+                    action=action,
+                    payload=payload,
+                )
+                token = str(session.get("token", "") or "")
+                callback_url = f"{self._external_base_url()}/api/training/bridge_session/callback?token={token}"
+                return self._send_json({"ok": True, "data": {"token": token, "action": action, "callback_url": callback_url}})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path.startswith("/api/training/bridge_session/callback"):
+            token = str((parse_qs(urlparse(self.path).query).get("token", [""])[0] or "")).strip()
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                data = self.store.complete_training_bridge_session(
+                    token=token,
+                    ok=bool(body.get("ok", False)),
+                    payload=dict(body.get("payload", {}) or {}),
+                    error_message=str(body.get("error", "") or ""),
                 )
                 return self._send_json({"ok": True, "data": data})
             except Exception as exc:

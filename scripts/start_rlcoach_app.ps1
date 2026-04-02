@@ -284,8 +284,14 @@ try {
     Write-Host "[start] loading environment from $resolvedEnvPath"
     Import-DotEnvFile -Path $resolvedEnvPath
 
-    New-Item -ItemType Directory -Path $defaultDbDir -Force | Out-Null
-    Write-Host "[start] packaged app data is persisted in the Docker volume 'rlcoach-data'."
+    $appDataDir = [Environment]::GetEnvironmentVariable("RLBOT_APP_DATA_DIR", "Process")
+    if ([string]::IsNullOrWhiteSpace($appDataDir)) {
+        $appDataDir = $defaultDbDir
+        [Environment]::SetEnvironmentVariable("RLBOT_APP_DATA_DIR", $appDataDir, "Process")
+    }
+    New-Item -ItemType Directory -Path $appDataDir -Force | Out-Null
+    Write-Host "[start] packaged app data is persisted on the host at $appDataDir"
+    Write-Host ("[start] shared dashboard database path: " + (Join-Path $appDataDir "app.db"))
     Assert-RequiredEnv -Names @(
         "COGNITO_ISSUER",
         "COGNITO_CLIENT_ID",

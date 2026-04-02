@@ -182,12 +182,19 @@ This Docker-first launcher:
 - reuses previously built Docker images when the relevant inputs have not changed
 - rebuilds only the replay or gateway image whose inputs changed, unless `-RebuildContainers` is passed
 - starts the self-contained replay and gateway containers without repo bind mounts
+- bind-mounts the shared packaged app data directory into the replay container so the server `app.db` is stored on the host
 - is intended to be the canonical app entrypoint when using the ngrok-served dashboard
 - waits for the gateway health check, then starts ngrok for the dashboard surface
 
 Default local gateway URL:
 
 - `http://127.0.0.1:8888`
+
+Default packaged app data path:
+
+- `artifacts\data\app.db`
+
+If you want the ngrok-served app to use a different host storage location for the shared backend database and replay data, set `RLBOT_APP_DATA_DIR` in `.env` before startup.
 
 For a full reset of the packaged stack, add `-ResetCompose`. For a forced rebuild, add `-RebuildContainers`.
 
@@ -279,6 +286,8 @@ Relevant files:
 - `Dockerfile.gateway`
 
 The deployment flow publishes Docker images for the replay and gateway services, then runs them through the deploy compose file.
+
+For the packaged ngrok launcher, account/profile data and replay session records are read from the shared backend database mounted at `RLBOT_APP_DATA_DIR` on the host. If all users access the same hosted app instance, they will see the same server-backed data across devices after signing in.
 
 ## Repository Layout
 

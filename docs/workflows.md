@@ -31,9 +31,16 @@ Default behavior:
 - reuses cached Docker images when the relevant inputs are unchanged
 - rebuilds only the replay or gateway image that needs it, unless `-RebuildContainers` is passed
 - starts the self-contained replay and gateway containers from `docker-compose.rlcoach-app.yml`
+- stores the packaged app database and replay records on the host at `RLBOT_APP_DATA_DIR` instead of an opaque Docker volume
 - waits for gateway health, then starts ngrok for the dashboard surface
 
 This is the canonical packaged entrypoint for the hosted-style dashboard experience.
+
+Default packaged data location:
+- `artifacts\data\app.db`
+
+Override it in `.env` with:
+- `RLBOT_APP_DATA_DIR=D:\path\to\shared\data`
 
 Useful refresh flags:
 - `-RebuildContainers` forces a rebuild of both images

@@ -228,9 +228,16 @@ def write_training_bridge_launcher(install_root: Path) -> tuple[Path, Path]:
             $logDir = Join-Path $installRoot "logs"
             $stdoutLog = Join-Path $logDir "training_bridge_stdout.log"
             $stderrLog = Join-Path $logDir "training_bridge_stderr.log"
+            $callbackLog = Join-Path $logDir "training_bridge_callback.log"
             $pythonExe = Join-Path $installRoot "venv\\Scripts\\python.exe"
             if (-not (Test-Path $pythonExe)) {{
                 throw "RocketCoach training runtime was not found at $pythonExe"
+            }}
+
+            function Write-CallbackLog([string]$Message) {{
+                New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+                $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                Add-Content -Path $callbackLog -Value "[$timestamp] $Message"
             }}
 
             function Test-BridgeHealth {{
@@ -243,7 +250,101 @@ def write_training_bridge_launcher(install_root: Path) -> tuple[Path, Path]:
                 }}
             }}
 
+            function Get-ProtocolParams([string]$Url) {{
+                $result = @{{
+                    Action = ""
+                    Callback = ""
+                    Payload = ""
+                }}
+                if ([string]::IsNullOrWhiteSpace($Url)) {{
+                    return $result
+                }}
+                Add-Type -AssemblyName System.Web
+                $uri = [System.Uri]$Url
+                $query = [System.Web.HttpUtility]::ParseQueryString($uri.Query)
+                $action = $query.Get("action")
+                if ([string]::IsNullOrWhiteSpace($action)) {{
+                    $action = $uri.Host
+                }}
+                $callback = $query.Get("callback")
+                if ($null -eq $callback) {{ $callback = "" }}
+                $payload = $query.Get("payload")
+                if ($null -eq $payload) {{ $payload = "" }}
+                $result.Action = [string]$action
+                $result.Callback = [string]$callback
+                $result.Payload = [string]$payload
+                return $result
+            }}
+
+            function Send-Callback([string]$CallbackUrl, [hashtable]$Body) {{
+                if ([string]::IsNullOrWhiteSpace($CallbackUrl)) {{
+                    Write-CallbackLog "Skipping callback because callback URL was empty."
+                    return
+                }}
+                $json = $Body | ConvertTo-Json -Depth 8 -Compress
+                $lastError = ""
+                for ($attempt = 0; $attempt -lt 6; $attempt++) {{
+                    try {{
+                        Invoke-RestMethod -Method Post -Uri $CallbackUrl -ContentType "application/json" -Body $json -TimeoutSec 15 | Out-Null
+                        Write-CallbackLog ("Callback succeeded on attempt " + ($attempt + 1) + " to " + $CallbackUrl)
+                        return
+                    }}
+                    catch {{
+                        $lastError = $_.Exception.Message
+                        Write-CallbackLog ("Callback attempt " + ($attempt + 1) + " failed: " + $lastError)
+                        Start-Sleep -Seconds ([Math]::Min(8, ($attempt + 1) * 2))
+                    }}
+                }}
+                throw "RocketCoach callback failed after multiple attempts. Last error: $lastError"
+            }}
+
+            function Handle-ProtocolAction([string]$Url) {{
+                $protocol = Get-ProtocolParams $Url
+                if ($protocol.Action -eq "verify-deps" -or $protocol.Action -eq "verify") {{
+                    try {{
+                        $preflight = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8766/api/training/preflight"
+                        Send-Callback $protocol.Callback @{{
+                            ok = $true
+                            payload = @{{
+                                preflight = $preflight.data
+                            }}
+                        }}
+                    }}
+                    catch {{
+                        Send-Callback $protocol.Callback @{{
+                            ok = $false
+                            error = $_.Exception.Message
+                        }}
+                    }}
+                    return
+                }}
+                if ($protocol.Action -eq "train") {{
+                    try {{
+                        $launchBody = @{{}}
+                        if (-not [string]::IsNullOrWhiteSpace($protocol.Payload)) {{
+                            $decoded = [System.Uri]::UnescapeDataString($protocol.Payload)
+                            $launchBody = ConvertFrom-Json $decoded -AsHashtable
+                        }}
+                        $launchResp = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8766/api/training/launch" -ContentType "application/json" -Body (($launchBody | ConvertTo-Json -Depth 8 -Compress))
+                        Send-Callback $protocol.Callback @{{
+                            ok = $true
+                            payload = @{{
+                                launch = $launchResp.data
+                            }}
+                        }}
+                    }}
+                    catch {{
+                        Send-Callback $protocol.Callback @{{
+                            ok = $false
+                            error = $_.Exception.Message
+                        }}
+                    }}
+                }}
+            }}
+
             if (Test-BridgeHealth) {{
+                Write-CallbackLog "Bridge already healthy; handling protocol action immediately."
+                Handle-ProtocolAction $ProtocolUrl
                 exit 0
             }}
 
@@ -260,14 +361,18 @@ def write_training_bridge_launcher(install_root: Path) -> tuple[Path, Path]:
             )
 
             Start-Process -FilePath $pythonExe -ArgumentList $argumentList -WorkingDirectory $installRoot -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog | Out-Null
+            Write-CallbackLog "Started background training bridge process."
 
-            for ($i = 0; $i -lt 20; $i++) {{
+            for ($i = 0; $i -lt 40; $i++) {{
                 Start-Sleep -Milliseconds 750
                 if (Test-BridgeHealth) {{
+                    Write-CallbackLog ("Bridge became healthy after " + ($i + 1) + " polls.")
+                    Handle-ProtocolAction $ProtocolUrl
                     exit 0
                 }}
             }}
 
+            Write-CallbackLog "Training bridge did not become healthy after launch."
             throw "RocketCoach training bridge did not become healthy after launch."
             """
         ),
