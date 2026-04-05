@@ -40,6 +40,9 @@ __pycache__
 *.tmp
 *.zip
 *.exe
+!dist/
+!dist/**
+!dist/RLBotStackInstaller.exe
 [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]*.json
 [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]*.csv
 .cache

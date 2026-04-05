@@ -30,6 +30,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt && \
 
 COPY rocketcoach ./rocketcoach
 COPY collision_meshes ./collision_meshes
+COPY dist ./dist
 
 EXPOSE 8775
 

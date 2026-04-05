@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import datetime as dt
 import os
 import json
 import textwrap
@@ -24,20 +25,58 @@ from pathlib import Path
 DEFAULT_RLBOT_GUI_URL = "https://github.com/RLBot/RLBotGUI/releases/download/v1.0/RLBotGUI.msi"
 DEFAULT_RLBOTPACK_ZIP_URL = "https://codeload.github.com/RLBot/RLBotPack/zip/refs/heads/master"
 DEFAULT_PYTHON_INSTALLER_URL = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
-DEFAULT_EXTRA_PACKAGES = [
-    "stable-baselines3==1.7.0",
-    "pygame",
-]
+DEFAULT_EXTRA_PACKAGES: list[str] = []
 DEFAULT_TRAINING_BRIDGE_PROTOCOL = "rocketcoach"
+_LOG_FILE_PATH: Path | None = None
 
 
 def log(message: str) -> None:
-    print(f"[installer] {message}", flush=True)
+    line = f"[installer] {message}"
+    print(line, flush=True)
+    if _LOG_FILE_PATH is not None:
+        _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _LOG_FILE_PATH.open("a", encoding="utf-8", errors="replace") as handle:
+            handle.write(line + "\n")
+
+
+def setup_logging(install_root: Path) -> Path:
+    global _LOG_FILE_PATH
+    logs_dir = install_root / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    _LOG_FILE_PATH = logs_dir / "rlbot_stack_installer.log"
+    header = (
+        "\n"
+        f"=== RLBotStackInstaller run started {dt.datetime.now().isoformat(timespec='seconds')} ===\n"
+    )
+    with _LOG_FILE_PATH.open("a", encoding="utf-8", errors="replace") as handle:
+        handle.write(header)
+    return _LOG_FILE_PATH
 
 
 def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     log("Running: " + " ".join(f'"{part}"' if " " in part else part for part in command))
-    return subprocess.run(command, check=check, text=True)
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    output_chunks: list[str] = []
+    assert process.stdout is not None
+    for line in process.stdout:
+        output_chunks.append(line)
+        print(line, end="", flush=True)
+        if _LOG_FILE_PATH is not None:
+            with _LOG_FILE_PATH.open("a", encoding="utf-8", errors="replace") as handle:
+                handle.write(line)
+    return_code = process.wait()
+    stdout = "".join(output_chunks)
+    completed = subprocess.CompletedProcess(command, return_code, stdout=stdout, stderr=None)
+    if check and return_code != 0:
+        raise subprocess.CalledProcessError(return_code, command, output=stdout)
+    return completed
 
 
 def bundled_resource_root() -> Path:
@@ -206,7 +245,6 @@ def install_python_requirements(resource_root: Path, python_exe: Path, extra_pac
 
     run([str(python_exe), "-m", "pip", "install", "--upgrade", "pip"])
     run([str(python_exe), "-m", "pip", "install", "-r", str(requirements_file)])
-    run([str(python_exe), "-m", "pip", "install", "flatbuffers>=24.3.25"])
 
     if extra_packages:
         run([str(python_exe), "-m", "pip", "install", *extra_packages])
@@ -535,6 +573,8 @@ def main() -> int:
     resource_root = bundled_resource_root()
     install_root = resolve_install_root(args.repo_root or None)
     install_root.mkdir(parents=True, exist_ok=True)
+    log_path = setup_logging(install_root)
+    log(f"Writing installer log to {log_path}")
     log(f"Using bundled resources from {resource_root}")
     log(f"Installing RocketCoach runtime into {install_root}")
 
@@ -556,12 +596,22 @@ def main() -> int:
         venv_python = ensure_project_venv(install_root, host_python)
         install_python_requirements(resource_root, venv_python, extra_packages)
 
+    failures: list[str] = []
+
     if not args.skip_rlbot_gui:
         downloads_dir = install_root / "artifacts" / "installer_downloads"
         msi_path = download_file(args.rlbot_gui_url, downloads_dir / "RLBotGUI.msi")
-        install_rlbot_gui(msi_path, interactive=args.interactive_msi)
+        try:
+            install_rlbot_gui(msi_path, interactive=args.interactive_msi)
+        except subprocess.CalledProcessError as exc:
+            message = (
+                "RLBot GUI MSI install failed. The RocketCoach companion was still installed, "
+                "but RLBot GUI may need to be installed manually on this machine. "
+                f"(exit code {exc.returncode})"
+            )
+            failures.append(message)
+            log(f"Warning: {message}")
 
-    failures: list[str] = []
     if not args.skip_botpack:
         botpack_dir = Path(args.botpack_dir).resolve() if args.botpack_dir else default_botpack_dir()
         botpack_root = download_and_extract_botpack(botpack_dir, args.rlbotpack_zip_url)
@@ -582,10 +632,10 @@ def main() -> int:
 
     log("Install flow complete.")
     if failures:
-        log("Some bot requirement files failed to install:")
+        log("Some install steps completed with warnings:")
         for failure in failures:
             log(f"  - {failure}")
-        return 1
+        return 0
 
     return 0
 

@@ -27,6 +27,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gateway
+      args:
+        VITE_COGNITO_CLIENT_ID: ${VITE_COGNITO_CLIENT_ID}
+        VITE_COGNITO_USER_POOL_ID: ${VITE_COGNITO_USER_POOL_ID}
+        VITE_COGNITO_AUTHORITY: ${VITE_COGNITO_AUTHORITY}
+        VITE_COGNITO_SCOPE: ${VITE_COGNITO_SCOPE:-openid}
     image: rlcoach-gateway:local
     working_dir: /app
     volumes:
