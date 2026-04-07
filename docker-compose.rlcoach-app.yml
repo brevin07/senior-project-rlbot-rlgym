@@ -22,9 +22,7 @@ services:
     ports:
       - "8775:8775"
     volumes:
-      - type: bind
-        source: ${RLBOT_APP_DATA_DIR:-./artifacts/data}
-        target: /app/artifacts/data
+      - rlcoach-data:/app/artifacts/data
       - ./configs:/app/configs:ro
       - ./dist:/app/dist:ro
 
@@ -44,3 +42,6 @@ services:
     command: python -m rocketcoach.dashboard_gateway.gateway_server --host 0.0.0.0 --port 8888 --replay http://replay:8775 --live http://host.docker.internal:8765
     ports:
       - "8888:8888"
+
+volumes:
+  rlcoach-data:
