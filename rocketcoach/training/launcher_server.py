@@ -196,6 +196,12 @@ class TrainingLauncher:
         if not difficulty_tier:
             raise RuntimeError("Missing difficulty_tier")
 
+        # Resolve launcher from user's platform setting (epic/steam), falling back to
+        # the server's default (self.launcher, typically "auto").
+        _PLATFORM_TO_LAUNCHER = {"epic": "epic", "steam": "steam"}
+        raw_platform = str(body.get("platform", "") or "").strip().lower()
+        launcher_name = _PLATFORM_TO_LAUNCHER.get(raw_platform, self.launcher)
+
         preflight = self.preflight()
         if not bool(preflight.get("dependency_ready")):
             raise RuntimeError("Training dependencies are not ready on this machine.")
@@ -211,7 +217,8 @@ class TrainingLauncher:
             "[training_launcher] launch request "
             f"focus={focus_id} difficulty={difficulty_tier} "
             f"playlist={str(launch_profile.get('playlist_name', '') or '')} "
-            f"bot={str(launch_profile.get('bot_name', '') or launch_profile.get('bot_profile_id', '') or '')}",
+            f"bot={str(launch_profile.get('bot_name', '') or launch_profile.get('bot_profile_id', '') or '')} "
+            f"launcher={launcher_name}",
             flush=True,
         )
 
@@ -276,6 +283,7 @@ class TrainingLauncher:
         _wrapper_cfg = wrapper_cfg
         _launch_profile = launch_profile
         _replacing_existing = replacing_existing
+        _launcher_name = launcher_name
 
         def _do_launch() -> None:
             with self._lock:
@@ -308,7 +316,7 @@ class TrainingLauncher:
                         self._start_training_match(
                             manager=manager,
                             match_config=match_config,
-                            launcher_name=self.launcher,
+                            launcher_name=_launcher_name,
                         )
                     except Exception as exc:
                         message = str(exc)
@@ -323,7 +331,7 @@ class TrainingLauncher:
                         self._start_training_match(
                             manager=manager,
                             match_config=match_config,
-                            launcher_name=self.launcher,
+                            launcher_name=_launcher_name,
                         )
                     self._active_training = {
                         "focus_id": _focus_id,

@@ -1102,6 +1102,7 @@ export default function ReplayDashboardPage() {
         scenario_ids: rec.scenario_ids || [],
         drill_mode: drillMode,
         bot_required: Boolean(rec.bot_required),
+        platform: String(profile?.platform || "epic"),
       }));
       const protocolUrl = `rocketcoach://train?action=train&callback=${encodeURIComponent(callbackUrl)}&payload=${launchPayload}`;
       await wakeTrainingCompanion(protocolUrl);
