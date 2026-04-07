@@ -54,6 +54,8 @@ TRAINING_CATALOG = {
     },
 }
 
+_MIN_MECH_CONFIDENCE = 0.30  # below this = mechanic not played (score=50, conf=0.2 from grader)
+
 MECH_SCORE_ALIASES = {
     "early_challenge_timing": "challenge",
     "flicking_carry_offense": "flicking",
@@ -126,102 +128,132 @@ def _accumulate_label_signals(sessions: List[Dict[str, Any]]) -> tuple[Dict[str,
     return score, evidence
 
 
-def _accumulate_mechanic_signals(sessions: List[Dict[str, Any]]) -> tuple[Dict[str, float], Dict[str, List[str]]]:
-    score, evidence = _init_focus_maps()
+def _accumulate_mechanic_signals(
+    sessions: List[Dict[str, Any]],
+) -> tuple[Dict[str, float], Dict[str, int], Dict[str, List[str]]]:
+    """Return (weighted_avg_scores, n_valid, evidence).
+
+    Mechanics with confidence < _MIN_MECH_CONFIDENCE are skipped — they
+    represent mechanics not actually played in the replay (event_count=0 →
+    grader assigns score=50, confidence=0.2).
+    """
+    _, evidence = _init_focus_maps()
+    numerator: Dict[str, float] = {x["focus_id"]: 0.0 for x in FOCUS_CATALOG}
+    denominator: Dict[str, float] = {x["focus_id"]: 0.0 for x in FOCUS_CATALOG}
+    n_valid: Dict[str, int] = {x["focus_id"]: 0 for x in FOCUS_CATALOG}
+
     # Sessions are newest first. Use small recency weighting.
     for idx, s in enumerate(sessions):
         summary = dict(s.get("summary", {}) or {})
         mech_raw = dict(summary.get("mechanic_scores", {}) or {})
-        mech: Dict[str, Any] = {}
+        conf_raw = dict(summary.get("mechanic_confidence", {}) or {})
+
+        # Canonicalise aliases, taking max on collision for both score and conf.
+        mech: Dict[str, float] = {}
+        conf: Dict[str, float] = {}
         for k, v in mech_raw.items():
             mk = _canon_mech_id(str(k or ""))
-            if mk in mech:
-                try:
-                    mech[mk] = max(float(mech[mk]), float(v))
-                except Exception:
-                    mech[mk] = mech[mk]
-            else:
-                mech[mk] = v
-        if not mech:
-            continue
-        weight = max(0.4, 1.0 - 0.12 * idx)
-        for focus_id in score.keys():
-            raw = mech.get(focus_id)
-            if raw is None:
-                continue
             try:
-                ms = float(raw)
+                fv = float(v)
             except Exception:
                 continue
-            # Deficit relative to "solid" baseline of 75.
-            deficit = max(0.0, (75.0 - ms) / 25.0)
-            if deficit <= 0.0:
+            mech[mk] = max(mech[mk], fv) if mk in mech else fv
+        for k, v in conf_raw.items():
+            mk = _canon_mech_id(str(k or ""))
+            try:
+                fv = float(v)
+            except Exception:
                 continue
-            score[focus_id] += deficit * weight
-            evidence[focus_id].append(f"{s.get('replay_name','session')}: mechanic score {ms:.1f}/100")
-    return score, evidence
+            conf[mk] = max(conf[mk], fv) if mk in conf else fv
+
+        if not mech:
+            continue
+
+        weight = max(0.4, 1.0 - 0.12 * idx)
+        replay_name = s.get("replay_name", "session")
+
+        for focus_id in numerator.keys():
+            ms = mech.get(focus_id)
+            if ms is None:
+                continue
+            c = conf.get(focus_id, 0.0)  # missing conf key → treat as not-played
+            if c < _MIN_MECH_CONFIDENCE:
+                continue
+            numerator[focus_id] += ms * weight
+            denominator[focus_id] += weight
+            n_valid[focus_id] += 1
+            evidence[focus_id].append(f"{replay_name}: mechanic score {ms:.1f}/100 (conf {c:.2f})")
+
+    weighted_avg: Dict[str, float] = {}
+    for focus_id in numerator.keys():
+        if denominator[focus_id] > 0.0:
+            weighted_avg[focus_id] = numerator[focus_id] / denominator[focus_id]
+        else:
+            weighted_avg[focus_id] = 0.0
+
+    return weighted_avg, n_valid, evidence
+
+
+_COLD_START_ORDER = ["shadow_defense", "fifty_fifty_control", "flicking"]
+
+
+def _cold_start_entry(focus_id: str) -> Dict[str, Any]:
+    return {
+        "focus_id": focus_id,
+        "title": _focus_title(focus_id),
+        "score": 50.0,
+        "confidence": 0.35,
+        "evidence": ["Need more data; using starter recommendation."],
+        "training": TRAINING_CATALOG.get(focus_id, {}),
+    }
 
 
 def _recommend_from_signals(
     label_score: Dict[str, float],
     label_evidence: Dict[str, List[str]],
-    mechanic_score: Dict[str, float],
+    mechanic_avg: Dict[str, float],
+    n_valid: Dict[str, int],
     mechanic_evidence: Dict[str, List[str]],
 ) -> List[Dict[str, Any]]:
-    score, evidence = _init_focus_maps()
-    for fid in score.keys():
-        score[fid] = float(label_score.get(fid, 0.0)) + 1.25 * float(mechanic_score.get(fid, 0.0))
-        evidence[fid] = list(label_evidence.get(fid, [])[:3]) + list(mechanic_evidence.get(fid, [])[:3])
+    # Build candidates from mechanics that were actually played (n_valid > 0).
+    candidates = [
+        (fid, mechanic_avg[fid], n_valid[fid])
+        for fid in mechanic_avg
+        if n_valid.get(fid, 0) > 0
+    ]
+    # Lowest score = highest need → rank ascending.
+    candidates.sort(key=lambda t: t[1])
 
-    ranked = sorted(score.items(), key=lambda kv: kv[1], reverse=True)
     out: List[Dict[str, Any]] = []
-    for focus_id, value in ranked[:3]:
-        if value <= 0:
-            continue
+    used: set = set()
+    for focus_id, avg_score, nv in candidates[:3]:
+        ev = list(label_evidence.get(focus_id, [])[:3]) + list(mechanic_evidence.get(focus_id, [])[:3])
         out.append(
             {
                 "focus_id": focus_id,
                 "title": _focus_title(focus_id),
-                "score": round(float(value), 3),
-                "confidence": round(min(0.99, 0.40 + 0.08 * float(value) + 0.03 * len(evidence.get(focus_id, []))), 3),
-                "evidence": evidence.get(focus_id, [])[:5],
+                "score": round(float(avg_score), 2),
+                "confidence": round(min(0.99, 0.35 + 0.12 * nv), 3),
+                "evidence": ev[:5],
                 "training": TRAINING_CATALOG.get(focus_id, {}),
             }
         )
-    if out:
-        return out
-    # cold-start fallback
-    return [
-        {
-            "focus_id": "shadow_defense",
-            "title": _focus_title("shadow_defense"),
-            "score": 0.1,
-            "confidence": 0.4,
-            "evidence": ["Need more data; using starter recommendation."],
-            "training": TRAINING_CATALOG.get("shadow_defense", {}),
-        },
-        {
-            "focus_id": "fifty_fifty_control",
-            "title": _focus_title("fifty_fifty_control"),
-            "score": 0.1,
-            "confidence": 0.4,
-            "evidence": ["Need more data; using starter recommendation."],
-            "training": TRAINING_CATALOG.get("fifty_fifty_control", {}),
-        },
-        {
-            "focus_id": "flicking",
-            "title": _focus_title("flicking"),
-            "score": 0.1,
-            "confidence": 0.4,
-            "evidence": ["Need more data; using starter recommendation."],
-            "training": TRAINING_CATALOG.get("flicking", {}),
-        },
-    ]
+        used.add(focus_id)
+
+    # Pad to 3 with cold-start defaults.
+    for fid in _COLD_START_ORDER:
+        if len(out) >= 3:
+            break
+        if fid not in used:
+            out.append(_cold_start_entry(fid))
+            used.add(fid)
+
+    return out
 
 
 def compute_recommendations(db, user_id: int, window_size: int = 5) -> Dict[str, Any]:
     sessions = db.list_replay_sessions_detailed(user_id=int(user_id), limit=max(1, int(window_size)))
     label_score, label_evidence = _accumulate_label_signals(sessions)
-    mechanic_score, mechanic_evidence = _accumulate_mechanic_signals(sessions)
-    recs = _recommend_from_signals(label_score, label_evidence, mechanic_score, mechanic_evidence)
+    mechanic_avg, n_valid, mechanic_evidence = _accumulate_mechanic_signals(sessions)
+    recs = _recommend_from_signals(label_score, label_evidence, mechanic_avg, n_valid, mechanic_evidence)
     return {"window_size": int(window_size), "recommendations": recs, "session_count": len(sessions)}
