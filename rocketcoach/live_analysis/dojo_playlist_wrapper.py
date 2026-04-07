@@ -85,14 +85,24 @@ class RocketCoachDojo(_BaseDojo):
         if self._startup_playlist_applied:
             return
         playlist_name = str(self._rocketcoach_request.get("playlist_name", "") or "").strip()
-        if not playlist_name:
+        playlist_id = str(self._rocketcoach_request.get("playlist_id", "") or "").strip()
+        if not playlist_name and not playlist_id:
             self._startup_playlist_applied = True
             return
         try:
-            self.set_playlist(playlist_name)
-            print(f"[rocketcoach-dojo] preselected playlist: {playlist_name}")
+            # PlaylistRegistry keys playlists by filename stem (e.g. "rc_shadow_defense_advanced").
+            # Try playlist_id (filename stem) first; fall back to searching by display name.
+            registry = getattr(self, "playlist_registry", None)
+            lookup_key = playlist_id or playlist_name
+            if registry is not None and lookup_key not in registry.playlists:
+                for key, pl in registry.playlists.items():
+                    if getattr(pl, "name", key) == playlist_name:
+                        lookup_key = key
+                        break
+            self.set_playlist(lookup_key)
+            print(f"[rocketcoach-dojo] preselected playlist: {lookup_key}")
         except Exception as exc:
-            print(f"[rocketcoach-dojo] failed to preselect playlist '{playlist_name}': {exc}")
+            print(f"[rocketcoach-dojo] failed to preselect playlist '{playlist_name}' (id={playlist_id}): {exc}")
         finally:
             self._startup_playlist_applied = True
 

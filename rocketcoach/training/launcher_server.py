@@ -234,6 +234,7 @@ class TrainingLauncher:
             json.dumps(
                 {
                     "playlist_name": str(launch_profile.get("playlist_name", "") or ""),
+                    "playlist_id": str(launch_profile.get("playlist_id", "") or ""),
                     "focus_id": focus_id,
                     "difficulty_tier": difficulty_tier,
                     "requested_at": time.time(),
@@ -244,72 +245,7 @@ class TrainingLauncher:
         )
 
         replacing_existing = bool(self._active_training)
-        with self._lock:
-            try:
-                import os
-
-                os.environ["ROCKETCOACH_DOJO_SOURCE_ROOT"] = dojo_source_root
-                os.environ["ROCKETCOACH_DOJO_REQUEST_PATH"] = str(request_path)
-
-                manager = self._manager()
-                if replacing_existing:
-                    print(
-                        "[training_launcher] replacing active training "
-                        f"focus={str(self._active_training.get('focus_id', '') or '')} "
-                        f"playlist={str(self._active_training.get('playlist_name', '') or '')}",
-                        flush=True,
-                    )
-                    self._reset_manager(quiet=True)
-                    manager = self._manager()
-                match_config = _build_rldojo_match_config(
-                    bot_config_path=bot_config_path,
-                    dojo_wrapper_config_path_value=wrapper_cfg,
-                )
-                try:
-                    self._start_training_match(
-                        manager=manager,
-                        match_config=match_config,
-                        launcher_name=self.launcher,
-                    )
-                except Exception as exc:
-                    message = str(exc)
-                    if "Rocket League is not running even though we started it once." not in message:
-                        raise
-                    print(
-                        "[training_launcher] stale RLBot launcher state detected; resetting and retrying once",
-                        flush=True,
-                    )
-                    self._reset_manager(quiet=True)
-                    manager = self._manager()
-                    self._start_training_match(
-                        manager=manager,
-                        match_config=match_config,
-                        launcher_name=self.launcher,
-                    )
-                self._active_training = {
-                    "focus_id": focus_id,
-                    "difficulty_tier": difficulty_tier,
-                    "playlist_name": str(launch_profile.get("playlist_name", "") or ""),
-                    "bot_name": str(launch_profile.get("bot_name", "") or ""),
-                    "started_at": time.time(),
-                }
-            except Exception as exc:
-                print(
-                    "[training_launcher] launch failed "
-                    f"focus={focus_id} difficulty={difficulty_tier}: {exc}",
-                    flush=True,
-                )
-                raise RuntimeError(str(exc)) from exc
-
-        print(
-            "[training_launcher] match started "
-            f"focus={focus_id} difficulty={difficulty_tier} "
-            f"playlist={str(launch_profile.get('playlist_name', '') or '')} "
-            f"bot={str(launch_profile.get('bot_name', '') or launch_profile.get('bot_profile_id', '') or '')}",
-            flush=True,
-        )
-
-        return {
+        result = {
             "queued": True,
             "launcher_kind": "training_bridge",
             "focus_id": focus_id,
@@ -330,6 +266,96 @@ class TrainingLauncher:
                 else "Training match requested. Check Rocket League."
             ),
         }
+
+        # Capture all values needed by the background thread before returning.
+        _focus_id = focus_id
+        _difficulty_tier = difficulty_tier
+        _bot_config_path = bot_config_path
+        _dojo_source_root = dojo_source_root
+        _request_path = request_path
+        _wrapper_cfg = wrapper_cfg
+        _launch_profile = launch_profile
+        _replacing_existing = replacing_existing
+
+        def _do_launch() -> None:
+            with self._lock:
+                try:
+                    import os
+
+                    os.environ["ROCKETCOACH_DOJO_SOURCE_ROOT"] = _dojo_source_root
+                    os.environ["ROCKETCOACH_DOJO_REQUEST_PATH"] = str(_request_path)
+
+                    manager = self._manager()
+                    if _replacing_existing:
+                        print(
+                            "[training_launcher] replacing active training "
+                            f"focus={str(self._active_training.get('focus_id', '') or '')} "
+                            f"playlist={str(self._active_training.get('playlist_name', '') or '')}",
+                            flush=True,
+                        )
+                        self._reset_manager(quiet=True)
+                        manager = self._manager()
+                    match_config = _build_rldojo_match_config(
+                        bot_config_path=_bot_config_path,
+                        dojo_wrapper_config_path_value=_wrapper_cfg,
+                    )
+                    _STALE_GATEWAY_MARKERS = (
+                        "Rocket League is not running even though we started it once.",
+                        "process no longer exists",
+                        "Terminating rlbot gateway",
+                    )
+                    try:
+                        self._start_training_match(
+                            manager=manager,
+                            match_config=match_config,
+                            launcher_name=self.launcher,
+                        )
+                    except Exception as exc:
+                        message = str(exc)
+                        if not any(marker in message for marker in _STALE_GATEWAY_MARKERS):
+                            raise
+                        print(
+                            f"[training_launcher] stale RLBot gateway detected ({message[:80]}); resetting and retrying once",
+                            flush=True,
+                        )
+                        self._reset_manager(quiet=True)
+                        manager = self._manager()
+                        self._start_training_match(
+                            manager=manager,
+                            match_config=match_config,
+                            launcher_name=self.launcher,
+                        )
+                    self._active_training = {
+                        "focus_id": _focus_id,
+                        "difficulty_tier": _difficulty_tier,
+                        "playlist_name": str(_launch_profile.get("playlist_name", "") or ""),
+                        "bot_name": str(_launch_profile.get("bot_name", "") or ""),
+                        "started_at": time.time(),
+                    }
+                    print(
+                        "[training_launcher] match started "
+                        f"focus={_focus_id} difficulty={_difficulty_tier} "
+                        f"playlist={str(_launch_profile.get('playlist_name', '') or '')} "
+                        f"bot={str(_launch_profile.get('bot_name', '') or _launch_profile.get('bot_profile_id', '') or '')}",
+                        flush=True,
+                    )
+                except Exception as exc:
+                    print(
+                        "[training_launcher] launch failed "
+                        f"focus={_focus_id} difficulty={_difficulty_tier}: {exc}",
+                        flush=True,
+                    )
+
+        print(
+            "[training_launcher] queuing launch "
+            f"focus={focus_id} difficulty={difficulty_tier} "
+            f"playlist={str(launch_profile.get('playlist_name', '') or '')} "
+            f"bot={str(launch_profile.get('bot_name', '') or launch_profile.get('bot_profile_id', '') or '')}",
+            flush=True,
+        )
+        t = threading.Thread(target=_do_launch, daemon=True, name="rocketcoach-match-launcher")
+        t.start()
+        return result
 
 
 class _Handler(BaseHTTPRequestHandler):

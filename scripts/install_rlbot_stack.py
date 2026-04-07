@@ -361,7 +361,7 @@ def write_training_bridge_launcher(install_root: Path) -> tuple[Path, Path]:
                         $launchBody = @{{}}
                         if (-not [string]::IsNullOrWhiteSpace($protocol.Payload)) {{
                             $decoded = [System.Uri]::UnescapeDataString($protocol.Payload)
-                            $launchBody = ConvertFrom-Json $decoded -AsHashtable
+                            $launchBody = ConvertFrom-Json $decoded
                         }}
                         $launchResp = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8766/api/training/launch" -ContentType "application/json" -Body (($launchBody | ConvertTo-Json -Depth 8 -Compress))
                         Send-Callback $protocol.Callback @{{
