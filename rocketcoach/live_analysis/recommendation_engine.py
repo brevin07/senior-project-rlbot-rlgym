@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List
+import datetime as dt
 import json
 
 
@@ -81,6 +82,21 @@ def _focus_title(focus_id: str) -> str:
         if x["focus_id"] == focus_id:
             return x["title"]
     return focus_id
+
+
+def _replay_label(session: Dict[str, Any]) -> str:
+    summary = dict(session.get("summary", {}) or {})
+    for candidate in [summary.get("replay_date_iso"), session.get("created_at")]:
+        raw = str(candidate or "").strip()
+        if not raw:
+            continue
+        try:
+            parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        return f"{parsed.month}-{parsed.day}-{str(parsed.year)[-2:]}.replay"
+    replay_name = str(session.get("replay_name", "") or "").strip()
+    return replay_name or "Replay.replay"
 
 
 def _init_focus_maps() -> tuple[Dict[str, float], Dict[str, List[str]]]:
@@ -170,7 +186,7 @@ def _accumulate_mechanic_signals(
             continue
 
         weight = max(0.4, 1.0 - 0.12 * idx)
-        replay_name = s.get("replay_name", "session")
+        replay_name = _replay_label(s)
 
         for focus_id in numerator.keys():
             ms = mech.get(focus_id)

@@ -425,8 +425,11 @@ def botpack_roots() -> List[Path]:
     if env_override:
         roots.append(Path(env_override))
     local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
+    appdata = os.environ.get("APPDATA", "").strip()
     if local_appdata:
         roots.append(Path(local_appdata) / "RLBotGUIX" / "RLBotPackDeletable" / "RLBotPack-master" / "RLBotPack")
+    if appdata:
+        roots.append(Path(appdata) / "RLBot" / "RLBotPack")
     roots.append(_repo_root() / "artifacts" / "installer_downloads" / "RLBotPack" / "RLBotPack")
     deduped: List[Path] = []
     seen = set()

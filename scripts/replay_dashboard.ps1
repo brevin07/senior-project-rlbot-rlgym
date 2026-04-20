@@ -6,11 +6,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$repoRoot = Split-Path -Parent $PSScriptRoot
 
 function Resolve-VenvPython {
+    param(
+        [string]$root
+    )
+
     $candidates = @(
-        ".\venv\Scripts\python.exe",
-        ".\venv\bin\python"
+        (Join-Path $root "venv\Scripts\python.exe"),
+        (Join-Path $root "venv\bin\python")
     )
     foreach ($candidate in $candidates) {
         if (Test-Path $candidate) {
@@ -21,20 +26,27 @@ function Resolve-VenvPython {
 }
 
 if (-not $Entry) {
-    $Entry = "rocketcoach\replay_dashboard\run_replay_dashboard.py"
+    $Entry = "rocketcoach.replay_dashboard.run_replay_dashboard"
 }
 
-$pythonExe = Resolve-VenvPython
-if (-not $pythonExe) {
-    throw "Virtual environment not found. Run scripts/bootstrap.ps1 first."
+Push-Location $repoRoot
+try {
+    $pythonExe = Resolve-VenvPython $repoRoot
+    if (-not $pythonExe) {
+        throw "Virtual environment not found. Run scripts/bootstrap.ps1 first."
+    }
+
+    $env:PYTHONUTF8 = "1"
+    $env:PYTHONIOENCODING = "utf-8"
+    $env:PYTHONPATH = $repoRoot
+
+    $argsList = @("-m", $Entry, "--host", $BindHost, "--port", "$Port")
+    if ($NoBrowser) {
+        $argsList += "--no-browser"
+    }
+
+    & $pythonExe @argsList
 }
-
-$env:PYTHONUTF8 = "1"
-$env:PYTHONIOENCODING = "utf-8"
-
-$argsList = @($Entry, "--host", $BindHost, "--port", "$Port")
-if ($NoBrowser) {
-    $argsList += "--no-browser"
+finally {
+    Pop-Location
 }
-
-& $pythonExe @argsList

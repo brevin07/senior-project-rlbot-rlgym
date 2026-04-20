@@ -53,6 +53,27 @@ DEBUG_METRIC_KEYS = [
     "whiff_excluded_intentional_reset",
 ]
 
+
+def _clean_rrrocket_failure(log_text: str) -> str:
+    raw = str(log_text or "").strip()
+    if not raw:
+        return "Replay parsing failed because the installed rrrocket parser could not read this replay."
+
+    lines = [line.strip() for line in raw.replace("\r", "").split("\n") if line.strip()]
+    unsupported = next((line for line in lines if "attribute unknown or not implemented" in line.lower()), "")
+    attribute = next((line for line in lines if line.startswith("attribute: ")), "")
+    unable = next((line for line in lines if "Unable to parse replay" in line), "")
+
+    if unsupported or attribute:
+        detail = attribute.replace("attribute: ", "").strip() if attribute else "a newer replay field"
+        return (
+            "This replay uses a newer Rocket League format that the current rrrocket parser cannot read. "
+            f"Unsupported field: {detail}."
+        )
+    if unable:
+        return "The installed rrrocket parser could not read this replay file."
+    return raw[-600:]
+
 SOCCAR_BOOST_PADS = [
     {"x": 0.0, "y": -4240.0, "z": 70.0, "size": "small"},
     {"x": -1792.0, "y": -4184.0, "z": 70.0, "size": "small"},
@@ -851,10 +872,18 @@ def load_replay_bytes(file_name: str, data: bytes, rrrocket_override: str | None
 
         json_path = td_path / f"{replay_path.stem}.json"
         t_rrrocket = datetime.utcnow().timestamp()
-        with contextlib.redirect_stdout(io.StringIO()):
-            ok = _run_rrrocket_to_json(rr_bin, str(replay_path), str(json_path))
+        rrrocket_stdout = io.StringIO()
+        with contextlib.redirect_stdout(rrrocket_stdout):
+            rr_result = _run_rrrocket_to_json(rr_bin, str(replay_path), str(json_path))
+        if isinstance(rr_result, tuple):
+            ok = bool(rr_result[0])
+            rr_error_detail = str(rr_result[1] or "")
+        else:
+            ok = bool(rr_result)
+            rr_error_detail = ""
         if not ok:
-            raise RuntimeError("rrrocket failed to parse replay.")
+            detail = rr_error_detail or rrrocket_stdout.getvalue()
+            raise RuntimeError(_clean_rrrocket_failure(detail))
         print(f"[replay_perf] rrrocket_to_json {max(0.0, datetime.utcnow().timestamp() - t_rrrocket):.3f}s")
 
         out_csv_name = f"{session_id}.csv"

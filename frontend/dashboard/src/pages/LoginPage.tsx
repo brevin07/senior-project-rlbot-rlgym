@@ -4,262 +4,339 @@ import { useAuth } from "../app/AuthContext";
 
 type Mode = "signin" | "signup" | "verify";
 
+// Mock data matching the exact mechanic structure used in the real dashboard
+const MOCK_MECHANICS = [
+  { id: "challenge",         label: "Challenge",        score: 38, quality: "bad"     },
+  { id: "fifty_fifty",       label: "50/50 Control",    score: 54, quality: "neutral" },
+  { id: "aerial_offense",    label: "Aerial Offense",   score: 47, quality: "neutral" },
+  { id: "shadow_defense",    label: "Shadow Defense",   score: 78, quality: "good"    },
+  { id: "carrying_dribbling",label: "Carry + Dribble",  score: 82, quality: "good"    },
+];
+
+const MOCK_EVENTS = [
+  { time: "1:24", mechanic: "Challenge",    quality: "bad",     score: 34 },
+  { time: "2:07", mechanic: "50/50 Control",quality: "neutral", score: 58 },
+  { time: "3:41", mechanic: "Shadow Defense",quality: "good",   score: 79 },
+  { time: "5:02", mechanic: "Aerial Offense",quality: "neutral",score: 49 },
+];
+
+/** SVG circular progress ring — r=15.9 makes circumference ≈ 100 so score maps 1:1 */
+function ScoreRing({ score, quality }: { score: number; quality: string }) {
+  const color =
+    quality === "good" ? "var(--success)"
+    : quality === "neutral" ? "var(--warning)"
+    : "var(--danger)";
+  const clamp = Math.max(0, Math.min(100, score));
+  const gap   = 100 - clamp;
+  return (
+    <svg viewBox="0 0 36 36" width="52" height="52" className="ap-ring">
+      {/* track */}
+      <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--surface-3)" strokeWidth="3.2" />
+      {/* filled arc — starts at 12 o'clock via rotate(-90) */}
+      <circle
+        cx="18" cy="18" r="15.9"
+        fill="none"
+        stroke={color}
+        strokeWidth="3.2"
+        strokeLinecap="round"
+        strokeDasharray={`${clamp} ${gap}`}
+        transform="rotate(-90 18 18)"
+      />
+      {/* score label */}
+      <text
+        x="18" y="18"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="8"
+        fontWeight="700"
+        fill="var(--text-primary)"
+      >
+        {score}
+      </text>
+    </svg>
+  );
+}
+
 export default function LoginPage() {
   const { login, signup, confirmSignup, resendSignupCode, loading, authError, devBypassAuth } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
+  const [mode, setMode]         = useState<Mode>("signin");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [code, setCode]         = useState("");
+  const [busy, setBusy]         = useState(false);
+  const [error, setError]       = useState("");
+  const [message, setMessage]   = useState("");
 
   const onSignIn = async () => {
-    if (!email.trim() || !password) {
-      setError("Email and password are required.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setMessage("");
+    if (!email.trim() || !password) { setError("Email and password are required."); return; }
+    setBusy(true); setError(""); setMessage("");
     try {
-      const fetchedProfile = await login(email, password);
-      if (!fetchedProfile || !fetchedProfile.username) {
-        navigate("/profile", { replace: true });
-      } else {
-        navigate("/dashboard", { replace: true });
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+      const p = await login(email, password);
+      navigate(!p?.username ? "/profile" : "/dashboard", { replace: true });
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
 
   const onCreateAccount = async () => {
-    if (!email.trim() || !password) {
-      setError("Email and password are required.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setMessage("");
+    if (!email.trim() || !password) { setError("Email and password are required."); return; }
+    setBusy(true); setError(""); setMessage("");
     try {
       await signup(email, password);
-      setMessage("Verification code sent. Check your email and enter it below.");
+      setMessage("Verification code sent. Check your email.");
       setMode("verify");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
 
   const onVerify = async () => {
-    if (!email.trim()) {
-      setError("Email is required for verification.");
-      return;
-    }
-    if (!code.trim()) {
-      setError("Verification code is required.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setMessage("");
+    if (!email.trim()) { setError("Email is required."); return; }
+    if (!code.trim())  { setError("Verification code is required."); return; }
+    setBusy(true); setError(""); setMessage("");
     try {
       await confirmSignup(email, code);
-      setCode("");
-      setMessage("Email verified. You can now sign in.");
-      setMode("signin");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+      setCode(""); setMessage("Email verified. You can now sign in."); setMode("signin");
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
 
   const onResendCode = async () => {
-    if (!email.trim()) {
-      setError("Enter your email first.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setMessage("");
+    if (!email.trim()) { setError("Enter your email first."); return; }
+    setBusy(true); setError(""); setMessage("");
     try {
       await resendSignupCode(email);
-      setMessage("A new verification code was sent.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+      setMessage("A new code was sent.");
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
 
-  const goToSignIn = () => {
-    setMode("signin");
-    setCode("");
-    setError("");
-    setMessage("");
-  };
-
-  const goToCreate = () => {
-    setMode("signup");
-    setCode("");
-    setError("");
-    setMessage("");
-  };
+  const goToSignIn = () => { setMode("signin"); setCode(""); setError(""); setMessage(""); };
+  const goToCreate  = () => { setMode("signup"); setCode(""); setError(""); setMessage(""); };
 
   if (devBypassAuth) {
     return (
-      <div className="auth auth--neon">
-        <div className="auth__panel auth__panel--neon">
-          <div className="auth__badge">RLCOACH</div>
-          <h1>Dev no-login mode</h1>
-          <p>Cognito is bypassed in this build, so you can jump straight into the dashboard without signing in.</p>
-          <div className="auth__stage">
-            <div className="auth__stage-label">Local development</div>
-            <div className="auth__form">
-              <div className="alert" style={{ background: "rgba(67, 188, 120, 0.16)", borderColor: "rgba(67, 188, 120, 0.5)" }}>
-                Authentication checks are disabled for local development.
-              </div>
-              <button className="auth__cta" onClick={() => navigate("/dashboard", { replace: true })}>
-                Continue to dashboard
-              </button>
-            </div>
+      <div className="login-page">
+        <div className="login-form-col">
+          <div className="login-brand">RLCOACH</div>
+          <h1 className="login-title">Dev mode</h1>
+          <p className="login-sub">Authentication bypassed for local development.</p>
+          <div className="alert login-alert" style={{ background: "rgba(67,188,120,0.16)", borderColor: "rgba(67,188,120,0.5)" }}>
+            Cognito checks are disabled.
           </div>
+          <button className="login-cta" onClick={() => navigate("/dashboard", { replace: true })}>
+            Continue to dashboard
+          </button>
         </div>
-        <div className="auth__visual auth__visual--neon auth__visual--product">
-          <div className="hud-grid" />
-          <div className="hud-ring hud-ring--one" />
-          <div className="hud-ring hud-ring--two" />
-          <div className="hud-sweep" />
-          <div className="hud-copy">
-            <h2>RocketCoach</h2>
-            <p>Run the dashboard without signing into Cognito while wiring up the frontend and replay workflows.</p>
-          </div>
+        <div className="login-preview-col">
+          <AppPreview />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="auth auth--neon">
-      <div className="auth__panel auth__panel--neon">
-        <div className="auth__badge">RLCOACH</div>
-        <h1>{mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Verify email"}</h1>
-        <p>Sign in to open your replay library and coaching dashboard.</p>
+    <div className="login-page">
+      {/* ── Left: auth form ── */}
+      <div className="login-form-col">
+        <div className="login-brand">RLCOACH</div>
 
-        <div className="auth__stage">
-          <div className="auth__stage-label">{mode === "signin" ? "Account Access" : mode === "signup" ? "New Account" : "Email Confirmation"}</div>
+        <h1 className="login-title">
+          {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Verify email"}
+        </h1>
+        <p className="login-sub">
+          {mode === "signin"
+            ? "Access your replay library and coaching dashboard."
+            : mode === "signup"
+            ? "Start improving with AI-powered replay analysis."
+            : "Enter the code we sent to your email."}
+        </p>
 
-          <div className="auth__form">
-            <label>
-              Email
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+        <div className="login-form">
+          <label className="login-label">
+            Email
+            <input
+              className="login-input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              onKeyDown={(e) => e.key === "Enter" && mode === "signin" && void onSignIn()}
+            />
+          </label>
+
+          {mode !== "verify" && (
+            <label className="login-label">
+              Password
+              <input
+                className="login-input"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                onKeyDown={(e) => e.key === "Enter" && mode === "signin" && void onSignIn()}
+              />
             </label>
-            {mode !== "verify" && (
-              <label>
-                Password
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="********" />
-              </label>
-            )}
-            {mode === "verify" && (
-              <label>
-                Verification code
-                <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" />
-              </label>
-            )}
-            {mode === "verify" && (
-              <div className="auth__field-help">
-                <button type="button" className="auth__link" disabled={busy || loading} onClick={onResendCode}>
-                  Resend code
-                </button>
-              </div>
-            )}
-            {(error || authError) && <div className="alert">{error || authError}</div>}
-            {message && (
-              <div className="alert" style={{ background: "rgba(67, 188, 120, 0.16)", borderColor: "rgba(67, 188, 120, 0.5)" }}>
-                {message}
-              </div>
-            )}
-            {mode === "signin" && (
-              <button className="auth__cta" disabled={busy || loading} onClick={onSignIn}>
-                {busy || loading ? "Signing in..." : "Sign in"}
+          )}
+
+          {mode === "verify" && (
+            <label className="login-label">
+              Verification code
+              <input
+                className="login-input"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="123456"
+                onKeyDown={(e) => e.key === "Enter" && void onVerify()}
+              />
+              <button
+                type="button"
+                className="login-link"
+                style={{ marginTop: 6 }}
+                disabled={busy || loading}
+                onClick={onResendCode}
+              >
+                Resend code
               </button>
-            )}
-            {mode === "signup" && (
-              <button className="auth__cta" disabled={busy || loading} onClick={onCreateAccount}>
-                {busy || loading ? "Creating..." : "Create account"}
-              </button>
-            )}
-            {mode === "verify" && (
-              <button className="auth__cta" disabled={busy || loading || !code.trim()} onClick={onVerify}>
-                {busy || loading ? "Verifying..." : "Verify email"}
-              </button>
-            )}
-          </div>
+            </label>
+          )}
+
+          {(error || authError) && <div className="alert login-alert">{error || authError}</div>}
+          {message && (
+            <div className="alert login-alert" style={{ background: "rgba(67,188,120,0.16)", borderColor: "rgba(67,188,120,0.5)" }}>
+              {message}
+            </div>
+          )}
 
           {mode === "signin" && (
-            <p className="auth__switch">
-              Don&apos;t have an account?{" "}
-              <button type="button" className="auth__link" onClick={goToCreate}>
-                Create account
-              </button>
-            </p>
+            <button className="login-cta" disabled={busy || loading} onClick={onSignIn}>
+              {busy || loading ? "Signing in…" : "Sign in"}
+            </button>
           )}
           {mode === "signup" && (
-            <p className="auth__switch">
-              Already have an account?{" "}
-              <button type="button" className="auth__link" onClick={goToSignIn}>
-                Sign in
-              </button>
-            </p>
+            <button className="login-cta" disabled={busy || loading} onClick={onCreateAccount}>
+              {busy || loading ? "Creating…" : "Create account"}
+            </button>
           )}
           {mode === "verify" && (
-            <p className="auth__switch">
-              Verified already?{" "}
-              <button type="button" className="auth__link" onClick={goToSignIn}>
-                Back to sign in
-              </button>
-            </p>
+            <button className="login-cta" disabled={busy || loading || !code.trim()} onClick={onVerify}>
+              {busy || loading ? "Verifying…" : "Verify email"}
+            </button>
           )}
+        </div>
+
+        <div className="login-switch">
+          {mode === "signin" && (
+            <>Don&apos;t have an account?{" "}
+              <button type="button" className="login-link" onClick={goToCreate}>Create account</button>
+            </>
+          )}
+          {mode === "signup" && (
+            <>Already have an account?{" "}
+              <button type="button" className="login-link" onClick={goToSignIn}>Sign in</button>
+            </>
+          )}
+          {mode === "verify" && (
+            <>Already verified?{" "}
+              <button type="button" className="login-link" onClick={goToSignIn}>Back to sign in</button>
+            </>
+          )}
+        </div>
+
+        {/* Brief feature bullets */}
+        <div className="login-features">
+          <div className="login-feature-row">
+            <i className="fa-solid fa-chart-line" />
+            <span>Upload a replay and every mechanic gets an individual score out of 100</span>
+          </div>
+          <div className="login-feature-row">
+            <i className="fa-solid fa-film" />
+            <span>3D playback pauses at key moments with event-specific coaching advice</span>
+          </div>
+          <div className="login-feature-row">
+            <i className="fa-solid fa-dumbbell" />
+            <span>Your weakest mechanic becomes a personalised bot training session</span>
+          </div>
         </div>
       </div>
 
-      <div className="auth__visual auth__visual--neon auth__visual--product">
-        <div className="hud-grid" />
-        <div className="hud-ring hud-ring--one" />
-        <div className="hud-ring hud-ring--two" />
-        <div className="hud-sweep" />
-        <div className="hud-copy">
-          <h2>RocketCoach</h2>
-          <p>AI-powered replay analysis and coaching platform for Rocket League players.</p>
-          <div className="auth__feature-list">
-            <div className="auth__feature-row">
-              <span className="auth__feature-icon">🎯</span>
-              <div>
-                <strong>Tailor your practice</strong>
-                <div>Get the best practice for your skill level with shots and game situations extracted from your replays.</div>
-              </div>
+      {/* ── Right: live app preview ── */}
+      <div className="login-preview-col">
+        <AppPreview />
+      </div>
+    </div>
+  );
+}
+
+function AppPreview() {
+  return (
+    <div className="app-preview">
+      <div className="app-preview-eyebrow">
+        <i className="fa-solid fa-rocket" /> What you get inside
+      </div>
+
+      {/* ── Mechanic Grades card — matches the real sidebar ── */}
+      <div className="ap-card">
+        <div className="ap-card-header">
+          <span className="ap-card-title">Mechanic Grades</span>
+          <span className="ap-card-sub">latest replay · 4-16-26</span>
+        </div>
+        <div className="ap-mech-grid">
+          {MOCK_MECHANICS.map((m) => (
+            <div key={m.id} className="ap-mech-item">
+              <ScoreRing score={m.score} quality={m.quality} />
+              <span className="ap-mech-name">{m.label}</span>
+              <span className={`ap-mech-badge ap-mech-badge--${m.quality}`}>
+                {m.quality === "good" ? "Strong" : m.quality === "neutral" ? "Mixed" : "Needs Work"}
+              </span>
             </div>
-            <div className="auth__feature-row">
-              <span className="auth__feature-icon">⚡</span>
-              <div>
-                <strong>Practice in-game, in free play</strong>
-                <div>Make the most of your time and jump into quick practice sessions in free play between games.</div>
-              </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Coach Timeline — matches the real sidebar event list ── */}
+      <div className="ap-card">
+        <div className="ap-card-header">
+          <span className="ap-card-title">Coach Timeline</span>
+          <span className="ap-card-sub">click any event to jump to that moment</span>
+        </div>
+        <div className="ap-event-list">
+          {MOCK_EVENTS.map((ev, i) => (
+            <div key={i} className={`ap-event-row ap-event-row--${ev.quality}`}>
+              <span className="ap-event-time">{ev.time}</span>
+              <span className={`quality-badge quality-${ev.quality}`}>
+                {ev.quality === "good" ? "Good" : ev.quality === "neutral" ? "Neutral" : "Bad"}
+              </span>
+              <span className="ap-event-name">{ev.mechanic}</span>
+              <span className="ap-event-score">{ev.score}</span>
             </div>
-            <div className="auth__feature-row">
-              <span className="auth__feature-icon">📋</span>
-              <div>
-                <strong>Create and share playlists</strong>
-                <div>Group your favourite warmup shots. Or gather some difficult ones to challenge your friends. Show them that open goal you missed really wasn't that easy.</div>
-              </div>
-            </div>
-          </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Improvement trend sparkline ── */}
+      <div className="ap-card ap-card--inline">
+        <div>
+          <div className="ap-card-title">Score Trend</div>
+          <div className="ap-card-sub" style={{ marginTop: 2 }}>5 replays · going up</div>
+        </div>
+        <div className="ap-sparkline-wrap">
+          <svg viewBox="0 0 180 44" preserveAspectRatio="none" className="ap-sparkline">
+            <defs>
+              <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#d38c58" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#d38c58" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d="M0,36 L36,30 L72,22 L108,17 L144,12 L180,7 L180,44 L0,44 Z" fill="url(#sg)" />
+            <polyline
+              points="0,36 36,30 72,22 108,17 144,12 180,7"
+              fill="none" stroke="#d38c58" strokeWidth="2"
+              strokeLinejoin="round" strokeLinecap="round"
+            />
+            {([[0,36],[36,30],[72,22],[108,17],[144,12],[180,7]] as [number,number][]).map(([x,y], i) => (
+              <circle key={i} cx={x} cy={y} r="3" fill="#d38c58" />
+            ))}
+          </svg>
         </div>
       </div>
     </div>

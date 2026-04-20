@@ -148,8 +148,6 @@ type ReplaySession = {
 };
 
 type ProgressPoint = {
-  session_id?: string;
-  replay_name?: string;
   x_time_unix: number;
   overall_mechanics_score: number;
   mechanic_scores?: Record<string, number>;
@@ -168,8 +166,7 @@ type MechanicEvent = {
   quality_score?: number;
   quality_score_0_100?: number;
   reason?: string;
-  title?: string;          // backend key (preferred)
-  template_title?: string; // legacy alias
+  template_title?: string;
   template_body?: string;
   event_type?: string;
   issue_tags?: string[];
@@ -360,95 +357,65 @@ type MechanicMeta = {
 const mechanicMeta: Record<string, MechanicMeta> = {
   kickoff: {
     label: "Kickoff",
-    description: "Kickoff measures how well you win or neutralize the first touch and protect your team from an instant counter.",
+    description: "How well you win or neutralize the first touch and protect your team from an instant counter.",
     why: "Kickoffs decide early possession, boost control, and whether your team starts on offense or under pressure.",
     mistake: "Arriving late, hitting off-center, or losing the recovery after the first touch.",
     cue: "Arrive square, hit through the middle, and land ready for the next bounce.",
   },
   shadow_defense: {
     label: "Shadow Defense",
-    description: "Shadow Defense measures how well you stay goal-side, control space, and delay the attacker without committing too early.",
+    description: "How well you stay goal-side, control space, and delay the attacker without diving in.",
     why: "Good shadow defense buys time and forces the attacker into a weaker touch.",
     mistake: "Backing off too far or challenging before you can actually win the ball.",
     cue: "Match the attacker earlier and hold a tighter line so you can pressure safely.",
   },
   challenge: {
     label: "Challenge",
-    description: "Challenge tracks how safely and effectively you contest the ball when another player can meet it.",
+    description: "How safely and effectively you contest the ball when another player can meet it.",
     why: "Good challenges stop counters and turn contested balls into touches your team can read.",
     mistake: "Turning in late, challenging from the side, or losing the 50 into danger.",
     cue: "Turn in earlier and hit with the nose through the center of the contest.",
   },
   fifty_fifty_control: {
     label: "50/50 Control",
-    description: "50/50 Control measures how well you absorb and direct contested contact into a playable outcome.",
+    description: "How well you absorb and direct contested contact into a playable outcome.",
     why: "Winning the exit of a 50 converts chaos into possession instead of another emergency touch.",
     mistake: "Flipping through the ball too hard or landing with no plan for the next bounce.",
     cue: "Stay grounded when possible, center your car, and deaden the touch into followable space.",
   },
   aerial_offense: {
     label: "Aerial Offense",
-    description: "Aerial Offense measures how much threat your airborne touches create once you leave the ground in attack.",
+    description: "How much threat your airborne touches create once you leave the ground.",
     why: "Strong attacking aerials create shots, passes, and second touches before the defense can reset.",
     mistake: "Meeting the ball late or getting contact without enough pace or direction.",
     cue: "Read the takeoff earlier, attack forward, and recover into the next play.",
   },
   aerial_defense: {
     label: "Aerial Defense",
-    description: "Aerial Defense tracks how well your airborne touches remove danger from your half.",
+    description: "How well your airborne touches remove danger from your half.",
     why: "A good defensive aerial stops the shot and breaks pressure instead of recycling it.",
     mistake: "Saving the ball but leaving it centered or too playable for the opponent.",
     cue: "Beat the ball to the dangerous lane and clear wider when you need safety first.",
   },
   flicking: {
     label: "Flicks",
-    description: "Flicks measure how well you convert dribble control into lift, pace, and a threatening release.",
+    description: "How well you convert dribble control into lift, pace, and a threatening release.",
     why: "A clean flick punishes defenders who wait too long and turns control into a real scoring chance.",
     mistake: "Flicking late or from an unstable dribble with too little upward pop.",
     cue: "Balance the dribble first, then pop the ball earlier and more cleanly.",
   },
   carrying_dribbling: {
     label: "Carries / Dribbles",
-    description: "Carries and Dribbles measure how well you hold close ball control under pressure and turn it into a productive next action.",
+    description: "How well you hold close control under pressure and turn it into a next action.",
     why: "Stable dribbles create options before the defender gets to choose the play for you.",
     mistake: "Letting the ball drift too far or waiting too long to turn the dribble into a threat.",
     cue: "Keep the ball close to your hood and choose the next move before pressure closes space.",
-  },
-  flip_reset: {
-    label: "Flip Reset",
-    description: "Flip Reset tracks how reliably you recollect your flip mid-air by touching all four wheels to the ball.",
-    why: "A flip reset gives you an extra aerial dodge, enabling shots that defenders cannot predict.",
-    mistake: "Only grazing the ball with one side of the car, wasting the aerial without gaining the reset.",
-    cue: "Flatten your car underneath the ball and drive up into it so all wheels make contact.",
-  },
-  ceiling_shot: {
-    label: "Ceiling Shot",
-    description: "Ceiling Shot measures how well you drive off the ceiling and convert the diagonal drop into an on-target attempt.",
-    why: "Ceiling shots arrive from unexpected angles and timings that force goalkeepers into difficult reads.",
-    mistake: "Losing the ball off the ceiling or jumping too early and thinning the contact.",
-    cue: "Ride the ceiling longer before jumping, then boost into the ball from above.",
-  },
-  double_tap: {
-    label: "Double Tap",
-    description: "Double Tap tracks how cleanly you hit a backboard rebound back into goal before the keeper can adjust.",
-    why: "A double tap is one of the hardest shots to save — the ball reverses direction before anyone can react.",
-    mistake: "Making the first touch too soft or too hard so the rebound bounces unpredictably.",
-    cue: "Hit the backboard at mid-height with pace, then position quickly for the rebound angle.",
   },
 };
 
 function fmtNumber(v: number | undefined, digits = 2) {
   if (v == null || Number.isNaN(v)) return "--";
   return Number(v).toFixed(digits);
-}
-
-/** Format raw seconds as M:SS game time (e.g. 67.4 → "1:07") */
-function fmtGameTime(secs: number | undefined): string {
-  if (secs == null || Number.isNaN(secs)) return "0:00";
-  const total = Math.floor(Math.max(0, secs));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 function fmtDuration(seconds?: number) {
@@ -491,8 +458,8 @@ function mechanicMetaFor(mid?: string, ev?: MechanicEvent): MechanicMeta {
   const base = mechanicMeta[key];
   return {
     label: fallbackLabel,
-    description: String(ev?.mechanic_description || base?.description || `${fallbackLabel} tracks how cleanly you handled this type of touch in this moment.`),
-    why: String(ev?.why_it_matters || base?.why || `Improving your ${fallbackLabel.toLowerCase()} makes the next play easier to control and sets up better opportunities.`),
+    description: String(ev?.mechanic_description || base?.description || `${fallbackLabel} tracks how cleanly you handled this type of touch.`),
+    why: String(ev?.why_it_matters || base?.why || `Improving ${fallbackLabel.toLowerCase()} makes the next play easier to control.`),
     mistake: String(ev?.common_mistake || base?.mistake || "The touch did not create a controllable next outcome."),
     cue: String(ev?.training_cue || base?.cue || "Slow the play down mentally, improve your approach angle, and recover into the next touch."),
   };
@@ -523,17 +490,16 @@ function mechanicEventBody(ev?: MechanicEvent) {
   const meta = mechanicMetaFor(ev.mechanic_id, ev);
   const fallbackReason = String(ev.reason || "").trim();
   if (fallbackReason) {
-    return `${fallbackReason.charAt(0).toUpperCase()}${fallbackReason.slice(1)}. ${meta.cue}`;
+    return `${meta.label} ${fmtNumber(mechanicEventScore(ev), 1)}/100. ${fallbackReason.charAt(0).toUpperCase()}${fallbackReason.slice(1)}. ${meta.cue}`;
   }
-  return `${meta.mistake} ${meta.cue}`;
+  return `${meta.label} ${fmtNumber(mechanicEventScore(ev), 1)}/100. ${meta.mistake} ${meta.cue}`;
 }
 
 function mechanicEventExplainTitle(ev?: MechanicEvent) {
   if (!ev) return "Select an event";
-  const title = String(ev.title || ev.template_title || "").trim();
+  const title = String(ev.template_title || "").trim();
   if (title) return title;
-  // Fallback: just the mechanic name, no score appended
-  return englishEventName(ev.mechanic_id);
+  return `${englishEventName(ev.mechanic_id)} ${fmtNumber(mechanicEventScore(ev), 1)}/100`;
 }
 
 function replayDisplayName(s: LibrarySession) {
@@ -551,18 +517,6 @@ function replayDisplayName(s: LibrarySession) {
   return "Replay.replay";
 }
 
-/** Format a progress-point's timestamp as "M-D-YY.replay" for tooltips. */
-function fmtPointReplayName(xTimeUnix: number): string {
-  if (xTimeUnix > 0) {
-    const d = new Date(xTimeUnix * 1000);
-    const m = d.getMonth() + 1;
-    const day = d.getDate();
-    const yr = String(d.getFullYear()).slice(-2);
-    return `${m}-${day}-${yr}.replay`;
-  }
-  return "Replay.replay";
-}
-
 function englishEventName(mid?: string) {
   const map: Record<string, string> = {
     kickoff: "Kickoff",
@@ -575,10 +529,8 @@ function englishEventName(mid?: string) {
     aerial_defense: "Aerial Defense",
     fifty_fifty_control: "50/50 Control",
   };
-  const key = String(mid || "").trim();
-  if (map[key]) return map[key];
-  if (key) return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  return "Event";
+  const key = String(mid || "");
+  return map[key] || key || "Mechanic";
 }
 
 function qualityText(value?: string) {
@@ -657,19 +609,11 @@ export default function ReplayDashboardPage() {
   const [librarySearch, setLibrarySearch] = useState("");
   const [libraryResultFilter, setLibraryResultFilter] = useState("all");
   const [librarySort, setLibrarySort] = useState("newest");
-  const [showLibraryDrawer, setShowLibraryDrawer] = useState(false);
-  const [mechanicView, setMechanicView] = useState<"grouped" | "timeline">("grouped");
-  const [hiddenMechanicIds, setHiddenMechanicIds] = useState<Set<string>>(new Set());
   const [trainingSelections, setTrainingSelections] = useState<Record<string, { tier: string; drillMode: string }>>({});
   const [launchingFocus, setLaunchingFocus] = useState("");
   const lastProtocolLaunchRef = useRef<{ url: string; at: number }>({ url: "", at: 0 });
   const [trainingLaunchFeedback, setTrainingLaunchFeedback] = useState<Record<string, TrainingLaunchFeedback>>({});
   const [error, setError] = useState("");
-  const [feedbackKey, setFeedbackKey] = useState<string | null>(null);
-  const [feedbackDraft, setFeedbackDraft] = useState("");
-  const [feedbackSaving, setFeedbackSaving] = useState(false);
-  const [feedbackSavedKeys, setFeedbackSavedKeys] = useState<Set<string>>(new Set());
-  const [mechInfoOpen, setMechInfoOpen] = useState<string | null>(null);
   const tutorialStorageKey = useMemo(
     () => `rocketcoach-tutorial-dismissed:${String((profile as { id?: string | number } | null)?.id || profile?.username || "guest")}`,
     [profile]
@@ -698,13 +642,6 @@ export default function ReplayDashboardPage() {
   const trainingPreflightBotStatuses = trainingPreflight?.data?.bot_statuses ?? [];
   const trainingPreflightBotStatusMap = Object.fromEntries(
     trainingPreflightBotStatuses.map((status) => [String(status.bot_profile_id || ""), status])
-  );
-  const replayFolderGuide = useMemo(
-    () =>
-      platformUsesEpicReplayFolder(String(profile?.platform || ""))
-        ? "Documents > My Games > Rocket League > TAGame > DemosEpic"
-        : "Documents > My Games > Rocket League > TAGame > Demos",
-    [profile?.platform]
   );
 
   const loadStatus = useCallback(async () => {
@@ -905,19 +842,6 @@ export default function ReplayDashboardPage() {
     }
   }, [tutorialStorageKey]);
 
-  // Close mechanic info popup when clicking outside any .mechanic-ring-item
-  useEffect(() => {
-    if (!mechInfoOpen) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Element | null;
-      if (!target?.closest(".mechanic-ring-item")) {
-        setMechInfoOpen(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [mechInfoOpen]);
-
   const dismissTutorial = useCallback(() => {
     setShowTutorial(false);
     try {
@@ -934,7 +858,7 @@ export default function ReplayDashboardPage() {
     } catch {
       // Ignore storage failures.
     }
-    // Don't switch tabs — modal content adapts to whichever tab is active.
+    setActiveTab("home");
   }, [tutorialStorageKey]);
 
   const startOverlay = useCallback((title: string, message: string) => {
@@ -1053,53 +977,6 @@ export default function ReplayDashboardPage() {
     }
   };
 
-  const openReplayFolderWithCompanion = useCallback(async () => {
-    const payload = encodeURIComponent(JSON.stringify({ platform: String(profile?.platform || "") }));
-    try {
-      setReplayFolderStatus("Asking the RocketCoach Companion to open your Rocket League replay folder...");
-      await wakeTrainingCompanion(`rocketcoach://open-replay-folder?action=open-replay-folder&payload=${payload}`);
-      setReplayFolderStatus("If this is your first time, look for Documents > My Games > Rocket League > TAGame > DemosEpic or Demos.");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setReplayFolderStatus(message || "RocketCoach could not ask the local companion to open the replay folder.");
-    }
-  }, [profile?.platform, wakeTrainingCompanion]);
-
-  const ensureReplayFolderHandle = useCallback(async () => {
-    if (replayFolderHandle) return replayFolderHandle;
-    const pickerWindow = window as ReplayPickerWindow;
-    if (typeof pickerWindow.showDirectoryPicker !== "function") {
-      setReplayFolderStatus(
-        `This browser cannot save a replay-folder shortcut yet. Use RocketCoach Companion, or browse to ${replayFolderGuide}.`
-      );
-      await openReplayFolderWithCompanion();
-      return null;
-    }
-    const pickerId = platformUsesEpicReplayFolder(String(profile?.platform || ""))
-      ? REPLAY_PICKER_ID_EPIC
-      : REPLAY_PICKER_ID_STANDARD;
-    try {
-      setReplayFolderStatus("RocketCoach Companion is opening your replay folder. Approve that folder once so the browser can reopen it automatically.");
-      await openReplayFolderWithCompanion();
-      const dirHandle = await pickerWindow.showDirectoryPicker({
-        id: pickerId,
-        startIn: "documents",
-        mode: "read",
-      });
-      setReplayFolderHandle(dirHandle);
-      setReplayFolderStatus(`Replay folder connected. Choose Replay File will now reopen from ${dirHandle?.name || "that folder"}.`);
-      return dirHandle;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (!/abort|cancel/i.test(message)) {
-        setReplayFolderStatus(
-          `RocketCoach could not save the replay folder in the browser. Use RocketCoach Companion, or browse to ${replayFolderGuide}.`
-        );
-      }
-      return null;
-    }
-  }, [openReplayFolderWithCompanion, profile?.platform, replayFolderGuide, replayFolderHandle]);
-
   const openReplayPicker = useCallback(async () => {
     const pickerWindow = window as ReplayPickerWindow;
     const pickerId = platformUsesEpicReplayFolder(String(profile?.platform || ""))
@@ -1107,10 +984,9 @@ export default function ReplayDashboardPage() {
       : REPLAY_PICKER_ID_STANDARD;
     if (typeof pickerWindow.showOpenFilePicker === "function") {
       try {
-        const startDir = replayFolderHandle || (await ensureReplayFolderHandle()) || "documents";
         const [handle] = await pickerWindow.showOpenFilePicker({
           id: pickerId || REPLAY_PICKER_ID,
-          startIn: startDir,
+          startIn: replayFolderHandle || "documents",
           multiple: false,
           excludeAcceptAllOption: true,
           types: [
@@ -1124,30 +1000,35 @@ export default function ReplayDashboardPage() {
         });
         const file = await handle?.getFile();
         if (file) {
-          setReplayFolderStatus("");
           await uploadReplay(file);
           return;
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (!/abort|cancel/i.test(message)) {
-          setReplayFolderStatus(
-            `Your browser fell back to the standard file picker. If it opens in the wrong place, use RocketCoach Companion or browse to ${replayFolderGuide}.`
-          );
           replayFileInputRef.current?.click();
         }
         return;
       }
     }
-    setReplayFolderStatus(
-      `This browser uses the standard file picker. If it opens in the wrong place, use RocketCoach Companion or browse to ${replayFolderGuide}.`
-    );
     replayFileInputRef.current?.click();
-  }, [ensureReplayFolderHandle, profile?.platform, replayFolderGuide, replayFolderHandle, uploadReplay]);
+  }, [profile?.platform, replayFolderHandle, uploadReplay]);
+
+  const openReplayFolderWithCompanion = useCallback(async () => {
+    const payload = encodeURIComponent(JSON.stringify({ platform: String(profile?.platform || "") }));
+    try {
+      setReplayFolderStatus("Asking the RocketCoach Companion to open your Rocket League replay folder...");
+      await wakeTrainingCompanion(`rocketcoach://open-replay-folder?action=open-replay-folder&payload=${payload}`);
+      setReplayFolderStatus("If this is your first time, look for Documents > My Games > Rocket League > TAGame > DemosEpic or Demos.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setReplayFolderStatus(message || "RocketCoach could not ask the local companion to open the replay folder.");
+    }
+  }, [profile?.platform, wakeTrainingCompanion]);
 
   const findReplayFolder = useCallback(async () => {
-    await ensureReplayFolderHandle();
-  }, [ensureReplayFolderHandle]);
+    await openReplayFolderWithCompanion();
+  }, [openReplayFolderWithCompanion]);
 
   const openReplayFolder = useCallback(async () => {
     await openReplayFolderWithCompanion();
@@ -1255,16 +1136,7 @@ export default function ReplayDashboardPage() {
 
   const progressPoints = progress?.data?.points ?? homeSummary?.data?.progress?.points ?? [];
   const progressSeries = useMemo(
-    () =>
-      progressPoints.map((p) => {
-        const t = Number(p.x_time_unix || 0);
-        return {
-          t,
-          v: normalizeScore100(Number(p.overall_mechanics_score || 0)),
-          sessionId: String(p.session_id || ""),
-          replayName: fmtPointReplayName(t),
-        };
-      }),
+    () => progressPoints.map((p) => ({ t: Number(p.x_time_unix || 0), v: normalizeScore100(Number(p.overall_mechanics_score || 0)) })),
     [progressPoints]
   );
 
@@ -1276,7 +1148,7 @@ export default function ReplayDashboardPage() {
     : true;
 
   const perMechanicSeries = useMemo(() => {
-    const out: Record<string, { t: number; v: number; sessionId: string; replayName: string }[]> = {};
+    const out: Record<string, { t: number; v: number }[]> = {};
     for (const point of progressPoints) {
       const t = Number(point.x_time_unix || 0);
       const mechScores = point.mechanic_scores || {};
@@ -1284,38 +1156,11 @@ export default function ReplayDashboardPage() {
         const normalized = normalizeScore100(Number(value));
         if (!Number.isFinite(normalized)) return;
         if (!out[key]) out[key] = [];
-        out[key].push({
-          t,
-          v: normalized,
-          sessionId: String(point.session_id || ""),
-          replayName: fmtPointReplayName(t),
-        });
+        out[key].push({ t, v: normalized });
       });
     }
     return out;
   }, [progressPoints]);
-  const mechanicTrendEntries = useMemo(
-    () =>
-      Object.entries(perMechanicSeries).sort((a, b) =>
-        englishEventName(a[0]).localeCompare(englishEventName(b[0]))
-      ),
-    [perMechanicSeries]
-  );
-
-  const openReplayFromTrend = useCallback(
-    async (sessionId?: string, focusMechanicId?: string) => {
-      const sid = String(sessionId || "");
-      if (!sid) return;
-      if (focusMechanicId) {
-        const nextHidden = new Set(Object.keys(perMechanicSeries).filter((id) => id !== focusMechanicId));
-        setHiddenMechanicIds(nextHidden);
-      } else {
-        setHiddenMechanicIds(new Set());
-      }
-      await openSaved(sid);
-    },
-    [openSaved, perMechanicSeries]
-  );
 
   const mechanicEvents = mechanics?.data?.mechanic_events ?? [];
   const groupedMechanics = useMemo(() => {
@@ -1389,6 +1234,13 @@ export default function ReplayDashboardPage() {
     setTrainingSelections((prev) => ({
       ...prev,
       [focusId]: { tier, drillMode: prev[focusId]?.drillMode || "" },
+    }));
+  };
+
+  const setTrainingDrillMode = (focusId: string, drillMode: string) => {
+    setTrainingSelections((prev) => ({
+      ...prev,
+      [focusId]: { tier: prev[focusId]?.tier || "beginner", drillMode },
     }));
   };
 
@@ -1601,75 +1453,6 @@ export default function ReplayDashboardPage() {
         </div>
       </aside>
 
-      {showTutorial && (
-        <div className="tutorial-overlay" onClick={dismissTutorial}>
-          <div className="tutorial-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tutorial-modal-header">
-              {activeTab === "home" && <><i className="fa-solid fa-rocket" /><span>RocketCoach</span></>}
-              {activeTab === "replay" && <><i className="fa-solid fa-film" /><span>Replay Tab</span></>}
-              {activeTab === "improvement" && <><i className="fa-solid fa-chart-line" /><span>Improvement Tab</span></>}
-              {activeTab === "training" && <><i className="fa-solid fa-dumbbell" /><span>Training Tab</span></>}
-              {activeTab === "installer" && <><i className="fa-solid fa-wrench" /><span>Installer Tab</span></>}
-            </div>
-            {activeTab === "home" && (
-              <div className="tutorial-modal-body">
-                <p>RocketCoach analyzes your Rocket League replays and turns your weaknesses into a personalized training plan.</p>
-                <ol className="tutorial-steps">
-                  <li><strong>Upload a replay</strong> — go to the Replay tab and pick a <code>.replay</code> file from your RL replays folder.</li>
-                  <li><strong>Review mechanic grades</strong> — each mechanic (challenge, shadow, aerial…) gets a score out of 100 with event-specific coaching advice.</li>
-                  <li><strong>Check your trends</strong> — the Improvement tab shows how your scores change over time across all replays.</li>
-                  <li><strong>Train the weak spot</strong> — the Training tab builds a bot session targeting your lowest-scoring mechanic.</li>
-                </ol>
-              </div>
-            )}
-            {activeTab === "replay" && (
-              <div className="tutorial-modal-body">
-                <p>The Replay tab is your coaching hub for a single game.</p>
-                <ol className="tutorial-steps">
-                  <li><strong>Choose Replay File</strong> — pick a <code>.replay</code> file saved by Rocket League. The file is uploaded and analyzed automatically.</li>
-                  <li><strong>3D viewer</strong> — the playback pauses automatically at key mechanic moments and shows a coaching card.</li>
-                  <li><strong>Mechanic Grades panel</strong> — switch between Grouped view (averages per mechanic) and Timeline view (every event in order). Click any event to jump to that moment.</li>
-                  <li><strong>Coach Feedback</strong> — select any event for a full breakdown including issue tags, thresholds, and improvement cues.</li>
-                </ol>
-              </div>
-            )}
-            {activeTab === "improvement" && (
-              <div className="tutorial-modal-body">
-                <p>The Improvement tab tracks your progress across every replay you have uploaded.</p>
-                <ol className="tutorial-steps">
-                  <li><strong>Overall score trend</strong> — the top chart shows your average mechanic score over time.</li>
-                  <li><strong>Per-mechanic graphs</strong> — each mechanic has its own 0–100 chart. Hover a dot to see which replay it came from and the score for that session.</li>
-                  <li><strong>Click a dot</strong> — jumps directly into that replay and filters to that mechanic, so you can review the exact sessions behind any dip or spike.</li>
-                </ol>
-              </div>
-            )}
-            {activeTab === "training" && (
-              <div className="tutorial-modal-body">
-                <p>The Training tab turns your replay analysis into actionable bot practice.</p>
-                <ol className="tutorial-steps">
-                  <li><strong>Recommendations</strong> — RocketCoach picks the 3 mechanics you need most based on your recent replay scores.</li>
-                  <li><strong>Personalized advice</strong> — each card shows coaching advice pulled from your actual replay data.</li>
-                  <li><strong>Launch session</strong> — opens a bot training session in Rocket League targeting that mechanic at your skill tier.</li>
-                </ol>
-              </div>
-            )}
-            {activeTab === "installer" && (
-              <div className="tutorial-modal-body">
-                <p>The Installer tab verifies and sets up the tools RocketCoach needs to run bot training on your machine.</p>
-                <ol className="tutorial-steps">
-                  <li><strong>Verify Dependencies</strong> — checks that Python, RLBot, and required packages are installed correctly.</li>
-                  <li><strong>Fix any issues</strong> — follow the on-screen steps for any check that fails.</li>
-                  <li><strong>Run once</strong> — you only need to do this on a new machine or after a major update.</li>
-                </ol>
-              </div>
-            )}
-            <div className="tutorial-modal-footer">
-              <button type="button" onClick={dismissTutorial}>Got it</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <main className="main-content">
         <header className="top top--themed">
           <div className="top-heading">
@@ -1681,9 +1464,8 @@ export default function ReplayDashboardPage() {
             <div className="status-text">{activeTabMeta.description}</div>
           </div>
           <div className="top-actions">
-            <button type="button" className="ghost" onClick={reopenTutorial}>
-              <i className="fa-solid fa-circle-question" /> Help
-            </button>
+            <button type="button" className="ghost" onClick={reopenTutorial}>Tutorial</button>
+            <button type="button" onClick={() => void loadCurrentSession()}>Load Current Session</button>
           </div>
         </header>
 
@@ -1767,45 +1549,19 @@ export default function ReplayDashboardPage() {
             ) : null}
 
             <div className="home-grid">
-              <div className="home-grid-cell home-grid-cell--left">
-                <div className="metrics-card">
-                  {latestReplay ? (
-                    <div className="card-header">
-                      <div>
-                        <h3>Recent Performance</h3>
-                        <strong>{replayCardLines(latestReplay).line1}</strong>
-                        <div className="library-item-meta">{replayCardLines(latestReplay).line2}</div>
-                        {trackedPlayerLabel ? <div className="library-item-meta">Tracked player: {trackedPlayerLabel}</div> : null}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHiddenMechanicIds(new Set());
-                          void openSaved(latestReplay.session_id || latestReplay.id || "");
-                        }}
-                      >
-                        Open Latest Replay
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="empty-state" style={{ padding: "var(--space-4) 0" }}>
-                      <div className="empty-state-icon"><i className="fa-regular fa-circle-play" /></div>
+              {latestReplay ? (
+                <div className="metrics-card home-grid-cell home-grid-cell--recent">
+                  <div className="card-header">
+                    <div>
                       <h3>Recent Performance</h3>
-                      <p className="library-item-meta">Open a replay to see your recent performance here.</p>
-                      <button type="button" onClick={() => openTab("replay")} style={{ marginTop: 10 }}><i className="fa-solid fa-upload" /> Open a Replay</button>
+                      <strong>{replayCardLines(latestReplay).line1}</strong>
+                      <div className="library-item-meta">{replayCardLines(latestReplay).line2}</div>
+                      {trackedPlayerLabel ? <div className="library-item-meta">Tracked player: {trackedPlayerLabel}</div> : null}
                     </div>
-                  )}
-                </div>
-
-                <div className="metrics-card home-progress-mini">
-                  <h3>Progress Snapshot</h3>
-                  <p className="library-item-meta">All-mechanic grade trend</p>
-                  <div className="chart-container" style={{ width: "100%" }}>
-                    <LineChart series={progressSeries} width={800} height={180} />
+                    <button type="button" onClick={() => void openSaved(latestReplay.session_id || latestReplay.id || "")}>Open Latest Replay</button>
                   </div>
-                  {!progressSeries.length && <div className="library-item-meta">No data yet. Analyze a replay to start tracking.</div>}
                 </div>
-              </div>
+              ) : null}
 
               <div className="metrics-card home-grid-cell home-grid-cell--work">
                 <div className="card-header">
@@ -1840,28 +1596,31 @@ export default function ReplayDashboardPage() {
                   {!recommendations.length && <div className="library-item-meta">Recommendations will appear here once you have replay analysis data.</div>}
                 </div>
               </div>
+
+              <div className="metrics-card home-grid-cell home-grid-cell--progress">
+                <div className="card-header">
+                  <div>
+                    <h3>Progress Snapshot</h3>
+                    <p className="library-item-meta">All-mechanic grade trend across your analyzed replays.</p>
+                  </div>
+                </div>
+                <div className="chart-container">
+                  <LineChart series={progressSeries} width={820} height={220} />
+                </div>
+                {!progressSeries.length && <div className="library-item-meta">No progress data yet. Analyze a replay to start building your trend line.</div>}
+              </div>
             </div>
           </section>
         )}
 
-        {activeTab === "replay" && (() => {
-          const studioActive = Boolean(session && replayStudioReady);
-          const libraryDrawerOpen = studioActive && showLibraryDrawer;
-          const libraryInline = !studioActive;
-          const libraryCardJsx = (
-            <div className="metrics-card replay-library-panel">
+        {activeTab === "replay" && (
+          <section className="panel-stack">
+            <div className="metrics-card">
               <div className="library-head">
                 <h2>Replay Library</h2>
-                <div className="controls" style={{ marginTop: 0 }}>
-                  <button type="button" className="ghost" onClick={() => void refreshSummaryViews()}>Refresh</button>
-                  {studioActive && (
-                    <button type="button" className="ghost" onClick={() => setShowLibraryDrawer(false)} aria-label="Close library">
-                      <i className="fa-solid fa-xmark" />
-                    </button>
-                  )}
-                </div>
+                <button type="button" className="ghost" onClick={() => void refreshSummaryViews()}>Refresh</button>
               </div>
-              <div className="controls replay-action-bar">
+              <div className="controls">
                 <input
                   id="replayFile"
                   ref={replayFileInputRef}
@@ -1876,31 +1635,30 @@ export default function ReplayDashboardPage() {
                     e.currentTarget.value = "";
                   }}
                 />
-                <button type="button" onClick={() => void openReplayPicker()}>
-                  <i className="fa-solid fa-folder-open" /> Choose Replay File
-                </button>
                 <button type="button" className="ghost" onClick={() => void findReplayFolder()}>
-                  <i className="fa-solid fa-magnifying-glass" /> Find With Companion
+                  <i className="fa-solid fa-magnifying-glass" /> Find Replay Folder
                 </button>
                 <button type="button" className="ghost" onClick={() => void openReplayFolder()}>
                   <i className="fa-solid fa-folder-tree" /> Open Replay Folder
                 </button>
+                <button type="button" onClick={() => void openReplayPicker()}>
+                  <i className="fa-solid fa-folder-open" /> Choose Replay File
+                </button>
               </div>
+              <div className="library-item-meta replay-picker-help">{replayFolderPathLabel(String(profile?.platform || ""))}</div>
               <div className="library-item-meta replay-picker-help">
-                {replayFolderStatus || (
-                  <>
-                    Need help locating replays? Use <strong>Find With Companion</strong>. If the browser still opens in the wrong place, use{" "}
-                    <strong>{replayFolderGuide}</strong>.
-                  </>
-                )}
+                First time here: click <strong>Find Replay Folder</strong>. RocketCoach Companion will try to open the exact replay folder on your PC. If you need to navigate manually, go to <strong>Documents &gt; My Games &gt; Rocket League &gt; TAGame &gt; DemosEpic</strong> for Epic, or <strong>Demos</strong> for other platforms.
               </div>
+              {replayFolderStatus ? (
+                <div className="library-item-meta replay-picker-help">{replayFolderStatus}</div>
+              ) : null}
               <div className="controls" style={{ marginTop: 14 }}>
                 <input
                   type="search"
                   value={librarySearch}
                   onChange={(e) => setLibrarySearch(e.target.value)}
                   placeholder="Search by date, player, map, or result"
-                  style={{ minWidth: 220, flex: 1 }}
+                  style={{ minWidth: 260, flex: 1 }}
                 />
                 <select value={libraryResultFilter} onChange={(e) => setLibraryResultFilter(e.target.value)}>
                   <option value="all">All Results</option>
@@ -1931,17 +1689,7 @@ export default function ReplayDashboardPage() {
                         </div>
                       </div>
                       <div className="controls" style={{ marginTop: 0 }}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setHiddenMechanicIds(new Set());
-                            void openSaved(sid);
-                            if (studioActive) setShowLibraryDrawer(false);
-                          }}
-                          disabled={!sid}
-                        >
-                          Open
-                        </button>
+                        <button type="button" onClick={() => void openSaved(sid)} disabled={!sid}>Open</button>
                         <button type="button" className="ghost" onClick={() => void deleteSavedReplay(sid)} disabled={!sid}>Delete</button>
                       </div>
                     </div>
@@ -1956,462 +1704,178 @@ export default function ReplayDashboardPage() {
                 )}
               </div>
             </div>
-          );
 
-          // Build flat timeline list (sorted by time)
-          const timelineEvents = mechanicEvents
-            .filter((ev) => !hiddenMechanicIds.has(String(ev.mechanic_id || "")))
-            .slice()
-            .sort((a, b) => Number(a.time ?? 0) - Number(b.time ?? 0));
-
-          const visibleGroups = groupedMechanics.filter((g) => !hiddenMechanicIds.has(g.mechanicId));
-
-          const toggleMechanicVisibility = (mid: string) => {
-            setHiddenMechanicIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(mid)) next.delete(mid);
-              else next.add(mid);
-              return next;
-            });
-          };
-
-          const jumpToEvent = (ev: MechanicEvent) => {
-            const t = Number(ev.time ?? 0);
-            setSeekTime(t);
-            setEventExplain({
-              title: mechanicEventExplainTitle(ev),
-              body: mechanicEventBody(ev),
-            });
-          };
-
-          const makeFbKey = (ev: MechanicEvent, prefix: string) =>
-            `${prefix}:${ev.mechanic_id ?? ""}:${ev.time ?? 0}`;
-
-          const toggleFeedback = (key: string) => {
-            setFeedbackKey(prev => (prev === key ? null : key));
-            setFeedbackDraft("");
-          };
-
-          const LS_FEEDBACK_KEY = "rlcoach_mechanic_feedback";
-
-          const readFeedbackLog = (): object[] => {
-            try {
-              return JSON.parse(localStorage.getItem(LS_FEEDBACK_KEY) ?? "[]") as object[];
-            } catch {
-              return [];
-            }
-          };
-
-          const submitFeedback = async (ev: MechanicEvent, key: string) => {
-            const note = feedbackDraft.trim();
-            if (!note || feedbackSaving) return;
-            setFeedbackSaving(true);
-
-            const entry = {
-              ts: new Date().toISOString(),
-              replay_name: session?.replay_name ?? "unknown",
-              event_time: ev.time ?? 0,
-              mechanic_id: ev.mechanic_id ?? "",
-              quality_label: ev.quality_label ?? "",
-              quality_score: ev.quality_score ?? 0,
-              reason: ev.reason ?? "",
-              note,
-            };
-
-            // Always save to localStorage first — works even without the server
-            try {
-              const existing = readFeedbackLog();
-              existing.push(entry);
-              localStorage.setItem(LS_FEEDBACK_KEY, JSON.stringify(existing));
-            } catch {
-              // localStorage full — still try server
-            }
-
-            // Try server in background (best-effort)
-            apiPost(`${REPLAY_PREFIX}/mechanic-feedback`, entry).catch(() => {
-              // Server not running is fine — data is already in localStorage
-            });
-
-            setFeedbackSavedKeys(prev => new Set([...prev, key]));
-            setFeedbackKey(null);
-            setFeedbackDraft("");
-            setFeedbackSaving(false);
-          };
-
-          const copyFeedbackLog = () => {
-            const entries = readFeedbackLog();
-            if (!entries.length) { alert("No feedback entries yet."); return; }
-            void navigator.clipboard.writeText(JSON.stringify(entries, null, 2));
-          };
-
-          const renderFeedbackBox = (ev: MechanicEvent, key: string) => (
-            <div className="mech-feedback-box" onClick={e => e.stopPropagation()}>
-              <textarea
-                className="mech-feedback-input"
-                placeholder="What's wrong? e.g. 'this is a kickoff, not a challenge'"
-                value={feedbackDraft}
-                rows={2}
-                onChange={e => setFeedbackDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void submitFeedback(ev, key); }}
-                autoFocus
-              />
-              <div className="mech-feedback-actions">
-                <button
-                  type="button"
-                  className="mech-feedback-submit"
-                  disabled={!feedbackDraft.trim() || feedbackSaving}
-                  onClick={() => void submitFeedback(ev, key)}
-                >
-                  {feedbackSaving ? "Saving…" : "Submit"}
-                </button>
-                <button
-                  type="button"
-                  className="mech-feedback-cancel"
-                  onClick={() => setFeedbackKey(null)}
-                >
-                  Cancel
-                </button>
+            {!session && (
+              <div className="metrics-card empty-state">
+                <div className="empty-state-icon"><i className="fa-regular fa-circle-play" /></div>
+                <h3>No Replay Open</h3>
+                <p>Open a replay from your library or upload a new one to unlock the replay studio.</p>
               </div>
-            </div>
-          );
+            )}
 
-          return (
-            <section className="panel-stack replay-layout">
-              {libraryInline && libraryCardJsx}
+            {session && !replayStudioReady && (
+              <div className="metrics-card empty-state">
+                <div className="empty-state-icon"><i className="fa-solid fa-spinner fa-spin" /></div>
+                <h3>Replay Loading</h3>
+                <p>The replay studio will unlock once metrics and mechanic grades are ready.</p>
+              </div>
+            )}
 
-              {!session && (
-                <div className="metrics-card empty-state">
-                  <div className="empty-state-icon"><i className="fa-regular fa-circle-play" /></div>
-                  <h3>No Replay Open</h3>
-                  <p>Open a replay from your library or upload a new one to unlock the replay studio.</p>
-                </div>
-              )}
-
-              {session && !replayStudioReady && (
-                <div className="metrics-card empty-state">
-                  <div className="empty-state-icon"><i className="fa-solid fa-spinner fa-spin" /></div>
-                  <h3>Replay Loading</h3>
-                  <p>The replay studio will unlock once metrics and mechanic grades are ready.</p>
-                </div>
-              )}
-
-              {studioActive && (
-                <>
-                  <div className="replay-studio-toolbar">
-                    <button
-                      type="button"
-                      className="replay-library-toggle"
-                      onClick={() => setShowLibraryDrawer(true)}
-                    >
-                      <i className="fa-solid fa-folder-open" />
-                      <span>Replay Library</span>
-                      {librarySessions.length ? <span className="badge-count">{librarySessions.length}</span> : null}
-                    </button>
-                    <div className="controls" style={{ marginTop: 0 }}>
-                      <div className="pill">Player: {selectedPlayer || "unknown"}</div>
-                    </div>
-                  </div>
-
-                  {groupedMechanics.length > 0 && (
-                    <div className="metrics-card mechanic-rings-bar">
-                      <div className="mechanic-rings-header">
-                        <h3>Mechanic Grades</h3>
-                        {trackedPlayerLabel && (
-                          <div className="library-item-meta">
-                            Tracking <strong>{trackedPlayerLabel}</strong>
-                          </div>
-                        )}
-                      </div>
-                      <div className="mechanic-rings-grid">
-                        {groupedMechanics.map((g) => {
-                          const score = Math.round(g.avg);
-                          const quality = score >= 72 ? "good" : score >= 45 ? "neutral" : "bad";
-                          const color = quality === "good" ? "var(--success)" : quality === "neutral" ? "var(--warning)" : "var(--danger)";
-                          const clamp = Math.max(0, Math.min(100, score));
-                          const infoOpen = mechInfoOpen === g.mechanicId;
-                          const meta = mechanicMetaFor(g.mechanicId, g.items[0]);
-                          return (
-                            <div key={g.mechanicId} className="mechanic-ring-item">
-                              <div className="mechanic-ring-svg-wrap">
-                                <svg viewBox="0 0 36 36" width="76" height="76">
-                                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--surface-3)" strokeWidth="2.6" />
-                                  <circle
-                                    cx="18" cy="18" r="15.9"
-                                    fill="none"
-                                    stroke={color}
-                                    strokeWidth="2.6"
-                                    strokeLinecap="round"
-                                    strokeDasharray={`${clamp} ${100 - clamp}`}
-                                    transform="rotate(-90 18 18)"
-                                  />
-                                  <text x="18" y="18" textAnchor="middle" dominantBaseline="central" fontSize="7.5" fontWeight="700" fill="var(--text-primary)">{score}</text>
-                                </svg>
-                                <button
-                                  type="button"
-                                  className="mechanic-ring-info-btn"
-                                  title={`About ${g.label}`}
-                                  aria-label={`Info about ${g.label}`}
-                                  onClick={() => setMechInfoOpen(infoOpen ? null : g.mechanicId)}
-                                >i</button>
-                              </div>
-                              <span className="mechanic-ring-label">{g.label}</span>
-                              {infoOpen && (
-                                <div className="mechanic-ring-info-card">
-                                  <div className="mechanic-ring-info-card-header">
-                                    <strong>{meta.label}</strong>
-                                    <button
-                                      type="button"
-                                      className="mechanic-ring-info-close"
-                                      aria-label="Close"
-                                      onClick={() => setMechInfoOpen(null)}
-                                    >✕</button>
-                                  </div>
-                                  <p className="mechanic-ring-info-desc">{meta.description}</p>
-                                  <div className="mechanic-ring-info-rows">
-                                    <div className="mechanic-ring-info-row"><span className="mechanic-ring-info-lbl">Why it matters</span><span>{meta.why}</span></div>
-                                    <div className="mechanic-ring-info-row"><span className="mechanic-ring-info-lbl">Common miss</span><span>{meta.mistake}</span></div>
-                                    <div className="mechanic-ring-info-row"><span className="mechanic-ring-info-lbl">Training cue</span><span>{meta.cue}</span></div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <section className="layout studio-layout">
-                    <ReplayVisualizer
-                      timeline={session.timeline ?? []}
-                      replayMeta={(session.replay_meta ?? {}) as {
-                        map_name?: string;
-                        player_teams?: Record<string, number>;
-                        score_samples?: { time_s: number; blue: number; orange: number }[];
-                        clock_samples?: { time_s: number; seconds_remaining: number }[];
-                        ot_start_s?: number | null;
-                        goal_pause_windows?: { pause_start_s?: number; pause_end_s?: number; blue?: number; orange?: number }[];
-                        demo_events?: { victim_player?: string; time_s?: number }[];
-                        boost_samples_by_player?: Record<string, { time_s?: number; boost?: number }[]>;
-                      }}
-                      events={mechanicEvents}
-                      selectedPlayer={selectedPlayer}
-                      onTimeChange={(t) => setCurrentTime(t)}
-                      onAutoEventPause={(ev) => {
-                        setEventExplain({
-                          title: mechanicEventExplainTitle(ev),
-                          body: mechanicEventBody(ev),
-                        });
-                      }}
-                      eventPopup={
-                        eventExplain ? (
-                          <div className="event-explain-popup">
-                            <div className="event-explain-header">
-                              <strong>{eventExplain.title}</strong>
-                              <button
-                                type="button"
-                                className="event-explain-close"
-                                onClick={() => setEventExplain(null)}
-                              >✕</button>
-                            </div>
-                            <p className="event-explain-body">
-                              {eventExplain.body}
-                            </p>
-                          </div>
-                        ) : null
-                      }
-                      boostPads={session.boost_pads ?? []}
-                      seekTime={seekTime}
-                    />
-                    <div className="metrics-card studio-sidebar">
-                      <div className="studio-sidebar-section">
-                        <div className="mech-view-header">
-                          <h3>Mechanic Grades</h3>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div className="mech-view-toggle" role="tablist" aria-label="Mechanic view mode">
-                            <button
-                              type="button"
-                              className={mechanicView === "grouped" ? "active" : ""}
-                              onClick={() => setMechanicView("grouped")}
-                              role="tab"
-                              aria-selected={mechanicView === "grouped"}
-                            >
-                              <i className="fa-solid fa-layer-group" /> Grouped
-                            </button>
-                            <button
-                              type="button"
-                              className={mechanicView === "timeline" ? "active" : ""}
-                              onClick={() => setMechanicView("timeline")}
-                              role="tab"
-                              aria-selected={mechanicView === "timeline"}
-                            >
-                              <i className="fa-solid fa-timeline" /> Timeline
-                            </button>
-                          </div>
+            {session && replayStudioReady && (
+              <section className="layout studio-layout">
+                <ReplayVisualizer
+                  timeline={session.timeline ?? []}
+                  replayMeta={(session.replay_meta ?? {}) as {
+                    map_name?: string;
+                    player_teams?: Record<string, number>;
+                    score_samples?: { time_s: number; blue: number; orange: number }[];
+                    clock_samples?: { time_s: number; seconds_remaining: number }[];
+                    ot_start_s?: number | null;
+                    goal_pause_windows?: { pause_start_s?: number; pause_end_s?: number; blue?: number; orange?: number }[];
+                    demo_events?: { victim_player?: string; time_s?: number }[];
+                    boost_samples_by_player?: Record<string, { time_s?: number; boost?: number }[]>;
+                  }}
+                  events={mechanicEvents}
+                  selectedPlayer={selectedPlayer}
+                  onTimeChange={(t) => setCurrentTime(t)}
+                  onAutoEventPause={(ev) => {
+                    setEventExplain({
+                      title: mechanicEventExplainTitle(ev),
+                      body: mechanicEventBody(ev),
+                    });
+                  }}
+                  eventPopup={
+                    eventExplain ? (
+                      <div className="event-explain-popup">
+                        <div className="event-explain-header">
+                          <strong>{eventExplain.title}</strong>
                           <button
                             type="button"
-                            className="mech-feedback-copy-btn"
-                            title="Copy all flagged feedback to clipboard"
-                            onClick={copyFeedbackLog}
-                          >
-                            <i className="fa-solid fa-clipboard-list" /> Copy log
-                          </button>
-                          </div>
+                            className="event-explain-close"
+                            onClick={() => setEventExplain(null)}
+                          >✕</button>
                         </div>
+                        <p className="event-explain-body">
+                          {eventExplain.body}
+                        </p>
+                      </div>
+                    ) : null
+                  }
+                  boostPads={session.boost_pads ?? []}
+                  seekTime={seekTime}
+                />
+                <div className="metrics-card studio-sidebar">
+                  <div className="studio-sidebar-section">
+                    <div className="controls" style={{ marginTop: 0, marginBottom: 12 }}>
+                      <div className="pill">Player: {selectedPlayer || "unknown"}</div>
+                      <button type="button" onClick={() => void analyzePlayer()} disabled={!selectedPlayer}>Analyze</button>
+                    </div>
+                    {trackedPlayerLabel ? (
+                      <div className="library-item-meta">
+                        Replay tracking is centered on <strong>{trackedPlayerLabel}</strong>.
+                      </div>
+                    ) : null}
+                  </div>
 
-                        {groupedMechanics.length > 0 && (
-                          <div className="mech-filter-chips">
-                            {groupedMechanics.map((g) => {
-                              const hidden = hiddenMechanicIds.has(g.mechanicId);
-                              return (
+                  <div className="studio-sidebar-section">
+                    <h3>Live Metrics</h3>
+                    <div className="metric-grid">
+                      {metricMeta.map((m) => (
+                        <div className="metric-card" key={m.key}>
+                          <div className="metric-head">
+                            <h4>{m.label}</h4>
+                          </div>
+                          <p className="metric-value">{fmtNumber(Number(metricSnapshot?.[m.key] ?? 0), 2)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="studio-sidebar-section">
+                    <h3>Mechanic Grades</h3>
+                    <div className="library-list mechanic-grades-list">
+                      {groupedMechanics.map((group) => (
+                        <div key={group.mechanicId} className="bubble-card mech-group">
+                          <div className="bubble-toggle mech-group-btn active">
+                            <span className="mech-label">{group.label}</span>
+                            <span className="mech-stats">
+                              <span className="mech-score">{fmtNumber(group.avg, 2)}/100</span>
+                              <span className="mech-count">{group.items.length} events</span>
+                            </span>
+                          </div>
+                          <div className="bubble-body mech-events-wrap">
+                            <div className="library-item-meta" style={{ lineHeight: 1.7, marginBottom: 10 }}>
+                              {mechanicMetaFor(group.mechanicId, group.items[0]).description}
+                            </div>
+                            <div className="controls" style={{ marginTop: 0, marginBottom: 12 }}>
+                              <button
+                                type="button"
+                                className="ghost"
+                                onClick={() => setScoreExplain(explainMechanicGroup(group))}
+                              >
+                                Explain Score
+                              </button>
+                              <div className="library-item-meta">
+                                Cue: {mechanicMetaFor(group.mechanicId, group.items[0]).cue}
+                              </div>
+                            </div>
+                            {group.items.map((ev, idx) => (
+                              <div key={`${group.mechanicId}-${idx}`} className="library-item mech-event-item">
+                                <div className="mech-event-info">
+                                  <strong>{fmtNumber(ev.time ?? 0, 2)}s</strong>
+                                  <div className="library-item-meta">
+                                    <span className={`quality-badge quality-${qualityText(ev.quality_label).toLowerCase()}`}>{qualityText(ev.quality_label)}</span>
+                                    <span>Score {fmtNumber(mechanicEventScore(ev), 2)}/100</span>
+                                  </div>
+                                  {(ev.template_body || ev.reason) ? <div className="library-item-meta">{mechanicEventBody(ev)}</div> : null}
+                                </div>
                                 <button
                                   type="button"
-                                  key={`chip-${g.mechanicId}`}
-                                  className={`mech-chip ${hidden ? "off" : "on"}`}
-                                  onClick={() => toggleMechanicVisibility(g.mechanicId)}
-                                  title={hidden ? `Show ${g.label}` : `Hide ${g.label}`}
+                                  className="ghost"
+                                  onClick={() => {
+                                    const t = Number(ev.time ?? 0);
+                                    setSeekTime(t);
+                                    setEventExplain({
+                                      title: mechanicEventExplainTitle(ev),
+                                      body: mechanicEventBody(ev),
+                                    });
+                                  }}
                                 >
-                                  {g.label}
+                                  Jump To Event
                                 </button>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {mechanicView === "grouped" ? (
-                          <div className="library-list mechanic-grades-list">
-                            {visibleGroups.map((group) => (
-                              <div
-                                key={group.mechanicId}
-                                className="bubble-card mech-group"
-                                data-quality={group.avg >= 72 ? "good" : group.avg >= 45 ? "neutral" : "bad"}
-                              >
-                                <div className="bubble-toggle mech-group-btn active">
-                                  <span className="mech-label">{group.label}</span>
-                                  <span className="mech-stats">
-                                    <span className="mech-score">{fmtNumber(group.avg, 2)}</span>
-                                    <span className="mech-count">{group.items.length} events</span>
-                                  </span>
-                                </div>
-                                <div className="bubble-body mech-events-wrap">
-                                  <div className="library-item-meta" style={{ lineHeight: 1.7, marginBottom: 10 }}>
-                                    {mechanicMetaFor(group.mechanicId, group.items[0]).description}
-                                  </div>
-                                  <div className="library-item-meta" style={{ marginBottom: 10 }}>
-                                    Cue: {mechanicMetaFor(group.mechanicId, group.items[0]).cue}
-                                  </div>
-                                  {group.items.map((ev, idx) => {
-                                    const fbKey = makeFbKey(ev, `g:${group.mechanicId}:${idx}`);
-                                    const isSaved = feedbackSavedKeys.has(fbKey);
-                                    const isOpen = feedbackKey === fbKey;
-                                    return (
-                                      <div key={`${group.mechanicId}-${idx}`} className="library-item mech-event-item">
-                                        <button
-                                          type="button"
-                                          className="mech-event-clickable"
-                                          onClick={() => jumpToEvent(ev)}
-                                          title="Jump to this moment"
-                                        >
-                                          <div className="mech-event-info">
-                                            <strong>{fmtGameTime(ev.time ?? 0)}</strong>
-                                            <div className="library-item-meta">
-                                              <span className={`quality-badge quality-${qualityText(ev.quality_label).toLowerCase()}`}>{qualityText(ev.quality_label)}</span>
-                                              <span>Score {fmtNumber(mechanicEventScore(ev), 2)}</span>
-                                            </div>
-                                            {(ev.template_body || ev.reason) ? <div className="library-item-meta">{mechanicEventBody(ev)}</div> : null}
-                                          </div>
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className={`mech-flag-btn${isSaved ? " mech-flag-btn--saved" : ""}`}
-                                          title={isSaved ? "Feedback saved ✓" : "Flag this detection as wrong"}
-                                          onClick={() => toggleFeedback(fbKey)}
-                                        >
-                                          <i className={`fa-solid ${isSaved ? "fa-check" : "fa-flag"}`} />
-                                        </button>
-                                        {isOpen && renderFeedbackBox(ev, fbKey)}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
                               </div>
                             ))}
-                            {!visibleGroups.length && <div className="library-item-meta">{groupedMechanics.length ? "All mechanics hidden — click a chip to enable." : "Analyze a replay to view mechanic grades."}</div>}
                           </div>
-                        ) : (
-                          <div className="library-list mechanic-timeline-list">
-                            {timelineEvents.map((ev, idx) => {
-                              const fbKey = makeFbKey(ev, `tl:${idx}`);
-                              const isSaved = feedbackSavedKeys.has(fbKey);
-                              const isOpen = feedbackKey === fbKey;
-                              return (
-                                <div key={`tl-${idx}`} className="library-item mech-event-item">
-                                  <button
-                                    type="button"
-                                    className="mech-event-clickable"
-                                    onClick={() => jumpToEvent(ev)}
-                                    title="Jump to this moment"
-                                  >
-                                    <div className="mech-event-info">
-                                      <strong>{fmtGameTime(ev.time ?? 0)}</strong>
-                                      <div className="library-item-meta">
-                                        <span className="mech-timeline-label">{englishEventName(String(ev.mechanic_id || ""))}</span>
-                                        <span className={`quality-badge quality-${qualityText(ev.quality_label).toLowerCase()}`}>{qualityText(ev.quality_label)}</span>
-                                        <span>Score {fmtNumber(mechanicEventScore(ev), 2)}</span>
-                                      </div>
-                                      {(ev.template_body || ev.reason) ? <div className="library-item-meta">{mechanicEventBody(ev)}</div> : null}
-                                    </div>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={`mech-flag-btn${isSaved ? " mech-flag-btn--saved" : ""}`}
-                                    title={isSaved ? "Feedback saved ✓" : "Flag this detection as wrong"}
-                                    onClick={() => toggleFeedback(fbKey)}
-                                  >
-                                    <i className={`fa-solid ${isSaved ? "fa-check" : "fa-flag"}`} />
-                                  </button>
-                                  {isOpen && renderFeedbackBox(ev, fbKey)}
-                                </div>
-                              );
-                            })}
-                            {!timelineEvents.length && <div className="library-item-meta">{mechanicEvents.length ? "All mechanics hidden — click a chip to enable." : "Analyze a replay to view mechanic events."}</div>}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="studio-sidebar-section coach-panel">
-                        <h3>Selected Event</h3>
-                        <div className="coach-content">
-                          <strong>{eventExplain?.title ?? "Select an event"}</strong>
-                          <p className="library-item-meta">
-                            {eventExplain?.body ?? "Click a mechanic event in the list to inspect the replay moment and its recorded reason."}
-                          </p>
                         </div>
-                      </div>
+                      ))}
+                      {!groupedMechanics.length && <div className="library-item-meta">Analyze a replay to view mechanic grades.</div>}
                     </div>
-                  </section>
-                </>
-              )}
+                  </div>
 
-              {libraryDrawerOpen && (
-                <div
-                  className="library-drawer-backdrop"
-                  onClick={() => setShowLibraryDrawer(false)}
-                  role="presentation"
-                >
-                  <div
-                    className="library-drawer"
-                    onClick={(e) => e.stopPropagation()}
-                    role="dialog"
-                    aria-label="Replay Library"
-                  >
-                    {libraryCardJsx}
+                  <div className="studio-sidebar-section coach-panel">
+                    <h3>Selected Event</h3>
+                    <div className="coach-content">
+                      <strong>{eventExplain?.title ?? "Select an event"}</strong>
+                      <p className="library-item-meta">
+                        {eventExplain?.body ?? "Use Jump To Event on a mechanic to inspect the replay moment and its recorded reason."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="studio-sidebar-section coach-panel">
+                    <h3>Explain This Score</h3>
+                    <div className="coach-content">
+                      <strong>{scoreExplain?.title ?? "Choose a mechanic"}</strong>
+                      <p className="library-item-meta">
+                        {scoreExplain?.body ?? "Use Explain Score on any mechanic group to see what the average means, why it matters, and the best next correction."}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              )}
-            </section>
-          );
-        })()}
+              </section>
+            )}
+          </section>
+        )}
 
         {activeTab === "improvement" && (
           <section className="panel-stack">
@@ -2423,7 +1887,7 @@ export default function ReplayDashboardPage() {
                 </div>
                 <div className="summary-stat">
                   <div className="summary-stat-label">Latest Score</div>
-                  <div className="summary-stat-value">{latestScore}</div>
+                  <div className="summary-stat-value">{latestScore}<span className="text-muted">/100</span></div>
                 </div>
                 <div className="summary-stat">
                   <div className="summary-stat-label">Trend</div>
@@ -2437,42 +1901,16 @@ export default function ReplayDashboardPage() {
             <div className="metrics-card">
               <h3>Overall Mechanics Score Over Time</h3>
               <div className="chart-container">
-                <LineChart
-                  series={progressSeries}
-                  width={820}
-                  height={230}
-                  onPointClick={(point) => void openReplayFromTrend((point as { sessionId?: string }).sessionId)}
-                  pointTitle={(point) => {
-                    const replayName = String((point as { replayName?: string }).replayName || "").trim();
-                    return replayName ? `Open ${replayName}` : "Open replay";
-                  }}
-                />
+                <LineChart series={progressSeries} width={820} height={230} />
               </div>
               {!progressSeries.length && <div className="library-item-meta">No replay trend data yet.</div>}
             </div>
             <div className="improvement-layout">
-              {mechanicTrendEntries.map(([mechanicId, series]) => (
+              {Object.entries(perMechanicSeries).slice(0, 4).map(([mechanicId, series]) => (
                 <div className="metrics-card" key={mechanicId}>
                   <h3>{englishEventName(mechanicId)}</h3>
                   <div className="chart-container">
-                    <LineChart
-                      series={series}
-                      width={400}
-                      height={180}
-                      yMin={0}
-                      yMax={100}
-                      tooltipLabel={englishEventName(mechanicId)}
-                      onPointClick={(point) =>
-                        void openReplayFromTrend((point as { sessionId?: string }).sessionId, mechanicId)
-                      }
-                      pointTitle={(point) => {
-                        const replayName = String((point as { replayName?: string }).replayName || "").trim();
-                        return replayName ? `Open ${replayName} and focus ${englishEventName(mechanicId)}` : `Open replay for ${englishEventName(mechanicId)}`;
-                      }}
-                    />
-                  </div>
-                  <div className="library-item-meta" style={{ marginTop: 8 }}>
-                    Click a point to open that replay and jump into a {englishEventName(mechanicId).toLowerCase()} review.
+                    <LineChart series={series} width={400} height={180} />
                   </div>
                 </div>
               ))}
@@ -2632,6 +2070,7 @@ export default function ReplayDashboardPage() {
                 const focusId = String(rec.focus_id || "");
                 const meta = mechanicMetaFor(focusId);
                 const selectedTier = trainingSelections[focusId]?.tier || String(rec.difficulty_default?.tier || rec.difficulty_profiles?.[0]?.tier || "beginner");
+                const selectedDrillMode = trainingSelections[focusId]?.drillMode || String(rec.drill_mode_options?.[0] || "");
                 const launchFeedback = trainingLaunchFeedback[focusId];
                 const selectedProfile = (rec.difficulty_profiles ?? []).find((profile) => profile.tier === selectedTier) || rec.difficulty_default || rec.difficulty_profiles?.[0] || {};
                 const selectedBotStatus = trainingPreflightBotStatusMap[String(selectedProfile.bot_profile_id || "")];
@@ -2653,22 +2092,17 @@ export default function ReplayDashboardPage() {
                       ))}
                     </div>
 
-                    <p className="library-item-meta" style={{ lineHeight: 1.6, margin: "6px 0 10px" }}>
-                      {meta.description}
-                    </p>
+                    <div className="improvement-tips">
+                      <strong style={{ fontSize: 12 }}>Mechanic Description</strong>
+                      <p className="library-item-meta" style={{ marginTop: 4 }}>
+                        {meta.description}
+                      </p>
+                    </div>
 
-                    <div className="training-advice-box">
-                      <strong style={{ fontSize: 12 }}>What to focus on in practice</strong>
-                      <p className="library-item-meta" style={{ marginTop: 4, lineHeight: 1.6 }}>
-                        {(rec.evidence ?? []).length
-                          ? `Based on your replays: ${(rec.evidence ?? []).slice(0, 2).map((e) => {
-                              const m = e.match(/mechanic score ([\d.]+)/);
-                              return m ? `scored ${m[1]}` : "";
-                            }).filter(Boolean).join(", ") || "room for improvement"}. ${
-                              (rec.difficulty_profiles ?? []).find((profile) => profile.tier === selectedTier)?.summary ||
-                              "Work on consistency and decision-making under pressure at this mechanic."
-                            }`
-                          : "Analyze more replays so RocketCoach can build personalized training advice for this mechanic."}
+                    <div className="improvement-tips">
+                      <strong style={{ fontSize: 12 }}>Common Miss</strong>
+                      <p className="library-item-meta" style={{ marginTop: 4 }}>
+                        {meta.mistake}
                       </p>
                     </div>
 
@@ -2680,6 +2114,31 @@ export default function ReplayDashboardPage() {
                         ))}
                       </select>
                     </label>
+
+                    <label>
+                      Drill Mode
+                      <select value={selectedDrillMode} onChange={(e) => setTrainingDrillMode(focusId, e.target.value)}>
+                        {(rec.drill_mode_options ?? []).map((mode) => (
+                          <option key={mode} value={mode}>{mode}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="improvement-tips">
+                      <strong style={{ fontSize: 12 }}>Training Notes</strong>
+                      <p className="library-item-meta" style={{ marginTop: 4 }}>
+                        {(rec.difficulty_profiles ?? []).find((profile) => profile.tier === selectedTier)?.summary ||
+                          rec.drill_mode_summaries?.[selectedDrillMode] ||
+                          "Use replay-backed drills to repeat the mechanic under the right level of pressure."}
+                      </p>
+                    </div>
+
+                    <div className="improvement-tips">
+                      <strong style={{ fontSize: 12 }}>Best Next Cue</strong>
+                      <p className="library-item-meta" style={{ marginTop: 4 }}>
+                        {meta.cue}
+                      </p>
+                    </div>
 
                     <button
                       type="button"

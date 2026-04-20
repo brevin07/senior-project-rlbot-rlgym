@@ -43,6 +43,7 @@ try {
         --clean `
         --noconfirm `
         --onefile `
+        --windowed `
         --name "RLBotStackInstaller" `
         --add-data ".\requirements;requirements" `
         --add-data ".\requirements.txt;." `

@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   replay:
     image: ${REPLAY_IMAGE:?set REPLAY_IMAGE}
@@ -16,7 +15,7 @@ services:
       - RLBOT_LLM_TIMEOUT_S=${RLBOT_LLM_TIMEOUT_S:-6}
       - RLBOT_LLM_BATCH_TIMEOUT_S=${RLBOT_LLM_BATCH_TIMEOUT_S:-8}
     volumes:
-      - rlcoach-data:/app/artifacts/data
+      - ${RLBOT_APP_DATA_DIR:-./data}:/app/artifacts/data
     ports:
       - "8775:8775"
     healthcheck:
@@ -34,6 +33,3 @@ services:
         condition: service_healthy
     ports:
       - "8888:8888"
-
-volumes:
-  rlcoach-data:

@@ -60,6 +60,8 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
         sid = self._get_session_id()
         auth = self.store._db.get_auth_user_by_session(session_id=sid) if sid else None
         if not auth:
+            if str(os.environ.get("ROCKETCOACH_DEV_BYPASS_AUTH", "")).strip() == "1":
+                return self._ensure_dev_profile()
             raise RuntimeError("Please log in first.")
         profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
         self.store.set_current_user(profile)
@@ -114,7 +116,12 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
         return claims
 
     @staticmethod
-    def _discover_replay_folder() -> Path:
+    def _platform_prefers_demos_epic(platform_hint: str = "") -> bool:
+        normalized = str(platform_hint or "").strip().lower()
+        return normalized in {"epic", "epic games"}
+
+    @staticmethod
+    def _discover_replay_folder(platform_hint: str = "") -> Path:
         home = Path.home()
         docs_candidates = []
         docs_candidates.append(home / "Documents")
@@ -133,13 +140,27 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
             clean_docs.append(d)
 
         replay_candidates = []
+        standard_candidates = []
+        prefers_epic = _ReplayDashboardHandler._platform_prefers_demos_epic(platform_hint)
         for docs in clean_docs:
-            replay_candidates.append(docs / "My Games" / "Rocket League" / "TAGame" / "DemosEpic")
-            replay_candidates.append(docs / "My Games" / "Rocket League" / "TAGame" / "Demos Epic")
-            replay_candidates.append(docs / "My Games" / "Rocket League" / "TAGame" / "Demos")
+            epic_candidates = [
+                docs / "My Games" / "Rocket League" / "TAGame" / "DemosEpic",
+                docs / "My Games" / "Rocket League" / "TAGame" / "Demos Epic",
+            ]
+            standard_candidate = docs / "My Games" / "Rocket League" / "TAGame" / "Demos"
+            standard_candidates.append(standard_candidate)
+            if prefers_epic:
+                replay_candidates.extend(epic_candidates)
+                replay_candidates.append(standard_candidate)
+            else:
+                replay_candidates.append(standard_candidate)
+                replay_candidates.extend(epic_candidates)
 
         for p in replay_candidates:
             if p.exists() and p.is_dir():
+                return p
+        for p in standard_candidates:
+            if p.parent.exists() and p.parent.is_dir():
                 return p
         for p in replay_candidates:
             parent = p.parent
@@ -304,6 +325,23 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True, "data": data})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
+        if path == "/api/replay/mechanic-feedback":
+            try:
+                feedback_file = Path(__file__).resolve().parents[2] / "artifacts" / "data" / "mechanic_feedback.jsonl"
+                if not feedback_file.exists():
+                    return self._send_json({"ok": True, "entries": []})
+                entries = []
+                with open(feedback_file, "r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line:
+                            try:
+                                entries.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                pass
+                return self._send_json({"ok": True, "entries": entries})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=500)
         if path == "/api/recommendations/current":
             try:
                 data = self.store.current_recommendations()
@@ -587,8 +625,14 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
         if self.path == "/api/replay/open_default_folder":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
             try:
-                target = self._discover_replay_folder()
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            try:
+                target = self._discover_replay_folder(str(body.get("platform", "")).strip())
                 if hasattr(os, "startfile"):
                     os.startfile(str(target))
                 return self._send_json({"ok": True, "path": str(target)})
@@ -674,6 +718,22 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
 
+        if self.path == "/api/replay/delete":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            sid = str(body.get("session_id", "")).strip()
+            if not sid:
+                return self._send_json({"ok": False, "error": "Missing session_id"}, status=400)
+            try:
+                result = self.store.delete_saved_replay(sid)
+                return self._send_json({"ok": True, **dict(result or {})})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+
         if self.path == "/api/replay/metrics/seek":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length) if length > 0 else b"{}"
@@ -729,6 +789,32 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
+
+        if self.path == "/api/replay/mechanic-feedback":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return self._send_json({"ok": False, "error": "Invalid JSON"}, status=400)
+            note = str(body.get("note", "")).strip()
+            if not note:
+                return self._send_json({"ok": False, "error": "Note is required"}, status=400)
+            entry = {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "replay_name": str(body.get("replay_name", "unknown")),
+                "event_time": float(body.get("event_time", 0.0)),
+                "mechanic_id": str(body.get("mechanic_id", "")),
+                "quality_label": str(body.get("quality_label", "")),
+                "quality_score": float(body.get("quality_score", 0.0)),
+                "reason": str(body.get("reason", "")),
+                "note": note,
+            }
+            feedback_file = Path(__file__).resolve().parents[2] / "artifacts" / "data" / "mechanic_feedback.jsonl"
+            feedback_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(feedback_file, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry) + "\n")
+            return self._send_json({"ok": True})
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
@@ -931,6 +1017,7 @@ class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
                     scenario_ids=[str(x) for x in (body.get("scenario_ids", []) or [])],
                     drill_mode=str(body.get("drill_mode", "")).strip(),
                     bot_required=bool(body.get("bot_required", False)),
+                    platform=str(body.get("platform", "")).strip(),
                 )
                 return self._send_json({"ok": True, "data": data})
             except Exception as exc:
@@ -955,7 +1042,7 @@ class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
                     payload=payload,
                 )
                 token = str(session.get("token", "") or "")
-                callback_url = f"{self._external_base_url()}/api/training/bridge_session/callback?token={token}"
+                callback_url = f"{self._external_base_url()}/api/replay/training/bridge_session/callback?token={token}"
                 return self._send_json({"ok": True, "data": {"token": token, "action": action, "callback_url": callback_url}})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)

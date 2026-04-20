@@ -15,8 +15,8 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 function Resolve-VenvPython([string]$root) {
     $candidates = @(
-        Join-Path $root "venv\Scripts\python.exe",
-        Join-Path $root "venv\bin\python"
+        (Join-Path $root "venv\Scripts\python.exe"),
+        (Join-Path $root "venv\bin\python")
     )
     foreach ($candidate in $candidates) {
         if (Test-Path $candidate) { return $candidate }

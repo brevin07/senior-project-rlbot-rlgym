@@ -90,6 +90,22 @@ class ReplayStateStore:
         self._training_bridge_sessions: Dict[str, Dict[str, Any]] = {}
         self._latest_training_preflight_by_auth_user: Dict[int, Dict[str, Any]] = {}
 
+    def _persist_training_bridge_error(self, *, token: str, record: Dict[str, Any]) -> str:
+        logs_root = Path(__file__).resolve().parents[2] / "artifacts" / "training_bridge_errors"
+        logs_root.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "token": str(token or ""),
+            "action": str(record.get("action", "") or ""),
+            "auth_user_id": int(record.get("auth_user_id", 0) or 0),
+            "created_at": float(record.get("created_at", 0.0) or 0.0),
+            "updated_at": float(record.get("updated_at", 0.0) or 0.0),
+            "error": str(record.get("error", "") or ""),
+            "result": dict(record.get("result", {}) or {}),
+        }
+        file_path = logs_root / f"{str(token or 'bridge_error')}.json"
+        file_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+        return str(file_path)
+
     @staticmethod
     def _discover_replay_dirs() -> list[Path]:
         home = Path.home()
@@ -321,9 +337,6 @@ class ReplayStateStore:
         return payload
 
     def current_recommendations(self) -> Dict[str, Any]:
-        with self._lock:
-            if self._state.recommendations:
-                return dict(self._state.recommendations)
         profile = self.current_profile()
         if not profile:
             return {}
@@ -579,16 +592,23 @@ class ReplayStateStore:
                         raise RuntimeError("Replay upload was parsed but could not be persisted to DB blob storage.")
                 self._timed("start_processing_total", t_all)
             except Exception as exc:
-                trace = traceback.format_exc()
+                detail = str(exc).strip() or "Replay processing failed."
                 with self._lock:
                     self._set_job(
                         session_id=session_id,
                         status="error",
                         progress=1.0,
-                        message="Replay processing failed.",
-                        error=f"{exc}\n{trace}",
+                        message=detail,
+                        error=detail,
                         replay_name=file_name,
                         phase="error",
+                        checklist={
+                            "upload_received": True,
+                            "replay_parsed": False,
+                            "timeline_ready": False,
+                            "analysis_ready": False,
+                            "dashboard_ready": False,
+                        },
                     )
 
         thread = threading.Thread(target=_run, daemon=True)
@@ -662,6 +682,17 @@ class ReplayStateStore:
         # Stale entry (old non-blob save); remove it to prevent repeated failures.
         self._db.delete_replay_session(session_id=str(session_id), user_id=int(profile["id"]))
         raise RuntimeError("Saved replay not found in artifact path, replay folders, or DB backup.")
+
+    def delete_saved_replay(self, session_id: str) -> Dict[str, Any]:
+        profile = self._require_user()
+        row = self._db.get_replay_session(session_id=str(session_id), user_id=int(profile["id"]))
+        if not row:
+            raise RuntimeError("Saved replay not found.")
+        self._db.delete_replay_session(session_id=str(session_id), user_id=int(profile["id"]))
+        current_session_id = str(getattr(self._state.session, "session_id", "") or "")
+        if current_session_id == str(session_id):
+            self.clear_current_replay()
+        return {"session_id": str(session_id), "deleted": True}
 
     def status_snapshot(self) -> Dict[str, Any]:
         with self._lock:
@@ -968,7 +999,14 @@ class ReplayStateStore:
             teams = dict((session.replay_meta or {}).get("player_teams", {}) or {})
         except Exception:
             teams = {}
-        det = explain_mechanic_event(session.timeline or [], player, teams, target)
+        profile = self.current_profile() or {}
+        det = explain_mechanic_event(
+            session.timeline or [],
+            player,
+            teams,
+            target,
+            rank_tier=str(profile.get("rank_tier", "") or ""),
+        )
         llm = {"enabled": False, "text": "", "error": ""}
         if include_llm:
             llm = maybe_rewrite_explanation(det)
@@ -1424,14 +1462,14 @@ def _rc_validated_analysis_player(self: ReplayStateStore, *, players: list[str],
     cached = str((payload or {}).get("analysis_player", "") or "").strip()
     if cached in valid_set:
         return cached
-    tracked = str((row or {}).get("tracked_player_name", "") or "").strip()
-    if tracked in valid_set:
-        return tracked
     profile = self.current_profile() or {}
     matched = self._match_profile_player(players=valid_players, profile=profile)
     if matched in valid_set:
         return matched
-    return valid_players[0]
+    tracked = str((row or {}).get("tracked_player_name", "") or "").strip()
+    if tracked in valid_set:
+        return tracked
+    return ""
 
 
 def _rc_apply_validated_replay_state(self: ReplayStateStore, *, session, mechanics: dict | None = None, analysis_player: str = "") -> None:
@@ -1739,6 +1777,24 @@ def _rc_record_drill_run(self: ReplayStateStore, *, user_id: int, focus_id: str,
 
 
 def _rc_training_plan(self: ReplayStateStore) -> dict:
+    def _normalize_priority_score(raw_value: Any) -> float:
+        try:
+            value = float(raw_value or 0.0)
+        except Exception:
+            return 0.0
+        if 0.0 <= value <= 1.0:
+            value *= 100.0
+        return max(0.0, min(100.0, value))
+
+    def _normalize_confidence(raw_value: Any) -> float:
+        try:
+            value = float(raw_value or 0.0)
+        except Exception:
+            return 0.0
+        if value > 1.0:
+            value /= 100.0
+        return max(0.0, min(1.0, value))
+
     profile = self._require_user()
     recs = self.current_recommendations() or {}
     ranked = list(recs.get("recommendations", []) or [])
@@ -1759,8 +1815,8 @@ def _rc_training_plan(self: ReplayStateStore) -> dict:
                 "focus_id": focus_id,
                 "title": str(rec.get("title", option.get("title", focus_id))),
                 "priority_rank": idx,
-                "priority_score": float(rec.get("score", 0.0) or 0.0),
-                "confidence": float(rec.get("confidence", 0.0) or 0.0),
+                "priority_score": _normalize_priority_score(rec.get("score", 0.0)),
+                "confidence": _normalize_confidence(rec.get("confidence", 0.0)),
                 "evidence": list(rec.get("evidence", []) or []),
                 "bot_required": bool(option.get("bot_required", False)),
                 "drill_mode_options": drill_modes,
@@ -1807,8 +1863,9 @@ def _rc_home_summary(self: ReplayStateStore) -> dict:
     }
 
 
-def _rc_launch_training(self: ReplayStateStore, *, focus_id: str, difficulty_tier: str, difficulty_value: float, bot_profile_id: str, scenario_ids: list[str], drill_mode: str, bot_required: bool) -> dict:
+def _rc_launch_training(self: ReplayStateStore, *, focus_id: str, difficulty_tier: str, difficulty_value: float, bot_profile_id: str, scenario_ids: list[str], drill_mode: str, bot_required: bool, platform: str = "") -> dict:
     profile = self._require_user()
+    normalized_platform = str(platform or profile.get("platform", "") or "").strip().lower()
     option = build_training_option(focus_id)
     if not option:
         raise RuntimeError("Unknown focus_id")
@@ -1829,6 +1886,7 @@ def _rc_launch_training(self: ReplayStateStore, *, focus_id: str, difficulty_tie
             "difficulty_value": float(selected_profile.get("difficulty_value", difficulty_value) or difficulty_value),
             "drill_mode": str(drill_mode),
             "bot_required": bool(bot_required),
+            "platform": normalized_platform,
             "bot_name": str(selected_profile.get("bot_name", "") or ""),
             "playlist_name": str(selected_profile.get("playlist_name", "") or ""),
         },
@@ -1844,6 +1902,7 @@ def _rc_launch_training(self: ReplayStateStore, *, focus_id: str, difficulty_tie
                     "bot_profile_id": str(selected_profile.get("bot_profile_id", "") or bot_profile_id),
                     "drill_mode": str(drill_mode),
                     "bot_required": bool(bot_required),
+                    "platform": normalized_platform,
                     "drill_run_id": int(run_id),
                 },
             ).get("data", {})
@@ -1943,6 +2002,12 @@ def _rc_complete_training_bridge_session(self: ReplayStateStore, *, token: str, 
                 self._latest_training_preflight_by_auth_user[int(record["auth_user_id"])] = preflight
                 record["result"] = dict(record["result"] or {})
                 record["result"]["preflight"] = preflight
+        if not ok:
+            try:
+                record["server_log_path"] = self._persist_training_bridge_error(token=token_key, record=record)
+            except Exception as exc:
+                record["server_log_path"] = ""
+                record["server_log_error"] = str(exc)
         self._training_bridge_sessions[token_key] = record
         return dict(record)
 

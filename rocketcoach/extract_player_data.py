@@ -470,11 +470,14 @@ def _resolve_rrrocket_path(explicit_path: str | None = None) -> str | None:
     candidates.extend([c for c in which_candidates if c])
 
     # Local common spots
-    here = os.path.dirname(__file__)
-    repo_root = os.path.abspath(os.path.join(here, '../rlbot_training', '..', '..'))
+    here = os.path.dirname(os.path.abspath(__file__))
+    # here = rocketcoach/  →  repo_root = parent of rocketcoach/
+    repo_root = os.path.dirname(here)
     candidates.extend([
         os.path.join(repo_root, 'rrrocket'),
         os.path.join(repo_root, 'rrrocket.exe'),
+        os.path.join(repo_root, 'Milestone_1', 'rrrocket'),
+        os.path.join(repo_root, 'Milestone_1', 'rrrocket.exe'),
         os.path.join(here, 'rrrocket'),
         os.path.join(here, 'rrrocket.exe'),
     ])
@@ -488,11 +491,11 @@ def _resolve_rrrocket_path(explicit_path: str | None = None) -> str | None:
     return None
 
 
-def _run_rrrocket_to_json(rrrocket_bin: str, replay_path: str, json_out_path: str) -> bool:
+def _run_rrrocket_to_json(rrrocket_bin: str, replay_path: str, json_out_path: str) -> tuple[bool, str]:
     """
     Execute: rrrocket -n -j <replay> > json_out_path
     We capture stdout and write it to the target file to match the expected 1-line JSON format.
-    Returns True on success.
+    Returns (success, error_detail).
     """
     print(f"▶️ Running rrrocket on replay: {replay_path}")
     print(f"   Binary: {rrrocket_bin}")
@@ -510,13 +513,13 @@ def _run_rrrocket_to_json(rrrocket_bin: str, replay_path: str, json_out_path: st
             # Show a small tail of stderr for context
             tail = proc.stderr[-500:] if proc.stderr else ''
             print(tail)
-            return False
+            return False, (tail or f"rrrocket exited with code {proc.returncode}").strip()
         out_dir = os.path.dirname(json_out_path) or '.'
         os.makedirs(out_dir, exist_ok=True)
         with open(json_out_path, 'w', encoding='utf-8') as f:
             f.write(proc.stdout.strip() + "\n")
         print(f"✅ rrrocket JSON written: {json_out_path}")
-        return True
+        return True, ""
     except FileNotFoundError:
         print(f"❌ rrrocket binary not found: {rrrocket_bin}")
     except OSError as e:
@@ -611,10 +614,15 @@ def main() -> None:
             else:
                 print("   Please install rrrocket or provide path with --rrrocket")
             print("   Download from: https://github.com/nickbabcock/rrrocket/releases")
+            if rrrocket_error:
+                print(f"   {rrrocket_error}")
             exit(1)
 
         print("⚡ Running rrrocket to parse replay...")
-        if _run_rrrocket_to_json(rr_bin, replay, in_json):
+        rrrocket_result = _run_rrrocket_to_json(rr_bin, replay, in_json)
+        rrrocket_ok = bool(rrrocket_result[0]) if isinstance(rrrocket_result, tuple) else bool(rrrocket_result)
+        rrrocket_error = str(rrrocket_result[1] if isinstance(rrrocket_result, tuple) and len(rrrocket_result) > 1 else "").strip()
+        if rrrocket_ok:
             print("🔄 Processing JSON and extracting player data...")
             extract_final(in_json, out_csv)
             print(f"\n🎉 Complete! Your data is saved as: {out_csv}")
