@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from math import exp, sqrt
 from statistics import mean, pstdev
+from bisect import bisect_left
 from typing import Any, Dict, List, Tuple
 
 from rocketcoach.live_analysis.grading_context import (
@@ -15,6 +16,10 @@ from rocketcoach.live_analysis.grading_context import (
 MECHANIC_ALIASES = {
     "flicking_carry_offense": "flicking",
 }
+
+# Bumped each time detection logic, scoring weights, or output schema changes so
+# the store knows which cached payloads are stale and need re-grading.
+GRADING_VERSION = "mechanic_v8_aerial_tags_kickoff_resets"
 
 MIN_REPORTED_MECHANIC_CONFIDENCE = 0.30
 
@@ -31,7 +36,8 @@ MECHANICS = [
 ]
 
 # Flag-only mechanics — detected and shown as timeline markers but not graded or coached.
-FLAG_MECHANICS = [
+FLAG_MECHANICS: List[str] = []
+SPECIAL_AERIAL_TAGS = [
     "flip_reset",
     "ceiling_shot",
     "double_tap",
@@ -221,6 +227,20 @@ KICKOFF_ATTEMPT_DIST = 1800.0
 KICKOFF_ATTEMPT_CLOSING_SPEED = 600.0   # was 900 — lower-rank players approach without full boost
 KICKOFF_ATTEMPT_SUSTAIN_S = 0.25
 KICKOFF_TOUCH_MAX_S = 2.2
+KICKOFF_DIRECT_ALIGNMENT_MIN = 0.72
+KICKOFF_DIRECT_MAX_ALIGNMENT_MIN = 0.86
+KICKOFF_DIRECT_MAX_CLOSING_MIN = 900.0
+KICKOFF_DIRECT_MIN_POSITIVE_SAMPLES = 2
+KICKOFF_RECENT_LOOKBACK_S = 0.9
+KICKOFF_RECENT_MEAN_ALIGNMENT_MIN = 0.55
+KICKOFF_RECENT_MIN_DISTANCE = 1800.0
+KICKOFF_SPAWN_XY_TOL = 380.0
+KICKOFF_SPAWN_Z_MAX = 120.0
+KICKOFF_SPAWN_POINTS = [
+    (0.0, 4608.0),
+    (256.0, 3840.0),
+    (2048.0, 2560.0),
+]
 
 
 def _canonical_mid(mid: str) -> str:
@@ -833,6 +853,62 @@ def _apply_event_context(
     return event
 
 
+def _merge_unique_strings(*groups: List[str] | None) -> List[str]:
+    merged: List[str] = []
+    seen = set()
+    for group in groups:
+        for item in group or []:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            merged.append(text)
+    return merged
+
+
+def _mechanic_tag_label(tag: str) -> str:
+    mapping = {
+        "flip_reset": "Flip reset in play",
+        "ceiling_shot": "Ceiling play in use",
+        "double_tap": "Double tap in play",
+    }
+    key = str(tag or "").strip()
+    return mapping.get(key, key.replace("_", " ").title())
+
+
+def _attach_mechanic_tags(event: Dict[str, Any], *tags: str) -> Dict[str, Any]:
+    normalized = [str(tag or "").strip() for tag in tags if str(tag or "").strip()]
+    if not normalized:
+        return event
+    merged_tags = _merge_unique_strings(list(event.get("mechanic_tags", []) or []), normalized)
+    event["mechanic_tags"] = merged_tags
+    labels = [_mechanic_tag_label(tag) for tag in merged_tags]
+    event["mechanic_tag_labels"] = _merge_unique_strings(list(event.get("mechanic_tag_labels", []) or []), labels)
+    return event
+
+
+def _merge_event_payload(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+    base["mechanic_tags"] = _merge_unique_strings(
+        list(base.get("mechanic_tags", []) or []),
+        list(extra.get("mechanic_tags", []) or []),
+    )
+    base["mechanic_tag_labels"] = _merge_unique_strings(
+        list(base.get("mechanic_tag_labels", []) or []),
+        list(extra.get("mechanic_tag_labels", []) or []),
+    )
+    base["issue_tags"] = _merge_unique_strings(
+        list(base.get("issue_tags", []) or []),
+        list(extra.get("issue_tags", []) or []),
+    )
+    base["improvement_tags"] = _merge_unique_strings(
+        list(base.get("improvement_tags", []) or []),
+        list(extra.get("improvement_tags", []) or []),
+    )
+    if not str(base.get("event_type", "")).strip() and str(extra.get("event_type", "")).strip():
+        base["event_type"] = str(extra.get("event_type", ""))
+    return base
+
+
 def _enrich_event_text(event: Dict[str, Any]) -> None:
     """Populate template_title and template_body in-place using contextual data."""
     mid = _canonical_mid(str(event.get("mechanic_id", "") or ""))
@@ -887,6 +963,31 @@ def _ball_center_slow(frame: Dict[str, Any]) -> bool:
     return dist <= KICKOFF_CENTER_MAX_DIST and _ball_speed(frame) <= KICKOFF_BALL_SPEED_MAX
 
 
+def _is_kickoff_spawn_position(x: float, y: float, z: float) -> bool:
+    if abs(z) > KICKOFF_SPAWN_Z_MAX:
+        return False
+    ax = abs(x)
+    ay = abs(y)
+    for sx, sy in KICKOFF_SPAWN_POINTS:
+        if abs(ax - sx) <= KICKOFF_SPAWN_XY_TOL and abs(ay - sy) <= KICKOFF_SPAWN_XY_TOL:
+            return True
+    return False
+
+
+def _cars_in_kickoff_spawns(frame: Dict[str, Any]) -> bool:
+    players = list(frame.get("players", []) or [])
+    if not players:
+        return False
+    matches = 0
+    for player in players:
+        px = _safe_float(player.get("x", 0.0))
+        py = _safe_float(player.get("y", 0.0))
+        pz = _safe_float(player.get("z", 0.0))
+        if _is_kickoff_spawn_position(px, py, pz):
+            matches += 1
+    return matches >= max(2, int(len(players) * 0.6))
+
+
 # Broader "ball is still in the kickoff zone" check — used to suppress challenge/50-50
 # even when formal kickoff-window detection misses (e.g. slow approach, rogue touch time).
 _KICKOFF_ZONE_RADIUS = 700.0      # xy distance from centre
@@ -899,6 +1000,25 @@ _CHALLENGE_MIN_DISTANCE_GAIN = 120.0
 _CHALLENGE_MAX_INTERCEPT_S = 1.35
 _FIFTY_OPP_CONVERGE_SPEED = 220.0
 _FIFTY_MAX_PRE_IMPACT_GAP = 0.18
+_FLIP_RESET_MIN_BALL_Z = 220.0
+_FLIP_RESET_MIN_PLAYER_Z = 140.0
+_FLIP_RESET_MAX_DIST = 230.0
+_FLIP_RESET_MAX_XY_GAP = 120.0
+_FLIP_RESET_MAX_Z_GAP = 120.0
+_FLIP_RESET_MAX_PLAYER_Z = 1650.0
+_FLIP_RESET_MIN_AIRBORNE_S = 0.22
+_FLIP_RESET_MIN_USE_DELAY_S = 0.08
+_FLIP_RESET_MAX_USE_DELAY_S = 1.7
+_FLIP_RESET_MIN_POST_SPEED = 1100.0
+_FLICK_MIN_CARRY_S = 0.22
+_FLICK_MAX_BALL_HEIGHT = 210.0
+_FLICK_MAX_REL_SPEED = 520.0
+_FLICK_MAX_BALL_X_OFFSET = 130.0
+_FLICK_MAX_BALL_Y_OFFSET = 150.0
+_FLICK_MIN_RELEASE_S = 0.05
+_FLICK_MAX_RELEASE_S = 0.35
+_FLICK_MIN_POST_FORWARD_GAIN = 260.0
+_FLICK_MIN_POST_UP_GAIN = 120.0
 
 
 def _ball_in_kickoff_zone(frame: Dict[str, Any]) -> bool:
@@ -1038,11 +1158,100 @@ def _frame_has_kickoff_context(
         return True
     if bool(frame.get("is_kickoff_pause")):
         return True
+    if bool(frame.get("is_goal_pause")) and _ball_center_slow(frame) and _cars_in_kickoff_spawns(frame):
+        return True
     if _ball_center_slow(frame) and not bool(frame.get("active_play", True)):
         return True
     if _ball_in_kickoff_zone(frame) and not bool(frame.get("active_play", True)):
         return True
     return False
+
+
+def _frame_is_kickoff_reset_state(frame: Dict[str, Any]) -> bool:
+    return (
+        bool(frame.get("is_kickoff_pause"))
+        or (bool(frame.get("is_goal_pause")) and _ball_center_slow(frame) and _cars_in_kickoff_spawns(frame))
+        or (_ball_center_slow(frame) and _cars_in_kickoff_spawns(frame) and not bool(frame.get("active_play", True)))
+        or (_ball_in_kickoff_zone(frame) and _cars_in_kickoff_spawns(frame) and not bool(frame.get("active_play", True)))
+    )
+
+
+def _collect_kickoff_reset_windows(
+    timeline: List[Dict[str, Any]],
+    times: List[float],
+) -> List[Tuple[float, float]]:
+    windows: List[Tuple[float, float]] = []
+    i = 0
+    while i < len(timeline):
+        if not _frame_is_kickoff_reset_state(timeline[i]):
+            i += 1
+            continue
+        start_t = times[i]
+        end_t = start_t
+        i += 1
+        while i < len(timeline) and _frame_is_kickoff_reset_state(timeline[i]):
+            end_t = times[i]
+            i += 1
+        windows.append((start_t, end_t))
+    return windows
+
+
+def _coerce_kickoff_windows(raw_windows: Any) -> List[Tuple[float, float]]:
+    windows: List[Tuple[float, float]] = []
+    for raw in raw_windows or []:
+        start: Any = None
+        end: Any = None
+        if isinstance(raw, dict):
+            start = raw.get("start_s", raw.get("start", raw.get("start_t")))
+            end = raw.get("end_s", raw.get("first_touch_s", raw.get("end", raw.get("end_t"))))
+        elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+            start, end = raw[0], raw[1]
+        start_f = _safe_float(start, -1.0)
+        end_f = _safe_float(end, start_f)
+        if start_f < 0.0:
+            continue
+        if end_f < start_f:
+            end_f = start_f
+        windows.append((start_f, end_f))
+    windows.sort(key=lambda item: (item[0], item[1]))
+    return windows
+
+
+def _merge_kickoff_windows(windows: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    if not windows:
+        return []
+    ordered = sorted(windows, key=lambda item: (item[0], item[1]))
+    merged: List[Tuple[float, float]] = []
+    for start, end in ordered:
+        if not merged or start > merged[-1][1] + 0.25:
+            merged.append((start, end))
+        else:
+            prev_start, prev_end = merged[-1]
+            merged[-1] = (prev_start, max(prev_end, end))
+    return merged
+
+
+def _carry_control_offsets(frame: Dict[str, Any], player: str) -> Tuple[float, float, float]:
+    p = _player_frame(frame, player)
+    if not p:
+        return 99999.0, 99999.0, 99999.0
+    b = frame.get("ball", {}) or {}
+    return (
+        _safe_float(b.get("x", 0.0)) - _safe_float(p.get("x", 0.0)),
+        _safe_float(b.get("y", 0.0)) - _safe_float(p.get("y", 0.0)),
+        _safe_float(b.get("z", 0.0)) - _safe_float(p.get("z", 0.0)),
+    )
+
+
+def _ball_balanced_on_car(frame: Dict[str, Any], player: str) -> bool:
+    rel_x, rel_y, rel_z = _carry_control_offsets(frame, player)
+    rel_speed = _rel_speed_player_ball(frame, player)
+    return (
+        abs(rel_x) <= _FLICK_MAX_BALL_X_OFFSET
+        and abs(rel_y) <= _FLICK_MAX_BALL_Y_OFFSET
+        and 40.0 <= rel_z <= _FLICK_MAX_BALL_HEIGHT
+        and rel_speed <= _FLICK_MAX_REL_SPEED
+    )
 
 
 def _first_touch_in_window(timeline: List[Dict[str, Any]], times: List[float], start_idx: int, end_t: float) -> Tuple[int, str, float]:
@@ -1067,73 +1276,131 @@ def _first_touch_in_window(timeline: List[Dict[str, Any]], times: List[float], s
     return -1, "", 0.0
 
 
+def _player_frame_is_placeholder(player_frame: Dict[str, Any] | None) -> bool:
+    if not player_frame:
+        return True
+    fields = ("x", "y", "z", "vx", "vy", "vz")
+    return all(abs(_safe_float(player_frame.get(field, 0.0))) <= 1e-3 for field in fields)
+
+
 def _attempted_kickoff_before_touch(
     timeline: List[Dict[str, Any]],
     times: List[float],
     player: str,
     start_idx: int,
     touch_idx: int,
+    reset_window: Tuple[float, float] | None = None,
 ) -> bool:
-    reached_proximity = False
-    sustain = 0.0
-    last_t = times[start_idx]
+    start_frame = timeline[start_idx] if timeline else {}
+    start_player = _player_frame(start_frame, player)
+    if not start_player:
+        return False
+    start_is_spawn = _is_kickoff_spawn_position(
+        _safe_float(start_player.get("x", 0.0)),
+        _safe_float(start_player.get("y", 0.0)),
+        _safe_float(start_player.get("z", 0.0)),
+    )
+    start_is_reset_pause = bool(start_frame.get("is_kickoff_pause")) or bool(start_frame.get("is_goal_pause"))
+    if reset_window is not None:
+        start_is_reset_pause = True
+    if not start_is_spawn and not start_is_reset_pause:
+        return False
+    touch_t = times[max(start_idx, min(touch_idx, len(times) - 1))]
+    valid_samples: List[Tuple[float, float, float, float]] = []
+    positive_samples = 0
+    kickoff_pause_samples = 0
     for i in range(start_idx, max(start_idx + 1, touch_idx + 1)):
         fr = timeline[i]
         t = times[i]
-        d = _player_ball_dist(fr, player)
-        if d <= KICKOFF_ATTEMPT_DIST:
-            reached_proximity = True
+        in_explicit_reset = reset_window is not None and reset_window[0] <= t <= reset_window[1] + 0.75
+        if in_explicit_reset or bool(fr.get("is_kickoff_pause")) or not bool(fr.get("active_play", True)):
+            kickoff_pause_samples += 1
+        player_frame = _player_frame(fr, player)
+        if _player_frame_is_placeholder(player_frame):
+            continue
         cs = _closing_speed_toward_ball(fr, player)
-        dt = max(0.0, t - last_t)
-        if cs >= KICKOFF_ATTEMPT_CLOSING_SPEED:
-            sustain += dt
-        else:
-            sustain = 0.0
-        if reached_proximity and sustain >= KICKOFF_ATTEMPT_SUSTAIN_S:
-            return True
-        last_t = t
-    return False
+        align = _approach_alignment_to_ball(fr, player)
+        dist = _player_ball_dist(fr, player)
+        valid_samples.append((t, align, cs, dist))
+        if align >= KICKOFF_DIRECT_ALIGNMENT_MIN and cs >= KICKOFF_ATTEMPT_CLOSING_SPEED:
+            positive_samples += 1
+    if not valid_samples:
+        return False
+    recent_cutoff = touch_t - KICKOFF_RECENT_LOOKBACK_S
+    recent_samples = [sample for sample in valid_samples if sample[0] >= recent_cutoff]
+    if not recent_samples:
+        recent_samples = valid_samples[-min(3, len(valid_samples)) :]
+    recent_alignments = [sample[1] for sample in recent_samples]
+    recent_closings = [sample[2] for sample in recent_samples]
+    recent_distances = [sample[3] for sample in recent_samples]
+    recent_positive = sum(
+        1
+        for _, align, cs, _ in recent_samples
+        if align >= KICKOFF_DIRECT_ALIGNMENT_MIN and cs >= KICKOFF_ATTEMPT_CLOSING_SPEED
+    )
+    recent_mean_alignment = mean(recent_alignments) if recent_alignments else 0.0
+    recent_max_alignment = max(recent_alignments) if recent_alignments else 0.0
+    recent_max_closing = max(recent_closings) if recent_closings else 0.0
+    recent_min_distance = min(recent_distances) if recent_distances else 99999.0
+    strong_recent_commit = (
+        recent_positive >= 1
+        and recent_mean_alignment >= KICKOFF_RECENT_MEAN_ALIGNMENT_MIN
+        and recent_max_alignment >= KICKOFF_DIRECT_MAX_ALIGNMENT_MIN
+        and recent_max_closing >= KICKOFF_DIRECT_MAX_CLOSING_MIN
+        and recent_min_distance <= KICKOFF_RECENT_MIN_DISTANCE
+    )
+    sustained_commit = (
+        positive_samples >= KICKOFF_DIRECT_MIN_POSITIVE_SAMPLES
+        and recent_positive >= 1
+        and recent_mean_alignment >= KICKOFF_DIRECT_ALIGNMENT_MIN
+        and recent_max_closing >= KICKOFF_DIRECT_MAX_CLOSING_MIN
+        and recent_min_distance <= KICKOFF_RECENT_MIN_DISTANCE
+    )
+    return (
+        kickoff_pause_samples >= 1
+        and (strong_recent_commit or sustained_commit)
+    )
 
 
-def _detect_kickoff_events(timeline: List[Dict[str, Any]], times: List[float], player_teams: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _detect_kickoff_events(
+    timeline: List[Dict[str, Any]],
+    times: List[float],
+    player: str,
+    player_teams: Dict[str, Any],
+    kickoff_reset_windows: List[Tuple[float, float]] | None = None,
+) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
     if not timeline:
         return events
-    i = 0
+    candidate_windows = _merge_kickoff_windows(
+        _collect_kickoff_reset_windows(timeline, times) + list(kickoff_reset_windows or [])
+    )
     last_kickoff_end_t = -999.0
-    while i < len(timeline):
-        fr = timeline[i]
-        t = times[i]
-        if t < last_kickoff_end_t:
-            i += 1
+    for start_t, reset_end_t in candidate_windows:
+        if start_t < last_kickoff_end_t:
             continue
-        if not _ball_center_slow(fr):
-            i += 1
-            continue
-        start_idx = i
-        start_t = t
-        end_t = min(times[-1], start_t + KICKOFF_WINDOW_TIMEOUT)
+        start_idx = max(0, min(len(times) - 1, bisect_left(times, start_t)))
+        end_t = min(times[-1], max(reset_end_t + 0.75, start_t + KICKOFF_WINDOW_TIMEOUT))
         touch_idx, touch_player, touch_t = _first_touch_in_window(timeline, times, start_idx, end_t)
         if touch_idx < 0:
-            i += 1
             continue
-        players = [str(p.get("name", "")) for p in (timeline[start_idx].get("players", []) or [])]
-        attempts = {
-            pn: _attempted_kickoff_before_touch(timeline, times, pn, start_idx, touch_idx)
-            for pn in players
-            if pn
-        }
-        if not any(attempts.values()):
-            i = touch_idx + 1
+        player_attempted = _attempted_kickoff_before_touch(
+            timeline,
+            times,
+            player,
+            start_idx,
+            touch_idx,
+            reset_window=(start_t, reset_end_t),
+        )
+        if not player_attempted:
             continue
-        if (touch_t - start_t) > KICKOFF_TOUCH_MAX_S:
-            i = touch_idx + 1
+        sustained_pause_window = any(
+            bool((timeline[j] or {}).get("is_kickoff_pause"))
+            for j in range(start_idx, min(touch_idx + 1, len(timeline)))
+        ) or reset_end_t > start_t
+        if (touch_t - start_t) > KICKOFF_TOUCH_MAX_S and not sustained_pause_window:
             continue
-        if not attempts.get(touch_player, False):
-            i = touch_idx + 1
-            continue
-
-        team = _team_for_player_name(touch_player, player_teams, 0)
+        team = _team_for_player_name(player, player_teams, 0)
         j_mid = _find_next_idx_by_time(times, touch_idx, 0.65)
         j_out = _find_next_idx_by_time(times, touch_idx, 1.20)
         fr_mid = timeline[j_mid]
@@ -1153,19 +1420,18 @@ def _detect_kickoff_events(timeline: List[Dict[str, Any]], times: List[float], p
             touch_t,
             q,
             reason,
-            execution_score_0_1=round(_clamp01(0.45 + 0.25 * _clamp01((KICKOFF_TOUCH_MAX_S - (touch_t - start_t)) / KICKOFF_TOUCH_MAX_S) + 0.30 * (1.0 if attempts.get(touch_player, False) else 0.0)), 3),
+            execution_score_0_1=round(_clamp01(0.45 + 0.25 * _clamp01((KICKOFF_TOUCH_MAX_S - (touch_t - start_t)) / KICKOFF_TOUCH_MAX_S) + 0.30 * (1.0 if player_attempted else 0.0)), 3),
             decision_score_0_1=round(_clamp01(0.45 + 0.30 * (1.0 if safe_exit else 0.2) + 0.25 * (1.0 if win_possession else 0.35)), 3),
             outcome_score_0_1=round(q, 3),
             risk_score_0_1=round(_clamp01(0.85 if safe_exit else 0.22), 3),
             issue_tags=(["kickoff_lost"] if not win_possession else []) + (["dangerous_exit"] if not safe_exit else []),
             improvement_tags=(["hit_through_center"] if not win_possession else []) + (["cover_loss_lane"] if not safe_exit else []),
         )
-        events[-1]["player"] = touch_player
+        events[-1]["player"] = player
         events[-1]["kickoff_window_start"] = round(start_t, 3)
         events[-1]["kickoff_window_end"] = round(min(end_t, touch_t), 3)
-        _apply_event_context(events[-1], timeline=timeline, times=times, idx=touch_idx, player=touch_player, player_teams=player_teams)
+        _apply_event_context(events[-1], timeline=timeline, times=times, idx=touch_idx, player=player, player_teams=player_teams)
         last_kickoff_end_t = touch_t
-        i = touch_idx + 1
     return events
 
 
@@ -1221,10 +1487,11 @@ def _detect_ceiling_shot_events(
         reason = "ceiling shot toward goal" if toward_goal else "ceiling contact without goal threat"
         _add_event(
             events,
-            "ceiling_shot",
+            "aerial_offense",
             t,
             q,
             reason,
+            event_type="ceiling_shot",
             execution_score_0_1=round(_clamp01(0.45 + 0.25 * _clamp01(pz / 2028.0) + 0.30 * (1.0 if toward_goal else 0.2)), 3),
             decision_score_0_1=round(_clamp01(0.50 + 0.30 * (1.0 if toward_goal else 0.2) + 0.20 * _clamp01(b_spd_after / 1800.0)), 3),
             outcome_score_0_1=round(_clamp01(0.35 + 0.45 * (1.0 if toward_goal else 0.0) + 0.20 * _clamp01(b_spd_after / 1800.0)), 3),
@@ -1233,6 +1500,7 @@ def _detect_ceiling_shot_events(
             improvement_tags=(["aim_ceiling_shot_at_goal"] if not toward_goal else []) + (["add_more_power"] if b_spd_after < 800.0 else ["hold_ceiling_longer"]),
         )
         events[-1]["player"] = player
+        _attach_mechanic_tags(events[-1], "ceiling_shot")
         _apply_event_context(events[-1], timeline=timeline, times=times, idx=i, player=player, player_teams=player_teams)
         last_t = t
         ceiling_frame_count = 0
@@ -1310,10 +1578,11 @@ def _detect_double_tap_events(
             )
             _add_event(
                 events,
-                "double_tap",
+                "aerial_offense",
                 t,
                 q,
                 reason,
+                event_type="double_tap",
                 execution_score_0_1=round(_clamp01(0.50 + 0.30 * (1.0 if toward_goal else 0.2) + 0.20 * _clamp01(1.0 - gap_s / 2.0)), 3),
                 decision_score_0_1=round(_clamp01(0.55 + 0.25 * (1.0 if toward_goal else 0.2) + 0.20 * (1.0 if pz > 300.0 else 0.5)), 3),
                 outcome_score_0_1=round(_clamp01(0.40 + 0.40 * (1.0 if toward_goal else 0.0) + 0.20 * _clamp01(b_spd_after / 2000.0)), 3),
@@ -1322,6 +1591,7 @@ def _detect_double_tap_events(
                 improvement_tags=(["aim_double_tap_at_goal"] if not toward_goal else []) + (["track_rebound_earlier"] if gap_s > 1.5 else []),
             )
             events[-1]["player"] = player
+            _attach_mechanic_tags(events[-1], "double_tap")
             _apply_event_context(events[-1], timeline=timeline, times=times, idx=i, player=player, player_teams=player_teams)
             last_t = t
             found = True
@@ -1330,7 +1600,12 @@ def _detect_double_tap_events(
     return events
 
 
-def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_teams: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _detect_mechanic_events(
+    timeline: List[Dict[str, Any]],
+    player: str,
+    player_teams: Dict[str, Any],
+    replay_meta: Dict[str, Any] | None = None,
+) -> List[Dict[str, Any]]:
     if not timeline or not player:
         return []
     team = _player_team(player, player_teams or {})
@@ -1342,7 +1617,7 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
     events: List[Dict[str, Any]] = []
     times = [_safe_float(fr.get("t", 0.0)) for fr in timeline]
 
-    last_t_by_mech: Dict[str, float] = {m: -9999.0 for m in MECHANICS + FLAG_MECHANICS}
+    last_t_by_mech: Dict[str, float] = {m: -9999.0 for m in MECHANICS + SPECIAL_AERIAL_TAGS}
     cooldown = {
         "shadow_defense": 1.2,
         "challenge": 0.9,
@@ -1360,6 +1635,8 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
     carry_active = False
     carry_start_idx = 0
     carry_min_opp_dist = 99999.0
+    flick_carry_active = False
+    flick_carry_start_idx = 0
 
     # --- Flip reset state machine ---
     # Phase 1: double_jump goes 0→1 while airborne near ball  (counter reset by ball contact)
@@ -1367,8 +1644,11 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
     _fr_state: str = "idle"   # "idle" | "reset_obtained"
     _fr_t0: float = 0.0
     _fr_idx0: int = 0
+    _fr_airborne_s: float = 0.0
+    _last_ground_t: float = times[0] if timeline else 0.0
 
-    kickoff_events = _detect_kickoff_events(timeline, times, player_teams)
+    parser_kickoff_windows = _coerce_kickoff_windows((replay_meta or {}).get("kickoff_pause_windows", []))
+    kickoff_events = _detect_kickoff_events(timeline, times, player, player_teams, parser_kickoff_windows)
     events.extend(kickoff_events)
     for k in kickoff_events:
         last_t_by_mech["kickoff"] = max(last_t_by_mech["kickoff"], _safe_float(k.get("time", -9999.0)))
@@ -1377,24 +1657,32 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
     ceiling_shot_events = _detect_ceiling_shot_events(timeline, times, player, player_teams)
     events.extend(ceiling_shot_events)
     for cs in ceiling_shot_events:
+        last_t_by_mech["aerial_offense"] = max(last_t_by_mech["aerial_offense"], _safe_float(cs.get("time", -9999.0)))
         last_t_by_mech["ceiling_shot"] = max(last_t_by_mech["ceiling_shot"], _safe_float(cs.get("time", -9999.0)))
 
     double_tap_events = _detect_double_tap_events(timeline, times, player, player_teams)
     events.extend(double_tap_events)
     for dt in double_tap_events:
+        last_t_by_mech["aerial_offense"] = max(last_t_by_mech["aerial_offense"], _safe_float(dt.get("time", -9999.0)))
         last_t_by_mech["double_tap"] = max(last_t_by_mech["double_tap"], _safe_float(dt.get("time", -9999.0)))
 
     # Build kickoff exclusion windows so that a challenge/50-50 happening
     # during (and just after) a kickoff is not double-counted as a separate
     # mechanic — it's already scored as kickoff.
     _KICKOFF_TAIL_BUFFER_S = 3.0   # was 1.5 — cover post-kickoff recovery (shadow, challenge)
-    _kickoff_windows: List[Tuple[float, float]] = []
+    _KICKOFF_PRE_BUFFER_S = 0.5
+    _kickoff_windows: List[Tuple[float, float]] = [
+        (max(0.0, start_t - _KICKOFF_PRE_BUFFER_S), end_t + _KICKOFF_TAIL_BUFFER_S)
+        for start_t, end_t in _merge_kickoff_windows(
+            _collect_kickoff_reset_windows(timeline, times) + parser_kickoff_windows
+        )
+    ]
     for k in kickoff_events:
         start_t = _safe_float(k.get("kickoff_window_start", k.get("time", 0.0)))
         end_t = _safe_float(k.get("kickoff_window_end", k.get("time", 0.0)))
         if end_t <= 0.0 and start_t <= 0.0:
             continue
-        _kickoff_windows.append((start_t, end_t + _KICKOFF_TAIL_BUFFER_S))
+        _kickoff_windows.append((max(0.0, start_t - _KICKOFF_PRE_BUFFER_S), end_t + _KICKOFF_TAIL_BUFFER_S))
 
     def _in_kickoff_window(ts: float) -> bool:
         for ws, we in _kickoff_windows:
@@ -1414,6 +1702,8 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
         px = _safe_float(p.get("x", 0.0))
         py = _safe_float(p.get("y", 0.0))
         pz = _safe_float(p.get("z", 0.0))
+        if pz < 60.0 and abs(_safe_float(p.get("vz", 0.0))) < 220.0:
+            _last_ground_t = t
         by = _safe_float(b.get("y", 0.0))
         bz = _safe_float(b.get("z", 0.0))
         d_pb = _player_ball_dist(fr, player)
@@ -1469,7 +1759,7 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
             and abs(d_pb - opp_db) <= 280.0
             and bool(approach_window.get("committed"))
         )
-        if challenge_candidate and (t - last_t_by_mech["challenge"]) >= cooldown["challenge"] and not _in_kickoff_window(t) and not kickoff_context:
+        if challenge_candidate and (t - last_t_by_mech["challenge"]) >= cooldown["challenge"] and not _in_kickoff_window(t) and not kickoff_context and not _ball_in_kickoff_zone(fr):
             j_touch = _find_next_idx_by_time(times, i, 0.35)
             j_mid = _find_next_idx_by_time(times, i, 0.60)
             j_out = _find_next_idx_by_time(times, i, 1.20)
@@ -1535,7 +1825,7 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
             last_t_by_mech["challenge"] = t
 
         opp_ready, opp_name, opp_ball_dist = _opponent_contest_ready(fr, player, player_teams, team)
-        if d_pb < 300.0 and opp_db < 300.0 and bz < 260.0 and (t - last_t_by_mech["fifty_fifty_control"]) >= cooldown["fifty_fifty_control"] and not _in_kickoff_window(t) and not kickoff_context and opp_ready:
+        if d_pb < 300.0 and opp_db < 300.0 and bz < 260.0 and (t - last_t_by_mech["fifty_fifty_control"]) >= cooldown["fifty_fifty_control"] and not _in_kickoff_window(t) and not kickoff_context and not _ball_in_kickoff_zone(fr) and opp_ready:
             j = _find_next_idx_by_time(times, i, 0.20)
             k = _find_next_idx_by_time(times, i, 0.80)
             frj = timeline[j]
@@ -1653,34 +1943,63 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
         jump = int(_safe_float(p.get("jump", 0.0)))
         djump = int(_safe_float(p.get("double_jump", 0.0)))
         carry_like = d_pb <= 200.0 and bz < 250.0 and rel_v < 700.0
-        if carry_like and (jump > 0 or djump > 0) and (t - last_t_by_mech["flicking"]) >= cooldown["flicking"]:
-            j = _find_next_idx_by_time(times, i, 0.35)
-            fr2 = timeline[j]
-            b2 = fr2.get("ball", {}) or {}
-            bz2 = _safe_float(b2.get("z", 0.0))
-            up_spike = (bz2 - bz) > 120.0 or (_safe_float(b2.get("vz", 0.0)) - _safe_float(b.get("vz", 0.0))) > 220.0
-            fwd0 = _ball_forward_speed_to_opp(fr, team)
-            fwd1 = _ball_forward_speed_to_opp(fr2, team)
-            forward_spike = (fwd1 - fwd0) > 260.0
-            power = _ball_speed(fr2) > b_speed + 300.0
-            if up_spike and forward_spike:
-                q = _clamp01(0.35 + 0.25 * (1.0 if power else 0.4) + 0.25 * _clamp01((fwd1 - fwd0) / 900.0) + 0.15 * _clamp01((bz2 - bz) / 240.0))
-                reason = "flick generated threatening ball launch" if q >= 0.5 else "flick lacked threat or power"
-                _add_event(
-                    events,
-                    "flicking",
-                    t,
-                    q,
-                    reason,
-                    execution_score_0_1=round(_clamp01(0.40 + 0.30 * (1.0 if up_spike else 0.0) + 0.30 * (1.0 if forward_spike else 0.0)), 3),
-                    decision_score_0_1=round(_clamp01(0.40 + 0.30 * (1.0 if attacking_half else 0.4) + 0.30 * (1.0 if ctx_now.get("pressure_level") != "low" else 0.5)), 3),
-                    outcome_score_0_1=round(_clamp01(0.35 + 0.35 * (1.0 if power else 0.0) + 0.30 * (1.0 if forward_spike else 0.0)), 3),
-                    risk_score_0_1=round(_clamp01((1.0 - _safe_float(ctx_now.get("ball_danger_0_1", 0.0))) + (0.10 if bool(ctx_now.get("support_available")) else 0.0)), 3),
-                    issue_tags=(["low_power"] if not power else []) + (["no_threat_created"] if q < 0.5 else []),
-                    improvement_tags=(["pop_ball_higher"] if not up_spike else []) + (["accelerate_flick_contact"] if not forward_spike else []),
-                )
-                _apply_event_context(events[-1], timeline=timeline, times=times, idx=i, player=player, player_teams=player_teams)
-                last_t_by_mech["flicking"] = t
+        ball_balanced = _ball_balanced_on_car(fr, player)
+        had_flick_carry = flick_carry_active
+        flick_carry_origin_idx = flick_carry_start_idx
+        if ball_balanced:
+            if not flick_carry_active:
+                flick_carry_active = True
+                flick_carry_start_idx = i
+        else:
+            flick_carry_active = False
+            flick_carry_start_idx = 0
+
+        prev_p_flick = _player_frame(timeline[max(0, i - 1)], player) if i > 0 else None
+        prev_djump_flick = int(_safe_float(prev_p_flick.get("double_jump", 0.0))) if prev_p_flick else 0
+        dodge_release = prev_djump_flick == 1 and djump == 0
+        if had_flick_carry and dodge_release and (t - last_t_by_mech["flicking"]) >= cooldown["flicking"]:
+            carry_duration = max(0.0, t - times[flick_carry_origin_idx])
+            if carry_duration < _FLICK_MIN_CARRY_S:
+                pass
+            else:
+                j = _find_next_idx_by_time(times, i, _FLICK_MAX_RELEASE_S)
+                fr2 = timeline[j]
+                b2 = fr2.get("ball", {}) or {}
+                bz2 = _safe_float(b2.get("z", 0.0))
+                up_gain = max((bz2 - bz), (_safe_float(b2.get("vz", 0.0)) - _safe_float(b.get("vz", 0.0))))
+                fwd0 = _ball_forward_speed_to_opp(fr, team)
+                fwd1 = _ball_forward_speed_to_opp(fr2, team)
+                forward_gain = fwd1 - fwd0
+                up_spike = up_gain >= _FLICK_MIN_POST_UP_GAIN
+                forward_spike = forward_gain >= _FLICK_MIN_POST_FORWARD_GAIN
+                power = _ball_speed(fr2) > b_speed + 300.0
+                if up_spike or forward_spike:
+                    q = _clamp01(
+                        0.30
+                        + 0.20 * _clamp01(carry_duration / 0.45)
+                        + 0.20 * (1.0 if power else 0.35)
+                        + 0.15 * _clamp01(max(0.0, forward_gain) / 900.0)
+                        + 0.15 * _clamp01(max(0.0, up_gain) / 240.0)
+                    )
+                    reason = "flick generated threatening ball launch" if q >= 0.5 else "flick lacked threat or power"
+                    _add_event(
+                        events,
+                        "flicking",
+                        t,
+                        q,
+                        reason,
+                        execution_score_0_1=round(_clamp01(0.35 + 0.20 * _clamp01(carry_duration / 0.45) + 0.20 * (1.0 if dodge_release else 0.0) + 0.25 * (1.0 if up_spike else 0.0)), 3),
+                        decision_score_0_1=round(_clamp01(0.40 + 0.30 * (1.0 if attacking_half else 0.4) + 0.30 * (1.0 if ctx_now.get("pressure_level") != "low" else 0.5)), 3),
+                        outcome_score_0_1=round(_clamp01(0.30 + 0.30 * (1.0 if power else 0.0) + 0.20 * (1.0 if up_spike else 0.0) + 0.20 * (1.0 if forward_spike else 0.0)), 3),
+                        risk_score_0_1=round(_clamp01((1.0 - _safe_float(ctx_now.get("ball_danger_0_1", 0.0))) + (0.10 if bool(ctx_now.get("support_available")) else 0.0)), 3),
+                        issue_tags=(["low_power"] if not power else []) + (["no_threat_created"] if q < 0.5 else []),
+                        improvement_tags=(["balance_carry_first"] if carry_duration < 0.30 else []) + (["pop_ball_higher"] if not up_spike else []) + (["accelerate_flick_contact"] if not forward_spike else []),
+                        controlled_carry_s=round(carry_duration, 3),
+                    )
+                    _apply_event_context(events[-1], timeline=timeline, times=times, idx=i, player=player, player_teams=player_teams)
+                    last_t_by_mech["flicking"] = t
+            flick_carry_active = False
+            flick_carry_start_idx = 0
 
         in_carry_state = d_pb <= 200.0 and bz < 250.0 and rel_v < 700.0
         if in_carry_state:
@@ -1737,24 +2056,40 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
         prev_p = _player_frame(timeline[max(0, i - 1)], player) if i > 0 else None
         prev_djump = int(_safe_float(prev_p.get("double_jump", 1.0))) if prev_p else 1
         djump = int(_safe_float(p.get("double_jump", 0.0)))
+        airborne_for = max(0.0, t - _last_ground_t)
+        xy_gap = ((px - bx) ** 2 + (py - by) ** 2) ** 0.5
+        z_gap = pz - bz
 
         # Phase 1: flip counter reset detected (djump 0→1 while airborne near ball)
-        if (prev_djump == 0 and djump == 1 and pz > 80.0 and d_pb < 300.0
-                and _fr_state == "idle"):
+        if (
+            prev_djump == 0 and djump == 1
+            and pz >= _FLIP_RESET_MIN_PLAYER_Z
+            and bz >= _FLIP_RESET_MIN_BALL_Z
+            and d_pb <= _FLIP_RESET_MAX_DIST
+            and xy_gap <= _FLIP_RESET_MAX_XY_GAP
+            and -40.0 <= z_gap <= _FLIP_RESET_MAX_Z_GAP
+            and pz <= _FLIP_RESET_MAX_PLAYER_Z
+            and airborne_for >= _FLIP_RESET_MIN_AIRBORNE_S
+            and not on_wall_surface
+            and _fr_state == "idle"
+        ):
             _fr_state = "reset_obtained"
             _fr_t0 = t
             _fr_idx0 = i
+            _fr_airborne_s = airborne_for
 
         # Phase 1 timeout
-        if _fr_state == "reset_obtained" and (t - _fr_t0) > 2.0:
+        if _fr_state == "reset_obtained" and ((t - _fr_t0) > _FLIP_RESET_MAX_USE_DELAY_S or pz < 90.0):
             _fr_state = "idle"
+            _fr_airborne_s = 0.0
 
         # Phase 2: flip executed after reset (djump 1→0 while airborne within window)
         if (
             _fr_state == "reset_obtained"
             and prev_djump == 1 and djump == 0
-            and pz > 80.0
-            and (t - _fr_t0) <= 2.0
+            and pz >= _FLIP_RESET_MIN_PLAYER_Z
+            and (t - _fr_t0) >= _FLIP_RESET_MIN_USE_DELAY_S
+            and (t - _fr_t0) <= _FLIP_RESET_MAX_USE_DELAY_S
             and not _in_kickoff_window(t)
             and (t - last_t_by_mech.get("flip_reset", -9999.0)) >= cooldown.get("flip_reset", 2.5)
         ):
@@ -1764,32 +2099,40 @@ def _detect_mechanic_events(timeline: List[Dict[str, Any]], player: str, player_
             by2_fr = _safe_float(b2_fr.get("y", 0.0))
             bspd2_fr = _ball_speed(fr2_fr)
             toward_opp_fr = abs(by2_fr - opp_goal) < abs(by - opp_goal) - 80.0
+            attacking_use = attacking_half or abs(by - opp_goal) < 2600.0
+            threatening_use = toward_opp_fr and bspd2_fr >= _FLIP_RESET_MIN_POST_SPEED and attacking_use
+            if not threatening_use:
+                _fr_state = "idle"
+                _fr_airborne_s = 0.0
+                continue
             q_fr = _clamp01(
                 0.50
                 + 0.30 * (1.0 if toward_opp_fr else 0.10)
                 + 0.20 * _clamp01(bspd2_fr / 2000.0)
             )
-            reason_fr = (
-                "flip reset executed and directed toward goal" if toward_opp_fr
-                else "flip reset executed without goal threat"
-            )
+            reason_fr = "flip reset executed and directed toward goal"
             _add_event(
                 events,
-                "flip_reset",
+                "aerial_offense",
                 _fr_t0,
                 q_fr,
                 reason_fr,
+                event_type="flip_reset",
                 execution_score_0_1=round(_clamp01(0.55 + 0.25 * (1.0 if toward_opp_fr else 0.2) + 0.20 * _clamp01(bspd2_fr / 2000.0)), 3),
                 decision_score_0_1=round(_clamp01(0.55 + 0.25 * (1.0 if attacking_half else 0.4) + 0.20 * (0.5 if bool(ctx_now.get("last_man")) else 1.0)), 3),
                 outcome_score_0_1=round(_clamp01(0.40 + 0.40 * (1.0 if toward_opp_fr else 0.0) + 0.20 * _clamp01(bspd2_fr / 2000.0)), 3),
                 risk_score_0_1=round(_clamp01(0.60 + 0.30 * (1.0 if toward_opp_fr else 0.0)), 3),
-                issue_tags=(["no_goal_threat"] if not toward_opp_fr else []) + (["last_man_commit"] if bool(ctx_now.get("last_man")) else []),
-                improvement_tags=(["aim_flip_at_goal"] if not toward_opp_fr else []) + (["add_more_power"] if bspd2_fr < 1000.0 else []),
+                issue_tags=(["last_man_commit"] if bool(ctx_now.get("last_man")) else []),
+                improvement_tags=(["add_more_power"] if bspd2_fr < 1300.0 else []),
+                regained_flip_while_airborne_s=round(_fr_airborne_s, 3),
             )
             events[-1]["player"] = player
+            _attach_mechanic_tags(events[-1], "flip_reset")
             _apply_event_context(events[-1], timeline=timeline, times=times, idx=_fr_idx0, player=player, player_teams=player_teams)
+            last_t_by_mech["aerial_offense"] = max(last_t_by_mech["aerial_offense"], _fr_t0)
             last_t_by_mech["flip_reset"] = t
             _fr_state = "idle"
+            _fr_airborne_s = 0.0
 
         # Expanded event coverage: missed open nets.
         open_net = attacking_half and d_pb < 1200.0 and abs(bx) < 950.0 and abs(by - opp_goal) < 2100.0 and bz < 260.0
@@ -1855,11 +2198,6 @@ def _suppress_redundant_followup_events(events: List[Dict[str, Any]]) -> List[Di
         end_t = _safe_float(ev.get("kickoff_window_end", ev.get("time", 0.0)))
         kickoff_windows.append((start_t, end_t + 1.0))
 
-    # Mechanics that override a generic aerial_offense/aerial_defense event
-    # when they occur close in time (higher-priority mechanics are more specific)
-    _HIGH_PRIO_AERIALS = {"flip_reset", "ceiling_shot", "double_tap"}
-    _AERIAL_MECHS = {"aerial_offense", "aerial_defense"}
-
     filtered: List[Dict[str, Any]] = []
     for ev in ordered:
         mid = _canonical_mid(str(ev.get("mechanic_id", "")))
@@ -1867,31 +2205,11 @@ def _suppress_redundant_followup_events(events: List[Dict[str, Any]]) -> List[Di
         if mid in {"challenge", "fifty_fifty_control"} and any(start <= t <= end for start, end in kickoff_windows):
             continue
 
-        # Precedence: high-priority aerial mechanics override generic aerials
-        if mid in _AERIAL_MECHS:
-            # Check if a high-priority aerial event is nearby in the already-filtered list
-            # or upcoming in ordered (look-ahead within 1.2 s)
-            shadowed = False
-            for other in ordered:
-                other_mid = _canonical_mid(str(other.get("mechanic_id", "")))
-                other_t = _safe_float(other.get("time", 0.0))
-                if other_mid in _HIGH_PRIO_AERIALS and abs(other_t - t) <= 1.2:
-                    shadowed = True
-                    break
-            if shadowed:
-                continue
-
         if filtered:
             prev = filtered[-1]
             prev_mid = _canonical_mid(str(prev.get("mechanic_id", "")))
             prev_t = _safe_float(prev.get("time", 0.0))
             close_in_time = abs(t - prev_t) <= 0.35
-
-            # High-priority aerial mechanics also evict the most recent filtered entry
-            # if it was a generic aerial that snuck through before the specialist was processed
-            if close_in_time and mid in _HIGH_PRIO_AERIALS and prev_mid in _AERIAL_MECHS:
-                filtered[-1] = ev
-                continue
 
             if close_in_time and {mid, prev_mid} == {"challenge", "fifty_fifty_control"}:
                 if mid == "fifty_fifty_control":
@@ -1901,7 +2219,9 @@ def _suppress_redundant_followup_events(events: List[Dict[str, Any]]) -> List[Di
                 prev_score = _safe_float(prev.get("quality_score", prev.get("score", 0.0)))
                 next_score = _safe_float(ev.get("quality_score", ev.get("score", 0.0)))
                 if next_score < prev_score:
-                    filtered[-1] = ev
+                    _merge_event_payload(prev, ev)
+                else:
+                    filtered[-1] = _merge_event_payload(ev, prev)
                 continue
         filtered.append(ev)
     return filtered
@@ -1992,8 +2312,13 @@ def _grade_one(mechanic: str, evs: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def grade_game_mechanics(timeline: List[Dict[str, Any]], player: str, player_teams: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    mechanic_events = _detect_mechanic_events(timeline or [], str(player or ""), player_teams or {})
+def grade_game_mechanics(
+    timeline: List[Dict[str, Any]],
+    player: str,
+    player_teams: Dict[str, Any] | None = None,
+    replay_meta: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    mechanic_events = _detect_mechanic_events(timeline or [], str(player or ""), player_teams or {}, replay_meta or {})
     gamemode = infer_gamemode((timeline or [{}])[0], player_teams or {}, player) if timeline else "2v2"
     player_team = _player_team(player, player_teams or {})
     grades: List[Dict[str, Any]] = []
@@ -2005,7 +2330,7 @@ def grade_game_mechanics(timeline: List[Dict[str, Any]], player: str, player_tea
     overall_source = played_grades if played_grades else grades
     overall = mean([float(g.get("score_0_100", 50.0)) for g in overall_source]) if overall_source else 50.0
     return {
-        "grading_version": "mechanic_v6_aerial_wall_fix",
+        "grading_version": GRADING_VERSION,
         "context_version": "context_v1_gamemode_support",
         "player": str(player or ""),
         "overall_mechanics_score": round(float(overall), 2),
@@ -2038,7 +2363,7 @@ def summarize_mechanic_scores(payload: Dict[str, Any]) -> Dict[str, Any]:
         "mechanic_scores": out_scores,
         "mechanic_confidence": out_conf,
         "mechanic_issue_tags": out_tags,
-        "mechanic_grading_version": str(payload.get("grading_version", "mechanic_v3_contextual")),
+        "mechanic_grading_version": str(payload.get("grading_version", "legacy")),
     }
 
 
@@ -2288,6 +2613,8 @@ def explain_mechanic_event(
         "common_mistake": str(mechanic_copy.get("common_mistake", "")),
         "training_cue": str(mechanic_copy.get("training_cue", "")),
         "actionable_hints": actionable_hints[:2],
+        "mechanic_tags": [str(tag) for tag in (event.get("mechanic_tags", []) or []) if str(tag).strip()][:6],
+        "mechanic_tag_labels": [str(tag) for tag in (event.get("mechanic_tag_labels", []) or []) if str(tag).strip()][:6],
         "issue_tags": issue_tags[:6],
         "improvement_tags": improvement_tags[:6],
         "template_title": title,

@@ -718,6 +718,13 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
 
+        if self.path == "/api/replay/library/recompute":
+            try:
+                data = self.store.recompute_library_replays()
+                return self._send_json({"ok": True, "data": data})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=400)
+
         if self.path == "/api/replay/delete":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length) if length > 0 else b"{}"

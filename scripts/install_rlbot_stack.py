@@ -519,11 +519,24 @@ def install_python_requirements(resource_root: Path, python_exe: Path, extra_pac
     if not requirements_file.exists():
         requirements_file = resource_root / "requirements.txt"
 
-    run([str(python_exe), "-m", "pip", "install", "--upgrade", "pip"])
-    run([str(python_exe), "-m", "pip", "install", "-r", str(requirements_file)])
+    pip_check = run([str(python_exe), "-m", "pip", "--version"], check=False)
+    if pip_check.returncode != 0:
+        log("pip is missing or unhealthy in the project venv. Repairing with ensurepip...")
+        run([str(python_exe), "-m", "ensurepip", "--upgrade"])
+        run([str(python_exe), "-m", "pip", "--version"])
+
+    pip_upgrade = run(
+        [str(python_exe), "-m", "pip", "install", "--disable-pip-version-check", "--upgrade", "pip", "setuptools", "wheel"],
+        check=False,
+    )
+    if pip_upgrade.returncode != 0:
+        log("Warning: pip upgrade failed. Continuing with the existing pip because requirements installation can still succeed.")
+        run([str(python_exe), "-m", "pip", "--version"])
+
+    run([str(python_exe), "-m", "pip", "install", "--disable-pip-version-check", "-r", str(requirements_file)])
 
     if extra_packages:
-        run([str(python_exe), "-m", "pip", "install", *extra_packages])
+        run([str(python_exe), "-m", "pip", "install", "--disable-pip-version-check", *extra_packages])
 
 
 def write_training_bridge_launcher(install_root: Path) -> tuple[Path, Path]:

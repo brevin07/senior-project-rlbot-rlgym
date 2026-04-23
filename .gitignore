@@ -2,15 +2,16 @@
 .venv/
 .venv-wsl/
 venv/
+venv_final/
 venv_win/
 venv_linux/
 rlbot_training/venv/
 rlbot_training/venv_win/
 rlbot_training/vnev/
-
 # IDE / editor
 .idea/
 .vscode/
+.claude/worktrees/
 
 # Python caches
 __pycache__/

@@ -19,7 +19,7 @@ import pandas as pd
 
 from rocketcoach.common.persistence import AppDB
 from rocketcoach.live_analysis.llm_event_explainer import maybe_rewrite_explanation, maybe_rewrite_explanations_batch
-from rocketcoach.live_analysis.mechanic_grader import grade_game_mechanics, summarize_mechanic_scores, explain_mechanic_event
+from rocketcoach.live_analysis.mechanic_grader import GRADING_VERSION, grade_game_mechanics, summarize_mechanic_scores, explain_mechanic_event
 from rocketcoach.live_analysis.recommendation_engine import compute_recommendations
 from rocketcoach.replay_dashboard.replay_loader import DEBUG_METRIC_KEYS, METRIC_KEYS, ReplaySession, ensure_player_metrics, load_replay_bytes
 from rocketcoach.replay_dashboard.training_catalog import NON_BOT_DRILL_SUMMARIES, build_training_option
@@ -82,6 +82,7 @@ class ReplaySharedState:
 class ReplayStateStore:
     def __init__(self, *, db: AppDB):
         self._lock = threading.Lock()
+        self._analysis_condition = threading.Condition(self._lock)
         self._state = ReplaySharedState()
         self._db = db
         self._artifact_root = Path(__file__).resolve().parents[2] / "artifacts" / "replay_library"
@@ -89,6 +90,9 @@ class ReplayStateStore:
         self._training_bridge_lock = threading.Lock()
         self._training_bridge_sessions: Dict[str, Dict[str, Any]] = {}
         self._latest_training_preflight_by_auth_user: Dict[int, Dict[str, Any]] = {}
+        self._analysis_inflight = False
+        self._analysis_inflight_player = ""
+        self._analysis_inflight_session_id = ""
 
     def _persist_training_bridge_error(self, *, token: str, record: Dict[str, Any]) -> str:
         logs_root = Path(__file__).resolve().parents[2] / "artifacts" / "training_bridge_errors"
@@ -150,6 +154,14 @@ class ReplayStateStore:
             except Exception:
                 continue
         return None
+
+    def _artifact_replay_files(self) -> List[Path]:
+        if not self._artifact_root.exists():
+            return []
+        return sorted(
+            [p for p in self._artifact_root.rglob("*.replay") if p.is_file()],
+            key=lambda p: (str(p.parent).lower(), p.name.lower()),
+        )
 
     @staticmethod
     def _norm_player_name(v: str) -> str:
@@ -239,6 +251,20 @@ class ReplayStateStore:
             )
             analysis_player = str(payload.get("analysis_player", "") or "")
             mechanics = dict(payload.get("mechanics", {}) or {})
+
+            # ── Version staleness check ──────────────────────────────────────────
+            # If the cached mechanics were graded with an older version of the
+            # detector, recompute them right here using the already-parsed timeline
+            # (no replay re-parsing required — this is fast).
+            cached_version = str(mechanics.get("grading_version", "legacy") or "legacy")
+            if cached_version != GRADING_VERSION and analysis_player and session.timeline:
+                try:
+                    mechanics = self._compute_mechanics_for_selected_player(session, analysis_player)
+                    self._persist_analysis_summary(session, analysis_player, mechanics)
+                    self._persist_prepared_replay(session=session, player=analysis_player, mechanics_payload=mechanics)
+                except Exception:
+                    pass  # Serve the old mechanics rather than failing the open
+
             with self._lock:
                 self._state.session = session
                 self._state.analysis_player = analysis_player
@@ -254,11 +280,12 @@ class ReplayStateStore:
                     p: {"status": "ready" if p == analysis_player else "idle", "message": "Metrics ready." if p == analysis_player else "Not selected.", "error": ""}
                     for p in (session.players or [])
                 }
+                regrade_note = "" if cached_version == GRADING_VERSION else f" (re-graded from {cached_version})"
                 self._set_job(
                     session_id=str(session.session_id or ""),
                     status="ready",
                     progress=1.0,
-                    message="Replay loaded from cache. Ready to play.",
+                    message=f"Replay loaded from cache. Ready to play.{regrade_note}",
                     replay_name=str(session.replay_name or ""),
                     phase="ready",
                     checklist={
@@ -304,6 +331,10 @@ class ReplayStateStore:
             self._state.mechanics = {}
             self._state.explain_progress = {}
             self._state.explain_background_session_id = ""
+            self._analysis_inflight = False
+            self._analysis_inflight_player = ""
+            self._analysis_inflight_session_id = ""
+            self._analysis_condition.notify_all()
             self._set_job(
                 session_id="",
                 status="idle",
@@ -534,7 +565,7 @@ class ReplayStateStore:
                     self._state.job.checklist["replay_parsed"] = True
                     self._state.job.checklist["timeline_ready"] = True
                     self._state.job.progress = max(self._state.job.progress, 0.8)
-                    self._state.job.message = "Replay parsed and timeline built."
+                    self._state.job.message = "Replay parsed and timeline built. Warming player analysis..."
 
                 with self._lock:
                     self._state.session = session
@@ -560,10 +591,17 @@ class ReplayStateStore:
                             "upload_received": True,
                             "replay_parsed": True,
                             "timeline_ready": True,
-                            "analysis_ready": True,
+                            "analysis_ready": False,
                             "dashboard_ready": True,
                         },
                     )
+                def _warm_analysis() -> None:
+                    try:
+                        self.run_selected_analysis()
+                    except Exception:
+                        return
+
+                threading.Thread(target=_warm_analysis, daemon=True).start()
                 summary = {}
                 if session.players:
                     summary["player_count"] = len(session.players)
@@ -571,6 +609,7 @@ class ReplayStateStore:
                 replay_date_iso = str((session.replay_meta or {}).get("replay_date_iso", "") or "")
                 summary["replay_date_iso"] = replay_date_iso
                 summary["replay_date_source"] = "replay_meta" if replay_date_iso else "created_at_fallback"
+                summary.update(self._summary_team_context(session))
                 if persist_to_library:
                     t_save = time.time()
                     self._db.save_replay_session(
@@ -768,6 +807,29 @@ class ReplayStateStore:
             player = self._state.analysis_player
             if not player:
                 raise RuntimeError("Select analysis player first.")
+            while (
+                self._analysis_inflight
+                and self._analysis_inflight_session_id == str(session.session_id or "")
+                and self._analysis_inflight_player == player
+            ):
+                self._analysis_condition.wait(timeout=0.1)
+                if (
+                    self._state.analysis_ready
+                    and player in session.metrics_by_player
+                    and player in session.events_by_player
+                    and bool(self._state.mechanics)
+                ):
+                    return
+            if (
+                self._state.analysis_ready
+                and player in session.metrics_by_player
+                and player in session.events_by_player
+                and bool(self._state.mechanics)
+            ):
+                return
+            self._analysis_inflight = True
+            self._analysis_inflight_player = player
+            self._analysis_inflight_session_id = str(session.session_id or "")
             self._state.metrics_status = "computing"
             self._state.metrics_error = ""
             self._state.analysis_error = ""
@@ -784,24 +846,46 @@ class ReplayStateStore:
                 self._state.metrics_error = str(exc)
                 self._state.analysis_error = str(exc)
                 self._state.analysis_ready = False
+                self._state.job.checklist["analysis_ready"] = False
+                self._analysis_inflight = False
+                self._analysis_inflight_player = ""
+                self._analysis_inflight_session_id = ""
+                self._analysis_condition.notify_all()
             raise
-        with self._lock:
-            self._state.player_metric_jobs[player] = {"status": "ready", "message": "Metrics ready.", "error": ""}
-            self._state.metrics_ready_count = 1
-            self._state.metrics_total_count = 1
-            self._state.metrics_status = "ready"
-            self._state.analysis_ready = True
-            self._state.analysis_locked = True
-        t_mech = time.time()
-        mech_payload = self._compute_mechanics_for_selected_player(session, player)
-        self._timed("mechanic_grading", t_mech)
-        with self._lock:
-            self._state.mechanics = mech_payload
-        t_persist = time.time()
-        self._persist_analysis_summary(session, player, mech_payload)
-        self._persist_prepared_replay(session=session, player=player, mechanics_payload=mech_payload)
-        self._timed("persist_analysis_and_prepared_replay", t_persist)
-        self._timed("run_selected_analysis_total", t_analysis)
+        try:
+            t_mech = time.time()
+            mech_payload = self._compute_mechanics_for_selected_player(session, player)
+            self._timed("mechanic_grading", t_mech)
+            with self._lock:
+                self._state.player_metric_jobs[player] = {"status": "ready", "message": "Metrics ready.", "error": ""}
+                self._state.metrics_ready_count = 1
+                self._state.metrics_total_count = 1
+                self._state.metrics_status = "ready"
+                self._state.analysis_ready = True
+                self._state.analysis_locked = True
+                self._state.mechanics = mech_payload
+                self._state.job.checklist["analysis_ready"] = True
+                self._state.job.message = "Replay loaded. Ready to play."
+            t_persist = time.time()
+            self._persist_analysis_summary(session, player, mech_payload)
+            self._persist_prepared_replay(session=session, player=player, mechanics_payload=mech_payload)
+            self._timed("persist_analysis_and_prepared_replay", t_persist)
+            self._timed("run_selected_analysis_total", t_analysis)
+        except Exception as exc:
+            with self._lock:
+                self._state.player_metric_jobs[player] = {"status": "error", "message": "Mechanic grading failed.", "error": str(exc)}
+                self._state.metrics_status = "error"
+                self._state.metrics_error = str(exc)
+                self._state.analysis_error = str(exc)
+                self._state.analysis_ready = False
+                self._state.job.checklist["analysis_ready"] = False
+            raise
+        finally:
+            with self._lock:
+                self._analysis_inflight = False
+                self._analysis_inflight_player = ""
+                self._analysis_inflight_session_id = ""
+                self._analysis_condition.notify_all()
 
     def analysis_status(self) -> Dict[str, Any]:
         with self._lock:
@@ -892,7 +976,46 @@ class ReplayStateStore:
             teams = dict((session.replay_meta or {}).get("player_teams", {}) or {})
         except Exception:
             teams = {}
-        return grade_game_mechanics(session.timeline or [], player, teams)
+        return grade_game_mechanics(session.timeline or [], player, teams, dict(session.replay_meta or {}))
+
+    @staticmethod
+    def _summary_team_context(session: ReplaySession) -> Dict[str, Any]:
+        replay_meta = dict(session.replay_meta or {})
+        teams = dict(replay_meta.get("player_teams", {}) or {})
+        scores = dict(replay_meta.get("team_scores_final", {}) or {})
+        blue = scores.get("blue", None)
+        orange = scores.get("orange", None)
+
+        try:
+            blue = int(blue) if blue is not None else None
+        except Exception:
+            blue = None
+        try:
+            orange = int(orange) if orange is not None else None
+        except Exception:
+            orange = None
+
+        if blue is None or orange is None:
+            score_samples = list(replay_meta.get("score_samples", []) or [])
+            if score_samples:
+                last = dict(score_samples[-1] or {})
+                if blue is None:
+                    try:
+                        blue = int(last.get("blue", 0) or 0)
+                    except Exception:
+                        blue = 0
+                if orange is None:
+                    try:
+                        orange = int(last.get("orange", 0) or 0)
+                    except Exception:
+                        orange = 0
+
+        out: Dict[str, Any] = {}
+        if teams:
+            out["player_teams"] = teams
+        if blue is not None and orange is not None:
+            out["team_scores_final"] = {"blue": int(blue), "orange": int(orange)}
+        return out
 
     def _persist_analysis_summary(self, session: ReplaySession, player: str, mechanics_payload: Dict[str, Any]) -> None:
         profile = self.current_profile()
@@ -921,6 +1044,7 @@ class ReplayStateStore:
         replay_date_iso = str((session.replay_meta or {}).get("replay_date_iso", "") or "")
         summary["replay_date_iso"] = replay_date_iso
         summary["replay_date_source"] = "replay_meta" if replay_date_iso else "created_at_fallback"
+        summary.update(self._summary_team_context(session))
         summary.update(summarize_mechanic_scores(mechanics_payload or {}))
         summary["mechanic_event_count"] = len((mechanics_payload or {}).get("mechanic_events", []) or [])
         self._db.save_replay_session(
@@ -936,6 +1060,155 @@ class ReplayStateStore:
             summary=summary,
             created_at=str(row.get("created_at", "")) or None,
         )
+
+    @staticmethod
+    def _session_from_prepared_payload(row: Dict[str, Any], payload: Dict[str, Any]) -> ReplaySession:
+        return ReplaySession(
+            session_id=str(row.get("session_id", "")),
+            replay_name=str(payload.get("replay_name", row.get("replay_name", "")) or ""),
+            players=[str(p) for p in (payload.get("players", []) or [])],
+            timeline=list(payload.get("timeline", []) or []),
+            boost_pads=list(payload.get("boost_pads", []) or []),
+            replay_meta=dict(payload.get("replay_meta", {}) or {}),
+            df=pd.DataFrame(),
+            duration_s=float(payload.get("duration_s", row.get("duration_s", 0.0)) or 0.0),
+            metrics_by_player=dict(payload.get("metrics_by_player", {}) or {}),
+            events_by_player=dict(payload.get("events_by_player", {}) or {}),
+        )
+
+    def _saved_session_analysis_player(
+        self,
+        *,
+        session: ReplaySession,
+        row: Dict[str, Any],
+        profile: Dict[str, Any],
+        prepared_payload: Dict[str, Any] | None = None,
+    ) -> str:
+        summary = dict(row.get("summary", {}) or {})
+        candidates = [
+            str((prepared_payload or {}).get("analysis_player", "") or ""),
+            str(summary.get("analysis_player", "") or ""),
+            str(row.get("tracked_player_name", "") or ""),
+            self._match_profile_player(players=list(session.players or []), profile=profile),
+        ]
+        for candidate in candidates:
+            clean = str(candidate or "").strip()
+            if clean and clean in (session.players or []):
+                return clean
+        return str((session.players or [""])[0] or "").strip()
+
+    def _recompute_saved_replay_row(self, *, row: Dict[str, Any], profile: Dict[str, Any]) -> Dict[str, Any]:
+        prepared_payload = self._deserialize_prepared_payload(bytes(row.get("prepared_payload", b"") or b""))
+        if prepared_payload:
+            session = self._session_from_prepared_payload(row, prepared_payload)
+        else:
+            blob = row.get("replay_blob", None)
+            if not isinstance(blob, (bytes, bytearray)) or not blob:
+                raise RuntimeError("Replay is missing both prepared payload and replay blob.")
+            replay_name = str(row.get("replay_name", "") or f"{row.get('session_id', 'replay')}.replay")
+            session = load_replay_bytes(Path(replay_name).name, bytes(blob))
+            session.session_id = str(row.get("session_id", "") or session.session_id)
+            session.replay_name = replay_name or session.replay_name
+
+        player = self._saved_session_analysis_player(
+            session=session,
+            row=row,
+            profile=profile,
+            prepared_payload=prepared_payload,
+        )
+        if not player:
+            raise RuntimeError("Could not resolve an analysis player for this replay.")
+
+        has_metrics = bool((session.metrics_by_player or {}).get(player)) and player in (session.events_by_player or {})
+        if not has_metrics and not session.df.empty:
+            ensure_player_metrics(session, player)
+
+        mechanics_payload = self._compute_mechanics_for_selected_player(session, player)
+        self._persist_analysis_summary(session, player, mechanics_payload)
+        self._persist_prepared_replay(session=session, player=player, mechanics_payload=mechanics_payload)
+        return {
+            "session_id": str(session.session_id or ""),
+            "replay_name": str(session.replay_name or ""),
+            "analysis_player": str(player or ""),
+            "mechanic_event_count": len((mechanics_payload or {}).get("mechanic_events", []) or []),
+            "mechanics_payload": mechanics_payload,
+        }
+
+    def import_artifact_library_replays(self, *, limit: int = 300) -> Dict[str, Any]:
+        profile = self._require_user()
+        files = self._artifact_replay_files()[: max(1, int(limit))]
+        imported = 0
+        skipped = 0
+        failed = 0
+        recomputed = 0
+        errors: List[str] = []
+
+        for replay_path in files:
+            replay_name = replay_path.name
+            try:
+                data = replay_path.read_bytes()
+                replay_sha1 = self._replay_sha1(data)
+                if self._is_duplicate_replay_hash(user_id=int(profile["id"]), replay_sha1=replay_sha1):
+                    skipped += 1
+                    continue
+
+                session = load_replay_bytes(file_name=replay_name, data=data)
+                tracked_name = self._match_profile_player(
+                    players=[str(p) for p in (session.players or [])],
+                    profile=profile,
+                )
+                if not tracked_name:
+                    tracked_name = str((session.players or [""])[0] or "").strip()
+                if not tracked_name:
+                    skipped += 1
+                    if len(errors) < 10:
+                        errors.append(f"{replay_name}: replay contained no valid players.")
+                    continue
+
+                ensure_player_metrics(session, tracked_name)
+                mechanics_payload = self._compute_mechanics_for_selected_player(session, tracked_name)
+
+                summary: Dict[str, Any] = {
+                    "player_count": len(session.players or []),
+                    "replay_sha1": replay_sha1,
+                    "analysis_player": str(tracked_name or ""),
+                }
+                replay_date_iso = str((session.replay_meta or {}).get("replay_date_iso", "") or "")
+                summary["replay_date_iso"] = replay_date_iso
+                summary["replay_date_source"] = "replay_meta" if replay_date_iso else "created_at_fallback"
+                summary.update(self._summary_team_context(session))
+                summary.update(summarize_mechanic_scores(mechanics_payload or {}))
+                summary["mechanic_event_count"] = len((mechanics_payload or {}).get("mechanic_events", []) or [])
+
+                self._db.save_replay_session(
+                    session_id=session.session_id,
+                    user_id=int(profile["id"]),
+                    source_type="replay_artifact_import",
+                    replay_name=session.replay_name,
+                    map_name=str((session.replay_meta or {}).get("map_name", "soccar")),
+                    duration_s=float(session.duration_s or 0.0),
+                    tracked_player_name=tracked_name,
+                    tracked_player_index=0,
+                    artifact_manifest={"replay_file": str(replay_path)},
+                    replay_blob=data,
+                    summary=summary,
+                )
+                self._persist_prepared_replay(session=session, player=tracked_name, mechanics_payload=mechanics_payload)
+                imported += 1
+                recomputed += 1
+            except Exception as exc:
+                failed += 1
+                if len(errors) < 10:
+                    errors.append(f"{replay_name}: {exc}")
+
+        return {
+            "artifact_files_found": len(files),
+            "imported_sessions": imported,
+            "recomputed_sessions": recomputed,
+            "skipped_sessions": skipped,
+            "failed_sessions": failed,
+            "errors": errors,
+        }
 
     def current_mechanics(self) -> Dict[str, Any]:
         with self._lock:
@@ -964,6 +1237,53 @@ class ReplayStateStore:
             self._state.mechanics = dict(payload or {})
         self._persist_analysis_summary(session, player, payload)
         return payload
+
+    def recompute_library_replays(self, *, limit: int = 300) -> Dict[str, Any]:
+        profile = self._require_user()
+        rows = self._db.list_replay_sessions_detailed(user_id=int(profile["id"]), limit=max(1, int(limit)))
+        updated = 0
+        failed = 0
+        skipped = 0
+        errors: List[str] = []
+
+        with self._lock:
+            current_session_id = str(getattr(self._state.session, "session_id", "") or "")
+
+        for row in rows:
+            try:
+                full_row = self._db.get_replay_session(
+                    session_id=str(row.get("session_id", "")),
+                    user_id=int(profile["id"]),
+                ) or {}
+                if not full_row:
+                    raise RuntimeError("Saved replay row disappeared before recompute.")
+                result = self._recompute_saved_replay_row(row=full_row, profile=profile)
+                updated += 1
+                if current_session_id and str(result.get("session_id", "")) == current_session_id:
+                    with self._lock:
+                        if (
+                            self._state.session
+                            and str(self._state.session.session_id or "") == current_session_id
+                            and str(self._state.analysis_player or "") == str(result.get("analysis_player", ""))
+                        ):
+                            self._state.mechanics = dict(result.get("mechanics_payload", {}) or {})
+            except Exception as exc:
+                replay_name = str(row.get("replay_name", "") or row.get("session_id", "replay"))
+                if "analysis player" in str(exc).lower():
+                    skipped += 1
+                else:
+                    failed += 1
+                if len(errors) < 10:
+                    errors.append(f"{replay_name}: {exc}")
+
+        return {
+            "total_sessions": len(rows),
+            "updated_sessions": updated,
+            "failed_sessions": failed,
+            "skipped_sessions": skipped,
+            "errors": errors,
+            "grading_version": GRADING_VERSION,
+        }
 
     def mechanic_events(self) -> list[Dict[str, Any]]:
         payload = self.current_mechanics() or {}
@@ -1434,6 +1754,7 @@ class ReplayStateStore:
                 {
                     "session_id": str(r.get("session_id", "")),
                     "replay_name": str(r.get("replay_name", "")),
+                    "replay_date_iso": replay_iso,
                     "x_time_iso": x_iso,
                     "x_time_unix": float(self._to_unix(x_iso)),
                     "x_time_source": "replay_meta" if replay_iso else "created_at",

@@ -2,39 +2,37 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
 
-type Mode = "signin" | "signup" | "verify";
+type Mode = "signin" | "signup" | "verify" | "forgot";
 
-// Mock data matching the exact mechanic structure used in the real dashboard
 const MOCK_MECHANICS = [
-  { id: "challenge",         label: "Challenge",        score: 38, quality: "bad"     },
-  { id: "fifty_fifty",       label: "50/50 Control",    score: 54, quality: "neutral" },
-  { id: "aerial_offense",    label: "Aerial Offense",   score: 47, quality: "neutral" },
-  { id: "shadow_defense",    label: "Shadow Defense",   score: 78, quality: "good"    },
-  { id: "carrying_dribbling",label: "Carry + Dribble",  score: 82, quality: "good"    },
+  { id: "challenge", label: "Challenge", score: 38, quality: "bad" },
+  { id: "fifty_fifty", label: "50/50 Control", score: 54, quality: "neutral" },
+  { id: "aerial_offense", label: "Aerial Offense", score: 47, quality: "neutral" },
+  { id: "shadow_defense", label: "Shadow Defense", score: 78, quality: "good" },
+  { id: "carrying_dribbling", label: "Carry + Dribble", score: 82, quality: "good" },
 ];
 
 const MOCK_EVENTS = [
-  { time: "1:24", mechanic: "Challenge",    quality: "bad",     score: 34 },
-  { time: "2:07", mechanic: "50/50 Control",quality: "neutral", score: 58 },
-  { time: "3:41", mechanic: "Shadow Defense",quality: "good",   score: 79 },
-  { time: "5:02", mechanic: "Aerial Offense",quality: "neutral",score: 49 },
+  { time: "1:24", mechanic: "Challenge", quality: "bad", score: 34 },
+  { time: "2:07", mechanic: "50/50 Control", quality: "neutral", score: 58 },
+  { time: "3:41", mechanic: "Shadow Defense", quality: "good", score: 79 },
+  { time: "5:02", mechanic: "Aerial Offense", quality: "neutral", score: 49 },
 ];
 
-/** SVG circular progress ring — r=15.9 makes circumference ≈ 100 so score maps 1:1 */
 function ScoreRing({ score, quality }: { score: number; quality: string }) {
   const color =
     quality === "good" ? "var(--success)"
     : quality === "neutral" ? "var(--warning)"
     : "var(--danger)";
   const clamp = Math.max(0, Math.min(100, score));
-  const gap   = 100 - clamp;
+  const gap = 100 - clamp;
   return (
     <svg viewBox="0 0 36 36" width="52" height="52" className="ap-ring">
-      {/* track */}
       <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--surface-3)" strokeWidth="3.2" />
-      {/* filled arc — starts at 12 o'clock via rotate(-90) */}
       <circle
-        cx="18" cy="18" r="15.9"
+        cx="18"
+        cy="18"
+        r="15.9"
         fill="none"
         stroke={color}
         strokeWidth="3.2"
@@ -42,9 +40,9 @@ function ScoreRing({ score, quality }: { score: number; quality: string }) {
         strokeDasharray={`${clamp} ${gap}`}
         transform="rotate(-90 18 18)"
       />
-      {/* score label */}
       <text
-        x="18" y="18"
+        x="18"
+        y="18"
         textAnchor="middle"
         dominantBaseline="central"
         fontSize="8"
@@ -58,60 +56,182 @@ function ScoreRing({ score, quality }: { score: number; quality: string }) {
 }
 
 export default function LoginPage() {
-  const { login, signup, confirmSignup, resendSignupCode, loading, authError, devBypassAuth } = useAuth();
+  const {
+    login,
+    signup,
+    confirmSignup,
+    resendSignupCode,
+    forgotPassword,
+    confirmForgotPassword,
+    loading,
+    authError,
+    devBypassAuth,
+  } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode]         = useState<Mode>("signin");
-  const [email, setEmail]       = useState("");
+  const [mode, setMode] = useState<Mode>("signin");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode]         = useState("");
-  const [busy, setBusy]         = useState(false);
-  const [error, setError]       = useState("");
-  const [message, setMessage]   = useState("");
+  const [code, setCode] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [resetCodeSent, setResetCodeSent] = useState(false);
 
   const onSignIn = async () => {
-    if (!email.trim() || !password) { setError("Email and password are required."); return; }
-    setBusy(true); setError(""); setMessage("");
+    if (!email.trim() || !password) {
+      setError("Email and password are required.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
     try {
       const p = await login(email, password);
       navigate(!p?.username ? "/profile" : "/dashboard", { replace: true });
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setBusy(false); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onCreateAccount = async () => {
-    if (!email.trim() || !password) { setError("Email and password are required."); return; }
-    setBusy(true); setError(""); setMessage("");
+    if (!email.trim() || !password) {
+      setError("Email and password are required.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
     try {
       await signup(email, password);
       setMessage("Verification code sent. Check your email.");
       setMode("verify");
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setBusy(false); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onVerify = async () => {
-    if (!email.trim()) { setError("Email is required."); return; }
-    if (!code.trim())  { setError("Verification code is required."); return; }
-    setBusy(true); setError(""); setMessage("");
+    if (!email.trim()) {
+      setError("Email is required.");
+      return;
+    }
+    if (!code.trim()) {
+      setError("Verification code is required.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
     try {
       await confirmSignup(email, code);
-      setCode(""); setMessage("Email verified. You can now sign in."); setMode("signin");
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setBusy(false); }
+      setCode("");
+      setMessage("Email verified. You can now sign in.");
+      setMode("signin");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onResendCode = async () => {
-    if (!email.trim()) { setError("Enter your email first."); return; }
-    setBusy(true); setError(""); setMessage("");
+    if (!email.trim()) {
+      setError("Enter your email first.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
     try {
       await resendSignupCode(email);
       setMessage("A new code was sent.");
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setBusy(false); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const goToSignIn = () => { setMode("signin"); setCode(""); setError(""); setMessage(""); };
-  const goToCreate  = () => { setMode("signup"); setCode(""); setError(""); setMessage(""); };
+  const onRequestPasswordReset = async () => {
+    if (!email.trim()) {
+      setError("Email is required.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await forgotPassword(email);
+      setResetCodeSent(true);
+      setMessage("Password reset code sent. Check your email.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onConfirmPasswordReset = async () => {
+    if (!email.trim()) {
+      setError("Email is required.");
+      return;
+    }
+    if (!code.trim()) {
+      setError("Reset code is required.");
+      return;
+    }
+    if (!resetPassword) {
+      setError("New password is required.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await confirmForgotPassword(email, code, resetPassword);
+      setCode("");
+      setResetPassword("");
+      setResetCodeSent(false);
+      setMode("signin");
+      setMessage("Password updated. You can now sign in.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const goToSignIn = () => {
+    setMode("signin");
+    setCode("");
+    setResetPassword("");
+    setResetCodeSent(false);
+    setError("");
+    setMessage("");
+  };
+
+  const goToCreate = () => {
+    setMode("signup");
+    setCode("");
+    setResetPassword("");
+    setResetCodeSent(false);
+    setError("");
+    setMessage("");
+  };
+
+  const goToForgot = () => {
+    setMode("forgot");
+    setCode("");
+    setResetPassword("");
+    setResetCodeSent(false);
+    setError("");
+    setMessage("");
+  };
 
   if (devBypassAuth) {
     return (
@@ -136,19 +256,22 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      {/* ── Left: auth form ── */}
       <div className="login-form-col">
         <div className="login-brand">RLCOACH</div>
 
         <h1 className="login-title">
-          {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Verify email"}
+          {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : mode === "verify" ? "Verify email" : "Forgot password"}
         </h1>
         <p className="login-sub">
           {mode === "signin"
             ? "Access your replay library and coaching dashboard."
             : mode === "signup"
             ? "Start improving with AI-powered replay analysis."
-            : "Enter the code we sent to your email."}
+            : mode === "verify"
+            ? "Enter the code we sent to your email."
+            : resetCodeSent
+            ? "Enter the reset code from your email and choose a new password."
+            : "We’ll send a reset code to your email so you can choose a new password."}
         </p>
 
         <div className="login-form">
@@ -160,11 +283,15 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              onKeyDown={(e) => e.key === "Enter" && mode === "signin" && void onSignIn()}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                if (mode === "signin") void onSignIn();
+                if (mode === "forgot" && !resetCodeSent) void onRequestPasswordReset();
+              }}
             />
           </label>
 
-          {mode !== "verify" && (
+          {(mode === "signin" || mode === "signup") && (
             <label className="login-label">
               Password
               <input
@@ -172,7 +299,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Password"
                 onKeyDown={(e) => e.key === "Enter" && mode === "signin" && void onSignIn()}
               />
             </label>
@@ -200,6 +327,40 @@ export default function LoginPage() {
             </label>
           )}
 
+          {mode === "forgot" && resetCodeSent && (
+            <>
+              <label className="login-label">
+                Reset code
+                <input
+                  className="login-input"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="123456"
+                />
+              </label>
+              <label className="login-label">
+                New password
+                <input
+                  className="login-input"
+                  type="password"
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  placeholder="New password"
+                  onKeyDown={(e) => e.key === "Enter" && void onConfirmPasswordReset()}
+                />
+                <button
+                  type="button"
+                  className="login-link"
+                  style={{ marginTop: 6 }}
+                  disabled={busy || loading}
+                  onClick={onRequestPasswordReset}
+                >
+                  Resend reset code
+                </button>
+              </label>
+            </>
+          )}
+
           {(error || authError) && <div className="alert login-alert">{error || authError}</div>}
           {message && (
             <div className="alert login-alert" style={{ background: "rgba(67,188,120,0.16)", borderColor: "rgba(67,188,120,0.5)" }}>
@@ -209,40 +370,60 @@ export default function LoginPage() {
 
           {mode === "signin" && (
             <button className="login-cta" disabled={busy || loading} onClick={onSignIn}>
-              {busy || loading ? "Signing in…" : "Sign in"}
+              {busy || loading ? "Signing in..." : "Sign in"}
             </button>
           )}
           {mode === "signup" && (
             <button className="login-cta" disabled={busy || loading} onClick={onCreateAccount}>
-              {busy || loading ? "Creating…" : "Create account"}
+              {busy || loading ? "Creating..." : "Create account"}
             </button>
           )}
           {mode === "verify" && (
             <button className="login-cta" disabled={busy || loading || !code.trim()} onClick={onVerify}>
-              {busy || loading ? "Verifying…" : "Verify email"}
+              {busy || loading ? "Verifying..." : "Verify email"}
+            </button>
+          )}
+          {mode === "forgot" && !resetCodeSent && (
+            <button className="login-cta" disabled={busy || loading} onClick={onRequestPasswordReset}>
+              {busy || loading ? "Sending..." : "Send reset code"}
+            </button>
+          )}
+          {mode === "forgot" && resetCodeSent && (
+            <button className="login-cta" disabled={busy || loading || !code.trim() || !resetPassword} onClick={onConfirmPasswordReset}>
+              {busy || loading ? "Updating..." : "Update password"}
             </button>
           )}
         </div>
 
         <div className="login-switch">
           {mode === "signin" && (
-            <>Don&apos;t have an account?{" "}
+            <>
+              Don&apos;t have an account?{" "}
               <button type="button" className="login-link" onClick={goToCreate}>Create account</button>
+              {" "}•{" "}
+              <button type="button" className="login-link" onClick={goToForgot}>Forgot password?</button>
             </>
           )}
           {mode === "signup" && (
-            <>Already have an account?{" "}
+            <>
+              Already have an account?{" "}
               <button type="button" className="login-link" onClick={goToSignIn}>Sign in</button>
             </>
           )}
           {mode === "verify" && (
-            <>Already verified?{" "}
+            <>
+              Already verified?{" "}
+              <button type="button" className="login-link" onClick={goToSignIn}>Back to sign in</button>
+            </>
+          )}
+          {mode === "forgot" && (
+            <>
+              Remembered it?{" "}
               <button type="button" className="login-link" onClick={goToSignIn}>Back to sign in</button>
             </>
           )}
         </div>
 
-        {/* Brief feature bullets */}
         <div className="login-features">
           <div className="login-feature-row">
             <i className="fa-solid fa-chart-line" />
@@ -259,7 +440,6 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ── Right: live app preview ── */}
       <div className="login-preview-col">
         <AppPreview />
       </div>
@@ -274,11 +454,10 @@ function AppPreview() {
         <i className="fa-solid fa-rocket" /> What you get inside
       </div>
 
-      {/* ── Mechanic Grades card — matches the real sidebar ── */}
       <div className="ap-card">
         <div className="ap-card-header">
           <span className="ap-card-title">Mechanic Grades</span>
-          <span className="ap-card-sub">latest replay · 4-16-26</span>
+          <span className="ap-card-sub">latest replay - 4-16-26</span>
         </div>
         <div className="ap-mech-grid">
           {MOCK_MECHANICS.map((m) => (
@@ -293,7 +472,6 @@ function AppPreview() {
         </div>
       </div>
 
-      {/* ── Coach Timeline — matches the real sidebar event list ── */}
       <div className="ap-card">
         <div className="ap-card-header">
           <span className="ap-card-title">Coach Timeline</span>
@@ -313,27 +491,29 @@ function AppPreview() {
         </div>
       </div>
 
-      {/* ── Improvement trend sparkline ── */}
       <div className="ap-card ap-card--inline">
         <div>
           <div className="ap-card-title">Score Trend</div>
-          <div className="ap-card-sub" style={{ marginTop: 2 }}>5 replays · going up</div>
+          <div className="ap-card-sub" style={{ marginTop: 2 }}>5 replays - going up</div>
         </div>
         <div className="ap-sparkline-wrap">
           <svg viewBox="0 0 180 44" preserveAspectRatio="none" className="ap-sparkline">
             <defs>
               <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#d38c58" stopOpacity="0.3" />
+                <stop offset="0%" stopColor="#d38c58" stopOpacity="0.3" />
                 <stop offset="100%" stopColor="#d38c58" stopOpacity="0" />
               </linearGradient>
             </defs>
             <path d="M0,36 L36,30 L72,22 L108,17 L144,12 L180,7 L180,44 L0,44 Z" fill="url(#sg)" />
             <polyline
               points="0,36 36,30 72,22 108,17 144,12 180,7"
-              fill="none" stroke="#d38c58" strokeWidth="2"
-              strokeLinejoin="round" strokeLinecap="round"
+              fill="none"
+              stroke="#d38c58"
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
-            {([[0,36],[36,30],[72,22],[108,17],[144,12],[180,7]] as [number,number][]).map(([x,y], i) => (
+            {([[0, 36], [36, 30], [72, 22], [108, 17], [144, 12], [180, 7]] as [number, number][]).map(([x, y], i) => (
               <circle key={i} cx={x} cy={y} r="3" fill="#d38c58" />
             ))}
           </svg>

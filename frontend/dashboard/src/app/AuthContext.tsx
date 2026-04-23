@@ -2,7 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { apiGet, apiPost, setApiAuthTokenProvider } from "../api";
 import {
   cognitoConfirmSignup,
+  cognitoConfirmForgotPassword,
   cognitoDeleteCurrentUser,
+  cognitoForgotPassword,
   cognitoLogin,
   cognitoResendSignupCode,
   cognitoRestoreSession,
@@ -34,6 +36,8 @@ type AuthState = {
   signup: (email: string, password: string) => Promise<void>;
   confirmSignup: (email: string, code: string) => Promise<void>;
   resendSignupCode: (email: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  confirmForgotPassword: (email: string, code: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   setupProfile: (payload: {
     username: string;
@@ -171,6 +175,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await cognitoResendSignupCode(email);
   }, []);
 
+  const forgotPassword = useCallback(async (email: string) => {
+    await cognitoForgotPassword(email);
+  }, []);
+
+  const confirmForgotPassword = useCallback(async (email: string, code: string, newPassword: string) => {
+    await cognitoConfirmForgotPassword(email, code, newPassword);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await apiPost(`${REPLAY_PREFIX}/auth/logout`, {});
@@ -224,12 +236,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signup,
       confirmSignup,
       resendSignupCode,
+      forgotPassword,
+      confirmForgotPassword,
       logout,
       setupProfile,
       updateProfile,
       deleteAccount,
     }),
-    [auth, profile, loading, authError, devBypassAuth, refresh, login, signup, confirmSignup, resendSignupCode, logout, setupProfile, updateProfile, deleteAccount]
+    [auth, profile, loading, authError, devBypassAuth, refresh, login, signup, confirmSignup, resendSignupCode, forgotPassword, confirmForgotPassword, logout, setupProfile, updateProfile, deleteAccount]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

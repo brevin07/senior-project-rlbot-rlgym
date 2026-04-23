@@ -1,17 +1,7 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
-
-const ranks = [
-  "bronze_1","bronze_2","bronze_3",
-  "silver_1","silver_2","silver_3",
-  "gold_1","gold_2","gold_3",
-  "platinum_1","platinum_2","platinum_3",
-  "diamond_1","diamond_2","diamond_3",
-  "champion_1","champion_2","champion_3",
-  "grand_champion_1","grand_champion_2","grand_champion_3",
-  "ssl"
-];
+import { rankOptions, rankTierLabel } from "../app/profileOptions";
 
 export default function AccountPage() {
   const { auth, profile, updateProfile, logout, deleteAccount, devBypassAuth } = useAuth();
@@ -87,8 +77,8 @@ export default function AccountPage() {
           <label>
             Rank tier
             <select value={rank} onChange={(e) => setRank(e.target.value)}>
-              {ranks.map((r) => (
-                <option key={r} value={r}>{r.replace(/_/g, " ")}</option>
+              {rankOptions.map((r) => (
+                <option key={r} value={r}>{rankTierLabel(r)}</option>
               ))}
             </select>
           </label>

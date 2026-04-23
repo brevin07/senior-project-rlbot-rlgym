@@ -52,6 +52,26 @@ function Invoke-CommandString {
     }
 }
 
+function Test-VenvPip {
+    param([string]$VenvPython)
+    & $VenvPython -m pip --version | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Repair-VenvPip {
+    param([string]$VenvPython)
+
+    if (Test-VenvPip -VenvPython $VenvPython) {
+        return
+    }
+
+    Write-Host "[bootstrap] pip is missing or unhealthy. Repairing with ensurepip..."
+    & $VenvPython -m ensurepip --upgrade
+    if ($LASTEXITCODE -ne 0 -or -not (Test-VenvPip -VenvPython $VenvPython)) {
+        throw "pip is not available inside venv. Reinstall Python 3.11/3.12 with pip enabled, then rerun scripts/bootstrap.ps1."
+    }
+}
+
 $pythonCmd = Resolve-PythonCommand -Requested $Python
 Write-Host "[bootstrap] using interpreter: $pythonCmd"
 
@@ -80,18 +100,23 @@ if ($versionLine -notin @("3.11", "3.12")) {
     }
 }
 
-& $venvPython -m pip install --upgrade pip
-if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed." }
+Repair-VenvPip -VenvPython $venvPython
+
+& $venvPython -m pip install --disable-pip-version-check --upgrade pip setuptools wheel
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "[bootstrap] pip upgrade failed; continuing with the existing pip after validation."
+    Repair-VenvPip -VenvPython $venvPython
+}
 
 $requirementsFile = ".\requirements\base.txt"
 if (!(Test-Path $requirementsFile)) {
     $requirementsFile = ".\requirements.txt"
 }
-& $venvPython -m pip install -r $requirementsFile
+& $venvPython -m pip install --disable-pip-version-check -r $requirementsFile
 if ($LASTEXITCODE -ne 0) { throw "requirements installation failed." }
 
 # RLBot currently pins an old flatbuffers build that fails on newer Python runtimes.
-& $venvPython -m pip install "flatbuffers>=24.3.25"
+& $venvPython -m pip install --disable-pip-version-check "flatbuffers>=24.3.25"
 if ($LASTEXITCODE -ne 0) { throw "flatbuffers compatibility override failed." }
 
 $importCheck = @'

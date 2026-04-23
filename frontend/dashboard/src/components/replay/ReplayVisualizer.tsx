@@ -63,7 +63,11 @@ type MechanicEvent = {
   score?: number;
   short?: string;
   quality_score?: number;
+  quality_score_0_100?: number;
   reason?: string;
+  title?: string;
+  template_title?: string;
+  template_body?: string;
 };
 
 type BoostPad = { x: number; y: number; z: number; size: string };
@@ -73,12 +77,15 @@ type ReplayVisualizerProps = {
   replayMeta: ReplayMeta;
   events: MechanicEvent[];
   selectedPlayer: string;
+  replayName?: string;
   boostPads: BoostPad[];
   onTimeChange?: (timeS: number, frameIdx: number) => void;
-  onAutoEventPause?: (payload: { time: number; mechanicId: string; qualityLabel: string; reason: string; score: number }) => void;
+  onAutoEventPause?: (payload: MechanicEvent) => void;
   eventPopup?: React.ReactNode;
   seekTime?: number | null;
 };
+
+type TimelineAlignment = { alignedTime: number; alignedIndex: number };
 
 const FIELD_X = 8192;
 const FIELD_Y = 10240;
@@ -124,6 +131,19 @@ function fmtTime(seconds: number) {
   return `${m}:${String(r).padStart(2, "0")}`;
 }
 
+function fmtClock(secondsRemaining: number, isOvertime: boolean, overtimeSeconds: number) {
+  if (isOvertime) {
+    return `+${fmtTime(overtimeSeconds)}`;
+  }
+  return fmtTime(secondsRemaining);
+}
+
+function replayNameLabel(name?: string) {
+  const raw = String(name || "").trim();
+  if (!raw) return "Replay.replay";
+  return raw;
+}
+
 function scoreAtTime(samples: ReplayMeta["score_samples"], t: number) {
   if (!samples || !samples.length) return { blue: 0, orange: 0 };
   let blue = samples[0].blue ?? 0;
@@ -154,6 +174,30 @@ function clockAtTime(samples: ReplayMeta["clock_samples"], t: number) {
 
 function normalizePlayerKey(name: string) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function alignTimeToTimeline(timeline: ReplayFrame[], targetTime: number): TimelineAlignment {
+  if (!timeline.length) {
+    return { alignedTime: Number(targetTime || 0), alignedIndex: 0 };
+  }
+  const target = Number(targetTime || 0);
+  let lo = 0;
+  let hi = timeline.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const midTime = Number(timeline[mid]?.t || 0);
+    if (midTime < target) lo = mid + 1;
+    else if (midTime > target) hi = mid - 1;
+    else return { alignedTime: midTime, alignedIndex: mid };
+  }
+  const lowerIdx = clamp(Math.max(0, hi), 0, timeline.length - 1);
+  const upperIdx = clamp(Math.max(0, lo), 0, timeline.length - 1);
+  const lowerTime = Number(timeline[lowerIdx]?.t || target);
+  const upperTime = Number(timeline[upperIdx]?.t || target);
+  if (Math.abs(upperTime - target) < Math.abs(target - lowerTime)) {
+    return { alignedTime: upperTime, alignedIndex: upperIdx };
+  }
+  return { alignedTime: lowerTime, alignedIndex: lowerIdx };
 }
 
 function toSceneVec(x: number, y: number, z: number) {
@@ -453,9 +497,10 @@ function createCarMesh(color: number) {
   const group = new THREE.Group();
   group.rotation.order = "YXZ";
 
+  const bodyMat = new THREE.MeshStandardMaterial({ color, metalness: 0.18, roughness: 0.44 });
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(122, 36, 84),
-    new THREE.MeshStandardMaterial({ color, metalness: 0.18, roughness: 0.44 })
+    bodyMat
   );
   body.position.y = 26;
   body.castShadow = true;
@@ -469,9 +514,10 @@ function createCarMesh(color: number) {
   cabin.castShadow = true;
   group.add(cabin);
 
+  const noseMat = new THREE.MeshStandardMaterial({ color, metalness: 0.18, roughness: 0.45 });
   const nose = new THREE.Mesh(
     new THREE.ConeGeometry(16, 18, 16),
-    new THREE.MeshStandardMaterial({ color, metalness: 0.18, roughness: 0.45 })
+    noseMat
   );
   nose.rotation.z = -Math.PI / 2;
   nose.position.set(64, 26, 0);
@@ -501,7 +547,17 @@ function createCarMesh(color: number) {
   group.userData.spinRollVel = 0;
   group.userData.prevJump = 0;
   group.userData.prevDoubleJump = 0;
+  group.userData.teamColorMats = [bodyMat, noseMat];
   return group;
+}
+
+function setCarMeshTeamColor(group: THREE.Group, color: number) {
+  const mats = Array.isArray(group.userData?.teamColorMats) ? group.userData.teamColorMats : [];
+  for (const mat of mats) {
+    if (mat && "color" in mat) {
+      (mat as THREE.MeshStandardMaterial).color.set(color);
+    }
+  }
 }
 
 function dampedSpringStep(pos: THREE.Vector3, vel: THREE.Vector3, target: THREE.Vector3, stiff: number, damp: number, dt: number) {
@@ -516,6 +572,7 @@ export default function ReplayVisualizer({
   replayMeta,
   events,
   selectedPlayer,
+  replayName,
   boostPads,
   onTimeChange,
   onAutoEventPause,
@@ -625,8 +682,14 @@ export default function ReplayVisualizer({
     const start = timeline[0]?.t ?? 0;
     const end = timeline[timeline.length - 1]?.t ?? 0;
     const t = clamp(seekTime, start, end);
-    const idx = Math.round(((t - start) / Math.max(1e-6, end - start)) * (timeline.length - 1));
-    setCurrentFrame(clamp(idx, 0, timeline.length - 1));
+    const aligned = alignTimeToTimeline(timeline, t);
+    playToEventTargetRef.current = null;
+    goalHoldUntilWallMsRef.current = 0;
+    setPlaying(false);
+    playingRef.current = false;
+    playStartReplayRef.current = aligned.alignedTime;
+    playStartWallRef.current = performance.now();
+    setCurrentFrame(clamp(aligned.alignedIndex, 0, timeline.length - 1));
   }, [seekTime, timeline]);
 
   useEffect(() => {
@@ -969,9 +1032,13 @@ export default function ReplayVisualizer({
 
     const teamMap = replayMeta?.player_teams ?? {};
     for (const name of players) {
-      if (existing.has(name)) continue;
       const team = Number(teamMap?.[name] ?? 0);
-      const mesh = createCarMesh(team === 1 ? 0xff8a5b : 0x49a8ff);
+      const teamColor = team === 1 ? 0xff8a5b : 0x49a8ff;
+      if (existing.has(name)) {
+        setCarMeshTeamColor(existing.get(name)!.mesh, teamColor);
+        continue;
+      }
+      const mesh = createCarMesh(teamColor);
       scene.add(mesh);
       existing.set(name, { mesh });
 
@@ -988,13 +1055,16 @@ export default function ReplayVisualizer({
   const eventMarkers = useMemo(() => {
     if (!timeline?.length) return [] as { t: number; label: string; score: number; mechanicId: string; reason: string }[];
     return (events || [])
-      .map((e) => ({
-        t: Number(e.time ?? 0),
+      .map((e) => {
+        const aligned = alignTimeToTimeline(timeline, Number(e.time ?? 0));
+        return {
+        t: aligned.alignedTime,
         label: String(e.quality_label ?? "neutral"),
         score: Number(e.quality_score ?? e.score ?? 0),
         mechanicId: String(e.mechanic_id ?? "event"),
         reason: String(e.reason ?? ""),
-      }))
+      };
+      })
       .filter((e) => !Number.isNaN(e.t));
   }, [events, timeline]);
 
@@ -1064,7 +1134,7 @@ export default function ReplayVisualizer({
       return lastFrameLookupIdxRef.current;
     };
 
-    const interpCarPosition = (p0: ReplayFrame["players"][number], p1: ReplayFrame["players"][number], alpha: number) => {
+    const interpCarPosition = (p0: ReplayFrame["players"][number], p1: ReplayFrame["players"][number], alpha: number, dt: number) => {
       const dx = Number(p1.x || 0) - Number(p0.x || 0);
       const dy = Number(p1.y || 0) - Number(p0.y || 0);
       const dz = Number(p1.z || 0) - Number(p0.z || 0);
@@ -1072,10 +1142,16 @@ export default function ReplayVisualizer({
       if (dist > TELEPORT_DIST_THRESHOLD) {
         return { x: Number(p1.x || 0), y: Number(p1.y || 0), z: Number(p1.z || 0) };
       }
+      const vx0 = Number.isFinite(p0.vx) ? Number(p0.vx) : 0;
+      const vy0 = Number.isFinite(p0.vy) ? Number(p0.vy) : 0;
+      const vz0 = Number.isFinite(p0.vz) ? Number(p0.vz) : 0;
+      const vx1 = Number.isFinite(p1.vx) ? Number(p1.vx) : vx0;
+      const vy1 = Number.isFinite(p1.vy) ? Number(p1.vy) : vy0;
+      const vz1 = Number.isFinite(p1.vz) ? Number(p1.vz) : vz0;
       return {
-        x: interpolate(Number(p0.x || 0), Number(p1.x || 0), alpha),
-        y: interpolate(Number(p0.y || 0), Number(p1.y || 0), alpha),
-        z: interpolate(Number(p0.z || 0), Number(p1.z || 0), alpha),
+        x: interpPosWithVelocity(Number(p0.x || 0), Number(p1.x || 0), vx0, vx1, alpha, dt),
+        y: interpPosWithVelocity(Number(p0.y || 0), Number(p1.y || 0), vy0, vy1, alpha, dt),
+        z: interpPosWithVelocity(Number(p0.z || 0), Number(p1.z || 0), vz0, vz1, alpha, dt),
       };
     };
 
@@ -1096,7 +1172,7 @@ export default function ReplayVisualizer({
         const vx1 = Number.isFinite(p1.vx) ? Number(p1.vx) : vx0;
         const vy1 = Number.isFinite(p1.vy) ? Number(p1.vy) : vy0;
         const vz1 = Number.isFinite(p1.vz) ? Number(p1.vz) : vz0;
-        const pos = interpCarPosition(p0, p1, alpha);
+        const pos = interpCarPosition(p0, p1, alpha, dt);
         return {
           name,
           x: pos.x,
@@ -1191,20 +1267,8 @@ export default function ReplayVisualizer({
     };
 
     const alignEventToTimeline = (e: MechanicEvent) => {
-      const arr = timeline;
-      if (!arr.length) return { __aligned_t: Number(e?.time || 0), __aligned_idx: 0 };
-      const target = Number(e?.time || 0);
-      let lo = 0;
-      let hi = arr.length - 1;
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        const mt = Number(arr[mid]?.t || 0);
-        if (mt < target) lo = mid + 1;
-        else if (mt > target) hi = mid - 1;
-        else return { __aligned_t: mt, __aligned_idx: mid };
-      }
-      const idx = clamp(Math.max(0, hi), 0, arr.length - 1);
-      return { __aligned_t: Number(arr[idx]?.t || target), __aligned_idx: idx };
+      const aligned = alignTimeToTimeline(timeline, Number(e?.time || 0));
+      return { __aligned_t: aligned.alignedTime, __aligned_idx: aligned.alignedIndex };
     };
 
     const dedupeMechanicEvents = (arr: MechanicEvent[]) => {
@@ -1494,11 +1558,8 @@ export default function ReplayVisualizer({
             setPlaying(false);
             playingRef.current = false;
             onAutoEventPause?.({
+              ...hit,
               time: Number((hit as any).__aligned_t || hit?.time || targetReplayT),
-              mechanicId: String(hit?.mechanic_id || ""),
-              qualityLabel: String(hit?.quality_label || ""),
-              reason: String((hit as any)?.reason || ""),
-              score: Number(hit?.score ?? (hit as any)?.quality_score ?? 0),
             });
           }
         }
@@ -1535,9 +1596,32 @@ export default function ReplayVisualizer({
     return sorted.find((e) => e.t >= currentTimeS) ?? sorted[sorted.length - 1];
   }, [displayMarkers, currentTimeS]);
 
+  const currentFrameData = timeline?.[currentFrame] ?? null;
   const score = scoreAtTime(replayMeta?.score_samples, currentTimeS);
   const clock = clockAtTime(replayMeta?.clock_samples, currentTimeS);
-  const isOvertime = replayMeta?.ot_start_s != null && currentTimeS >= Number(replayMeta.ot_start_s);
+  const selectedTeamRaw = Number(replayMeta?.player_teams?.[selectedPlayer]);
+  const selectedTeam = Number.isFinite(selectedTeamRaw) ? selectedTeamRaw : 0;
+  const isOvertime = Boolean(currentFrameData?.is_overtime) || (replayMeta?.ot_start_s != null && currentTimeS >= Number(replayMeta.ot_start_s));
+  const overtimeElapsed = isOvertime
+    ? Math.max(0, currentTimeS - Number(replayMeta?.ot_start_s ?? currentTimeS))
+    : 0;
+  const secondsRemaining = Number(currentFrameData?.seconds_remaining ?? clock ?? 300);
+  const leftScore = selectedTeam === 1 ? score.orange : score.blue;
+  const rightScore = selectedTeam === 1 ? score.blue : score.orange;
+  const leftScoreClass = selectedTeam === 1 ? "orange" : "blue";
+  const rightScoreClass = selectedTeam === 1 ? "blue" : "orange";
+  const hudClockLabel = fmtClock(secondsRemaining, isOvertime, overtimeElapsed);
+  const nextEventClockLabel = useMemo(() => {
+    if (!nextEvent) return "";
+    const aligned = alignTimeToTimeline(timeline, nextEvent.t);
+    const frame = timeline[aligned.alignedIndex];
+    const eventIsOvertime = Boolean(frame?.is_overtime) || (replayMeta?.ot_start_s != null && aligned.alignedTime >= Number(replayMeta.ot_start_s));
+    const eventClock = Number(frame?.seconds_remaining ?? 0);
+    const eventOvertimeElapsed = eventIsOvertime
+      ? Math.max(0, aligned.alignedTime - Number(replayMeta?.ot_start_s ?? aligned.alignedTime))
+      : 0;
+    return fmtClock(eventClock, eventIsOvertime, eventOvertimeElapsed);
+  }, [nextEvent, replayMeta?.ot_start_s, timeline]);
 
   const handlePlay = () => {
     setPlaying(true);
@@ -1552,8 +1636,14 @@ export default function ReplayVisualizer({
     const sorted = [...displayMarkers].sort((a, b) => a.t - b.t);
     const next = sorted.find((e) => e.t > currentTimeS + 1e-4);
     if (!next) return;
-    playToEventTargetRef.current = next.t;
-    setPlaying(true);
+    const aligned = alignTimeToTimeline(timeline, next.t);
+    playToEventTargetRef.current = null;
+    goalHoldUntilWallMsRef.current = 0;
+    setPlaying(false);
+    playingRef.current = false;
+    playStartReplayRef.current = aligned.alignedTime;
+    playStartWallRef.current = performance.now();
+    setCurrentFrame(aligned.alignedIndex);
   };
 
   const playToPrevEvent = () => {
@@ -1561,8 +1651,14 @@ export default function ReplayVisualizer({
     const sorted = [...displayMarkers].sort((a, b) => a.t - b.t);
     const prev = [...sorted].reverse().find((e) => e.t < currentTimeS - 1e-4);
     if (!prev) return;
-    playToEventTargetRef.current = prev.t;
-    setPlaying(true);
+    const aligned = alignTimeToTimeline(timeline, prev.t);
+    playToEventTargetRef.current = null;
+    goalHoldUntilWallMsRef.current = 0;
+    setPlaying(false);
+    playingRef.current = false;
+    playStartReplayRef.current = aligned.alignedTime;
+    playStartWallRef.current = performance.now();
+    setCurrentFrame(aligned.alignedIndex);
   };
 
   const toggleFullscreen = async () => {
@@ -1591,16 +1687,19 @@ export default function ReplayVisualizer({
 
   return (
     <div className="scene-card">
-      <h2>3D Replay View</h2>
+      <div className="scene-card-header">
+        <h2>3D Replay View</h2>
+        <div className="scene-card-subtitle">{replayNameLabel(replayName)}</div>
+      </div>
       <div className="scene-wrap">
         <div className="scene-canvas" ref={containerRef} />
         <div className="hud-bar">
-          <div className="team-score blue">{score.blue}</div>
+          <div className={`team-score ${leftScoreClass}`}>{leftScore}</div>
           <div className="clock-wrap">
-            <div className="clock-text">{fmtTime(clock)}</div>
+            <div className="clock-text">{hudClockLabel}</div>
             <div className={`ot-badge${isOvertime ? " show" : ""}`}>OT</div>
           </div>
-          <div className="team-score orange">{score.orange}</div>
+          <div className={`team-score ${rightScoreClass}`}>{rightScore}</div>
         </div>
         <div className="arena-status">{arenaStatus}</div>
         <button className="debug-toggle" type="button" onClick={() => setDebugOpen((v) => !v)}>Debug</button>
@@ -1717,12 +1816,9 @@ export default function ReplayVisualizer({
           <span className="zoom-value">{zoom.toFixed(1)}x</span>
         </div>
 
-        <span className="time-label">
-          <i className="fas fa-clock"></i> {currentTimeS.toFixed(2)}s
-        </span>
         {nextEvent && (
           <span className="next-event-label">
-            <i className="fas fa-flag"></i> {nextEvent.mechanicId} @ {nextEvent.t.toFixed(2)}s
+            <i className="fas fa-flag"></i> {nextEvent.mechanicId} @ {nextEventClockLabel}
           </span>
         )}
       </div>

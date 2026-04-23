@@ -115,6 +115,27 @@ export function cognitoResendSignupCode(email: string): Promise<void> {
   });
 }
 
+export function cognitoForgotPassword(email: string): Promise<void> {
+  const user = new CognitoUser({ Username: email.trim(), Pool: getPool() });
+  return new Promise((resolve, reject) => {
+    user.forgotPassword({
+      onSuccess: () => resolve(),
+      onFailure: (err) => reject(err),
+      inputVerificationCode: () => resolve(),
+    });
+  });
+}
+
+export function cognitoConfirmForgotPassword(email: string, code: string, newPassword: string): Promise<void> {
+  const user = new CognitoUser({ Username: email.trim(), Pool: getPool() });
+  return new Promise((resolve, reject) => {
+    user.confirmPassword(code.trim(), newPassword, {
+      onSuccess: () => resolve(),
+      onFailure: (err) => reject(err),
+    });
+  });
+}
+
 export function cognitoRestoreSession(): Promise<Tokens | null> {
   if (getCognitoConfigError()) {
     return Promise.resolve(null);
