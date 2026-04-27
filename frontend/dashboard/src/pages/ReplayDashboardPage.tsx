@@ -784,6 +784,7 @@ export default function ReplayDashboardPage() {
   const [selectedPlayer, setSelectedPlayer] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
   const [seekTime, setSeekTime] = useState<number | undefined>(undefined);
+  const [reviewRequest, setReviewRequest] = useState<{ id: number; time: number; event: MechanicEvent } | null>(null);
   const [eventExplain, setEventExplain] = useState<{ title: string; body: string; grade: string; tags: string[] } | null>(null);
   const [scoreExplain, setScoreExplain] = useState<{ title: string; body: string } | null>(null);
   const [librarySearch, setLibrarySearch] = useState("");
@@ -1519,6 +1520,7 @@ export default function ReplayDashboardPage() {
   const recommendations = trainingPlan?.data?.recommendations ?? homeSummary?.data?.recommendations ?? [];
   const latestReplay = homeSummary?.data?.latest_replay || librarySessions[0];
   const trackedPlayerLabel = selectedPlayer || session?.analysis_player || latestReplay?.tracked_player_name || latestReplay?.summary?.analysis_player || "";
+  const headerReplayStudioActive = activeTab === "replay" && Boolean(session && replayStudioReady);
   const trainingPreflightKnown = trainingPreflightFetchedAt > 0;
   const botTrainingReady = trainingPreflightKnown && Boolean(trainingPreflight?.data?.ready_to_launch);
   const trainingPreflightMessages = trainingPreflight?.data?.messages ?? [];
@@ -1870,6 +1872,17 @@ export default function ReplayDashboardPage() {
             <button type="button" className="ghost" onClick={reopenTutorial}>
               <i className="fa-solid fa-circle-question" /> Help
             </button>
+            {headerReplayStudioActive && (
+              <button
+                type="button"
+                className="ghost replay-library-header-btn"
+                onClick={() => setShowLibraryDrawer(true)}
+              >
+                <i className="fa-solid fa-folder-open" />
+                <span>Replay Library</span>
+                {librarySessions.length ? <span className="badge-count">{librarySessions.length}</span> : null}
+              </button>
+            )}
           </div>
         </header>
 
@@ -2180,9 +2193,14 @@ export default function ReplayDashboardPage() {
 
           const jumpToEvent = (ev: MechanicEvent) => {
             const alignedTime = alignEventTimeToTimeline(session?.timeline, Number(ev.time ?? 0));
-            setCurrentTime(alignedTime);
-            setSeekTime((prev) => (prev != null && Math.abs(prev - alignedTime) < 1e-4 ? alignedTime + 1e-4 : alignedTime));
-            setEventExplain(buildMechanicEventExplain({ ...ev, time: alignedTime }));
+            setCurrentTime(Math.max(0, alignedTime - 1.5));
+            setSeekTime(undefined);
+            setEventExplain(null);
+            setReviewRequest({
+              id: Date.now(),
+              time: alignedTime,
+              event: { ...ev, time: alignedTime },
+            });
           };
 
           const makeFbKey = (ev: MechanicEvent, prefix: string) =>
@@ -2193,56 +2211,33 @@ export default function ReplayDashboardPage() {
             setFeedbackDraft("");
           };
 
-          const LS_FEEDBACK_KEY = "rlcoach_mechanic_feedback";
-
-          const readFeedbackLog = (): object[] => {
-            try {
-              return JSON.parse(localStorage.getItem(LS_FEEDBACK_KEY) ?? "[]") as object[];
-            } catch {
-              return [];
-            }
-          };
-
           const submitFeedback = async (ev: MechanicEvent, key: string) => {
             const note = feedbackDraft.trim();
             if (!note || feedbackSaving) return;
             setFeedbackSaving(true);
 
             const entry = {
-              ts: new Date().toISOString(),
+              session_id: session?.session_id ?? null,
               replay_name: session?.replay_name ?? "unknown",
               event_time: ev.time ?? 0,
               mechanic_id: ev.mechanic_id ?? "",
               quality_label: ev.quality_label ?? "",
               quality_score: ev.quality_score ?? 0,
               reason: ev.reason ?? "",
+              verdict: "wrong",
               note,
             };
 
-            // Always save to localStorage first — works even without the server
             try {
-              const existing = readFeedbackLog();
-              existing.push(entry);
-              localStorage.setItem(LS_FEEDBACK_KEY, JSON.stringify(existing));
-            } catch {
-              // localStorage full — still try server
+              await apiPost(`${REPLAY_PREFIX}/mechanic-feedback`, entry);
+              setFeedbackSavedKeys(prev => new Set([...prev, key]));
+              setFeedbackKey(null);
+              setFeedbackDraft("");
+            } catch (err) {
+              console.warn("[mechanic-feedback] save failed", err);
+            } finally {
+              setFeedbackSaving(false);
             }
-
-            // Try server in background (best-effort)
-            apiPost(`${REPLAY_PREFIX}/mechanic-feedback`, entry).catch(() => {
-              // Server not running is fine — data is already in localStorage
-            });
-
-            setFeedbackSavedKeys(prev => new Set([...prev, key]));
-            setFeedbackKey(null);
-            setFeedbackDraft("");
-            setFeedbackSaving(false);
-          };
-
-          const copyFeedbackLog = () => {
-            const entries = readFeedbackLog();
-            if (!entries.length) { alert("No feedback entries yet."); return; }
-            void navigator.clipboard.writeText(JSON.stringify(entries, null, 2));
           };
 
           const renderFeedbackBox = (ev: MechanicEvent, key: string) => (
@@ -2298,20 +2293,15 @@ export default function ReplayDashboardPage() {
 
               {studioActive && (
                 <>
-                  <div className="replay-studio-toolbar">
-                    <button
-                      type="button"
-                      className="replay-library-toggle"
-                      onClick={() => setShowLibraryDrawer(true)}
-                    >
-                      <i className="fa-solid fa-folder-open" />
-                      <span>Replay Library</span>
-                      {librarySessions.length ? <span className="badge-count">{librarySessions.length}</span> : null}
-                    </button>
-                    <div className="controls" style={{ marginTop: 0 }}>
-                      <div className="pill">Player: {selectedPlayer || "unknown"}</div>
+                  {groupedMechanics.length === 0 && (
+                    <div className="replay-studio-toolbar">
+                      {trackedPlayerLabel && (
+                        <div className="library-item-meta">
+                          Tracking <strong>{trackedPlayerLabel}</strong>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
 
                   {groupedMechanics.length > 0 && (
                     <div className="metrics-card mechanic-rings-bar">
@@ -2337,7 +2327,7 @@ export default function ReplayDashboardPage() {
                               className={`mechanic-ring-item ${idx === groupedMechanics.length - 1 ? "align-end" : idx === 0 ? "align-start" : "align-center"}`}
                             >
                               <div className="mechanic-ring-svg-wrap">
-                                <svg viewBox="0 0 36 36" width="76" height="76">
+                                <svg viewBox="0 0 36 36" width="82" height="82">
                                   <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--surface-3)" strokeWidth="2.6" />
                                   <circle
                                     cx="18" cy="18" r="15.9"
@@ -2359,6 +2349,9 @@ export default function ReplayDashboardPage() {
                                 >i</button>
                               </div>
                               <span className="mechanic-ring-label">{g.label}</span>
+                              <span className={`mechanic-ring-grade-pill mechanic-ring-grade-pill--${quality}`}>
+                                {quality === "good" ? "Good" : quality === "neutral" ? "Mixed" : "Needs Work"}
+                              </span>
                               {infoOpen && (
                                 <div className="mechanic-ring-info-card">
                                   <div className="mechanic-ring-info-card-header">
@@ -2403,6 +2396,7 @@ export default function ReplayDashboardPage() {
                       selectedPlayer={selectedPlayer}
                       onTimeChange={(t) => setCurrentTime(t)}
                       onAutoEventPause={(ev) => setEventExplain(buildMechanicEventExplain(ev))}
+                      onAutoEventClear={() => setEventExplain(null)}
                       eventPopup={
                         eventExplain ? (
                           <div className="event-explain-popup">
@@ -2432,6 +2426,7 @@ export default function ReplayDashboardPage() {
                       }
                       boostPads={session.boost_pads ?? []}
                       seekTime={seekTime}
+                      reviewRequest={reviewRequest}
                     />
                     <div className="metrics-card studio-sidebar">
                       <div className="studio-sidebar-section">
@@ -2458,14 +2453,6 @@ export default function ReplayDashboardPage() {
                               <i className="fa-solid fa-layer-group" /> Grouped
                             </button>
                           </div>
-                          <button
-                            type="button"
-                            className="mech-feedback-copy-btn"
-                            title="Copy all flagged feedback to clipboard"
-                            onClick={copyFeedbackLog}
-                          >
-                            <i className="fa-solid fa-clipboard-list" /> Copy log
-                          </button>
                           </div>
                         </div>
 
@@ -2601,23 +2588,6 @@ export default function ReplayDashboardPage() {
                             {!timelineEvents.length && <div className="library-item-meta">{mechanicEvents.length ? "All mechanics hidden — click a chip to enable." : "Analyze a replay to view mechanic events."}</div>}
                           </div>
                         )}
-                      </div>
-
-                      <div className="studio-sidebar-section coach-panel">
-                        <h3>Selected Event</h3>
-                        <div className="coach-content">
-                          <strong>{eventExplain?.title ?? "Select an event"}</strong>
-                          {eventExplain?.tags?.length ? (
-                            <div className="mech-tag-row">
-                              {eventExplain.tags.map((tag) => (
-                                <span key={tag} className="mech-tag">{tag}</span>
-                              ))}
-                            </div>
-                          ) : null}
-                          <p className="library-item-meta">
-                            {eventExplain?.body ?? "Click a mechanic event in the list to inspect the replay moment and its recorded reason."}
-                          </p>
-                        </div>
                       </div>
                     </div>
                   </section>

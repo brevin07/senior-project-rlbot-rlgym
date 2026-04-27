@@ -234,6 +234,8 @@ KICKOFF_DIRECT_MIN_POSITIVE_SAMPLES = 2
 KICKOFF_RECENT_LOOKBACK_S = 0.9
 KICKOFF_RECENT_MEAN_ALIGNMENT_MIN = 0.55
 KICKOFF_RECENT_MIN_DISTANCE = 1800.0
+KICKOFF_TOUCH_SEARCH_MAX_S = 30.0
+KICKOFF_TOUCH_CONF_MIN = 0.35
 KICKOFF_SPAWN_XY_TOL = 380.0
 KICKOFF_SPAWN_Z_MAX = 120.0
 KICKOFF_SPAWN_POINTS = [
@@ -992,6 +994,8 @@ def _cars_in_kickoff_spawns(frame: Dict[str, Any]) -> bool:
 # even when formal kickoff-window detection misses (e.g. slow approach, rogue touch time).
 _KICKOFF_ZONE_RADIUS = 700.0      # xy distance from centre
 _KICKOFF_ZONE_BALL_SPD_MAX = 600.0  # ball hasn't been hit hard yet
+_KICKOFF_TOUCH_ZONE_RADIUS = 900.0
+_KICKOFF_TOUCH_MAX_BALL_Z = 300.0
 _KICKOFF_CENTER_DECAY_S = 0.45
 _CHALLENGE_APPROACH_LOOKBACK_S = 0.22
 _CHALLENGE_MIN_APPROACH_ALIGNMENT = 0.58
@@ -1028,6 +1032,15 @@ def _ball_in_kickoff_zone(frame: Dict[str, Any]) -> bool:
     by = _safe_float(b.get("y", 0.0))
     dist_xy = (bx ** 2 + by ** 2) ** 0.5
     return dist_xy <= _KICKOFF_ZONE_RADIUS and _ball_speed(frame) <= _KICKOFF_ZONE_BALL_SPD_MAX
+
+
+def _ball_near_kickoff_touch_zone(frame: Dict[str, Any]) -> bool:
+    b = frame.get("ball", {}) or {}
+    bx = _safe_float(b.get("x", 0.0))
+    by = _safe_float(b.get("y", 0.0))
+    bz = _safe_float(b.get("z", 0.0))
+    dist_xy = (bx ** 2 + by ** 2) ** 0.5
+    return dist_xy <= _KICKOFF_TOUCH_ZONE_RADIUS and 60.0 <= bz <= _KICKOFF_TOUCH_MAX_BALL_Z
 
 
 def _approach_alignment_to_ball(frame: Dict[str, Any], player: str) -> float:
@@ -1168,12 +1181,7 @@ def _frame_has_kickoff_context(
 
 
 def _frame_is_kickoff_reset_state(frame: Dict[str, Any]) -> bool:
-    return (
-        bool(frame.get("is_kickoff_pause"))
-        or (bool(frame.get("is_goal_pause")) and _ball_center_slow(frame) and _cars_in_kickoff_spawns(frame))
-        or (_ball_center_slow(frame) and _cars_in_kickoff_spawns(frame) and not bool(frame.get("active_play", True)))
-        or (_ball_in_kickoff_zone(frame) and _cars_in_kickoff_spawns(frame) and not bool(frame.get("active_play", True)))
-    )
+    return _ball_center_slow(frame) and _cars_in_kickoff_spawns(frame)
 
 
 def _collect_kickoff_reset_windows(
@@ -1231,6 +1239,28 @@ def _merge_kickoff_windows(windows: List[Tuple[float, float]]) -> List[Tuple[flo
     return merged
 
 
+def _filter_kickoff_windows_with_reset_evidence(
+    timeline: List[Dict[str, Any]],
+    times: List[float],
+    windows: List[Tuple[float, float]],
+) -> List[Tuple[float, float]]:
+    filtered: List[Tuple[float, float]] = []
+    for start, end in windows:
+        has_reset = False
+        for i, fr in enumerate(timeline):
+            t = times[i]
+            if t < start - 0.25:
+                continue
+            if t > end + 0.25:
+                break
+            if _frame_is_kickoff_reset_state(fr):
+                has_reset = True
+                break
+        if has_reset:
+            filtered.append((start, end))
+    return filtered
+
+
 def _carry_control_offsets(frame: Dict[str, Any], player: str) -> Tuple[float, float, float]:
     p = _player_frame(frame, player)
     if not p:
@@ -1254,26 +1284,67 @@ def _ball_balanced_on_car(frame: Dict[str, Any], player: str) -> bool:
     )
 
 
-def _first_touch_in_window(timeline: List[Dict[str, Any]], times: List[float], start_idx: int, end_t: float) -> Tuple[int, str, float]:
+def _first_touch_in_window(
+    timeline: List[Dict[str, Any]],
+    times: List[float],
+    start_idx: int,
+    end_t: float,
+    min_conf: float = 0.55,
+) -> Tuple[int, str, float]:
     pnames = [str(p.get("name", "")) for p in (timeline[start_idx].get("players", []) or [])]
+    best_idx = -1
+    best_player = ""
+    best_time = 0.0
+    best_score = -1.0
     for i in range(start_idx, len(timeline) - 1):
         if times[i] > end_t:
             break
         fr = timeline[i]
         fr2 = timeline[min(i + 1, len(timeline) - 1)]
-        best_player = ""
-        best_conf = 0.0
+        frame_best_player = ""
+        frame_best_conf = 0.0
         for pn in pnames:
             p = _player_frame(fr, pn)
             if not p:
                 continue
             conf = _touch_confidence(fr, fr2, p)
-            if conf > best_conf:
-                best_conf = conf
-                best_player = pn
-        if best_player and best_conf >= 0.55:
-            return i, best_player, times[i]
+            if conf > frame_best_conf:
+                frame_best_conf = conf
+                frame_best_player = pn
+        if frame_best_player and frame_best_conf >= min_conf:
+            ball_speed_delta = abs(_ball_speed(fr2) - _ball_speed(fr))
+            candidate_score = frame_best_conf + 0.0001 * ball_speed_delta + (0.08 if _ball_dir_flip(fr, fr2) else 0.0)
+            if candidate_score > best_score:
+                best_score = candidate_score
+                best_idx = i
+                best_player = frame_best_player
+                best_time = times[i]
+    if best_idx >= 0 and best_player:
+        return best_idx, best_player, best_time
     return -1, "", 0.0
+
+
+def _kickoff_touch_search_end(
+    timeline: List[Dict[str, Any]],
+    times: List[float],
+    start_idx: int,
+    start_t: float,
+    reset_end_t: float,
+) -> float:
+    base_end = min(times[-1], max(reset_end_t + 0.75, start_t + KICKOFF_WINDOW_TIMEOUT))
+    max_end = min(times[-1], start_t + KICKOFF_TOUCH_SEARCH_MAX_S)
+    search_end = base_end
+    for i in range(start_idx, len(timeline)):
+        t = times[i]
+        if t > max_end:
+            break
+        fr = timeline[i]
+        search_end = t
+        if t <= base_end:
+            continue
+        if not _ball_in_kickoff_zone(fr) or _ball_speed(fr) >= 900.0:
+            return min(times[-1], t + 0.35)
+    return max(search_end, base_end)
 
 
 def _player_frame_is_placeholder(player_frame: Dict[str, Any] | None) -> bool:
@@ -1372,17 +1443,26 @@ def _detect_kickoff_events(
     events: List[Dict[str, Any]] = []
     if not timeline:
         return events
+    parser_windows = _filter_kickoff_windows_with_reset_evidence(timeline, times, list(kickoff_reset_windows or []))
     candidate_windows = _merge_kickoff_windows(
-        _collect_kickoff_reset_windows(timeline, times) + list(kickoff_reset_windows or [])
+        _collect_kickoff_reset_windows(timeline, times) + parser_windows
     )
     last_kickoff_end_t = -999.0
     for start_t, reset_end_t in candidate_windows:
         if start_t < last_kickoff_end_t:
             continue
         start_idx = max(0, min(len(times) - 1, bisect_left(times, start_t)))
-        end_t = min(times[-1], max(reset_end_t + 0.75, start_t + KICKOFF_WINDOW_TIMEOUT))
-        touch_idx, touch_player, touch_t = _first_touch_in_window(timeline, times, start_idx, end_t)
+        end_t = _kickoff_touch_search_end(timeline, times, start_idx, start_t, reset_end_t)
+        touch_idx, touch_player, touch_t = _first_touch_in_window(
+            timeline,
+            times,
+            start_idx,
+            end_t,
+            min_conf=KICKOFF_TOUCH_CONF_MIN,
+        )
         if touch_idx < 0:
+            continue
+        if not _ball_near_kickoff_touch_zone(timeline[touch_idx]):
             continue
         player_attempted = _attempted_kickoff_before_touch(
             timeline,
@@ -1647,7 +1727,11 @@ def _detect_mechanic_events(
     _fr_airborne_s: float = 0.0
     _last_ground_t: float = times[0] if timeline else 0.0
 
-    parser_kickoff_windows = _coerce_kickoff_windows((replay_meta or {}).get("kickoff_pause_windows", []))
+    parser_kickoff_windows = _filter_kickoff_windows_with_reset_evidence(
+        timeline,
+        times,
+        _coerce_kickoff_windows((replay_meta or {}).get("kickoff_pause_windows", [])),
+    )
     kickoff_events = _detect_kickoff_events(timeline, times, player, player_teams, parser_kickoff_windows)
     events.extend(kickoff_events)
     for k in kickoff_events:

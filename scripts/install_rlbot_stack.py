@@ -490,7 +490,12 @@ def ensure_project_venv(install_root: Path, host_python: Path) -> Path:
     recreate = False
     if venv_root.exists():
         try:
-            resolve_venv_python(venv_root)
+            venv_python = resolve_venv_python(venv_root)
+            probe = run([str(venv_python), "-m", "pip", "--version"], check=False)
+            if probe.returncode != 0:
+                log(f"Removing virtual environment with broken pip at {venv_root}")
+                shutil.rmtree(venv_root, ignore_errors=True)
+                recreate = True
         except FileNotFoundError:
             log(f"Removing incomplete virtual environment at {venv_root}")
             shutil.rmtree(venv_root, ignore_errors=True)
@@ -504,6 +509,16 @@ def ensure_project_venv(install_root: Path, host_python: Path) -> Path:
 
     venv_python = resolve_venv_python(venv_root)
     return venv_python
+
+
+def rebuild_project_venv(install_root: Path, host_python: Path) -> Path:
+    venv_root = install_root / "venv"
+    if venv_root.exists():
+        log(f"Rebuilding project virtual environment at {venv_root}")
+        shutil.rmtree(venv_root, ignore_errors=True)
+    log(f"Creating project virtual environment at {venv_root}")
+    run([str(host_python), "-m", "venv", str(venv_root)])
+    return resolve_venv_python(venv_root)
 
 
 def install_bundled_project_files(resource_root: Path, install_root: Path) -> None:
@@ -1108,7 +1123,12 @@ def run_installation(args: argparse.Namespace, ui: InstallerProgressWindow | Non
         if ui:
             ui.phase("Python Setup", "Creating the project virtual environment and installing Python packages...", 38)
         venv_python = ensure_project_venv(install_root, host_python)
-        install_python_requirements(resource_root, venv_python, extra_packages)
+        try:
+            install_python_requirements(resource_root, venv_python, extra_packages)
+        except subprocess.CalledProcessError as exc:
+            log(f"Project Python setup failed with exit code {exc.returncode}. Rebuilding the virtual environment and retrying once...")
+            venv_python = rebuild_project_venv(install_root, host_python)
+            install_python_requirements(resource_root, venv_python, extra_packages)
 
     failures: list[str] = []
     botpack_root: Path | None = None

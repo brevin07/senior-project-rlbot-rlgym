@@ -31,6 +31,16 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
     cognito_jwt_leeway_seconds: int = int(os.environ.get("COGNITO_JWT_LEEWAY_SECONDS", "120") or "120")
     _jwks_cache: Dict[str, Any] = {"exp": 0.0, "keys": {}}
 
+    def _request_is_https(self) -> bool:
+        public_base = str(os.environ.get("ROCKETCOACH_PUBLIC_BASE_URL", "") or "").strip().lower()
+        if public_base.startswith("https://"):
+            return True
+        proto = str(self.headers.get("X-Forwarded-Proto", "") or "").strip().lower()
+        if proto:
+            return proto == "https"
+        host = str(self.headers.get("X-Forwarded-Host", "") or self.headers.get("Host", "") or "").strip().lower()
+        return host.endswith(".app") or host.endswith(".ngrok.app")
+
     def _get_session_id(self) -> str:
         raw = self.headers.get("Cookie", "")
         if not raw:
@@ -46,6 +56,9 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
         cookie[self.session_cookie] = str(session_id)
         cookie[self.session_cookie]["path"] = "/"
         cookie[self.session_cookie]["httponly"] = True
+        cookie[self.session_cookie]["samesite"] = "Lax"
+        if self._request_is_https():
+            cookie[self.session_cookie]["secure"] = True
         self.send_header("Set-Cookie", cookie.output(header="").strip())
 
     def _clear_session_cookie(self) -> None:
@@ -54,6 +67,9 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
         cookie[self.session_cookie]["path"] = "/"
         cookie[self.session_cookie]["expires"] = "Thu, 01 Jan 1970 00:00:00 GMT"
         cookie[self.session_cookie]["httponly"] = True
+        cookie[self.session_cookie]["samesite"] = "Lax"
+        if self._request_is_https():
+            cookie[self.session_cookie]["secure"] = True
         self.send_header("Set-Cookie", cookie.output(header="").strip())
 
     def _require_auth(self) -> Dict[str, Any]:
@@ -66,6 +82,18 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
         profile = self.store._db.get_profile_by_auth_user(auth_user_id=int(auth["id"])) or {}
         self.store.set_current_user(profile)
         return {"auth": auth, "profile": profile}
+
+    @staticmethod
+    def _admin_emails() -> set[str]:
+        raw = os.environ.get("ROCKETCOACH_ADMIN_EMAILS", "brevintating@gmail.com")
+        return {e.strip().lower() for e in str(raw or "").split(",") if e.strip()}
+
+    def _require_admin(self) -> Dict[str, Any]:
+        ctx = self._require_auth()
+        email = str((ctx.get("auth") or {}).get("email") or "").strip().lower()
+        if email not in self._admin_emails():
+            raise PermissionError("Admin access required.")
+        return ctx
 
     @classmethod
     def _jwks_uri(cls) -> str:
@@ -325,23 +353,64 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True, "data": data})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
-        if path == "/api/replay/mechanic-feedback":
+        if path in ("/api/replay/mechanic-feedback", "/api/mechanic-feedback"):
             try:
-                feedback_file = Path(__file__).resolve().parents[2] / "artifacts" / "data" / "mechanic_feedback.jsonl"
-                if not feedback_file.exists():
-                    return self._send_json({"ok": True, "entries": []})
-                entries = []
-                with open(feedback_file, "r", encoding="utf-8") as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if line:
-                            try:
-                                entries.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                pass
+                profile_id: int | None = None
+                try:
+                    ctx = self._require_auth()
+                    profile_id = int((ctx.get("profile") or {}).get("id") or 0) or None
+                except Exception:
+                    profile_id = None
+                entries = self.store._db.list_mechanic_feedback(user_id=profile_id, limit=500)
                 return self._send_json({"ok": True, "entries": entries})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=500)
+        if path in (
+            "/api/replay/admin/mechanic-feedback",
+            "/api/admin/mechanic-feedback",
+            "/api/replay/admin/mechanic-feedback.csv",
+            "/api/admin/mechanic-feedback.csv",
+        ):
+            try:
+                self._require_admin()
+            except PermissionError as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=403)
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=401)
+            qs = parse_qs(urlparse(self.path).query)
+            mech = (qs.get("mechanic") or [None])[0]
+            try:
+                limit = int((qs.get("limit") or ["10000"])[0])
+            except Exception:
+                limit = 10000
+            entries = self.store._db.list_mechanic_feedback(
+                user_id=None, mechanic_id=mech, limit=limit
+            )
+            if path.endswith(".csv"):
+                import csv as _csv
+                import io as _io
+                cols = [
+                    "id", "created_at", "user_id", "session_id", "replay_name",
+                    "mechanic_id", "event_time", "quality_label", "quality_score",
+                    "verdict", "reason", "note",
+                ]
+                buf = _io.StringIO()
+                writer = _csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+                writer.writeheader()
+                for r in entries:
+                    writer.writerow(r)
+                body = buf.getvalue().encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header(
+                    "Content-Disposition",
+                    'attachment; filename="mechanic_feedback.csv"',
+                )
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            return self._send_json({"ok": True, "entries": entries, "count": len(entries)})
         if path == "/api/recommendations/current":
             try:
                 data = self.store.current_recommendations()
@@ -797,7 +866,7 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
 
-        if self.path == "/api/replay/mechanic-feedback":
+        if self.path in ("/api/replay/mechanic-feedback", "/api/mechanic-feedback"):
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length) if length > 0 else b"{}"
             try:
@@ -807,21 +876,28 @@ class _ReplayDashboardHandler(BaseHTTPRequestHandler):
             note = str(body.get("note", "")).strip()
             if not note:
                 return self._send_json({"ok": False, "error": "Note is required"}, status=400)
-            entry = {
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "replay_name": str(body.get("replay_name", "unknown")),
-                "event_time": float(body.get("event_time", 0.0)),
-                "mechanic_id": str(body.get("mechanic_id", "")),
-                "quality_label": str(body.get("quality_label", "")),
-                "quality_score": float(body.get("quality_score", 0.0)),
-                "reason": str(body.get("reason", "")),
-                "note": note,
-            }
-            feedback_file = Path(__file__).resolve().parents[2] / "artifacts" / "data" / "mechanic_feedback.jsonl"
-            feedback_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(feedback_file, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(entry) + "\n")
-            return self._send_json({"ok": True})
+            profile_id: int | None = None
+            try:
+                ctx = self._require_auth()
+                profile_id = int((ctx.get("profile") or {}).get("id") or 0) or None
+            except Exception:
+                profile_id = None
+            try:
+                row_id = self.store._db.add_mechanic_feedback(
+                    user_id=profile_id,
+                    session_id=str(body.get("session_id") or "") or None,
+                    replay_name=str(body.get("replay_name", "unknown")),
+                    mechanic_id=str(body.get("mechanic_id", "")),
+                    event_time=float(body.get("event_time", 0.0)),
+                    quality_label=str(body.get("quality_label", "")),
+                    quality_score=float(body.get("quality_score", 0.0)),
+                    reason=str(body.get("reason", "")),
+                    verdict=str(body.get("verdict") or "wrong"),
+                    note=note,
+                )
+                return self._send_json({"ok": True, "id": row_id})
+            except Exception as exc:
+                return self._send_json({"ok": False, "error": str(exc)}, status=500)
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
@@ -864,12 +940,15 @@ _BaseReplayDashboardServer = ReplayDashboardServer
 
 class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
     def _external_base_url(self) -> str:
+        configured = str(os.environ.get("ROCKETCOACH_PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
+        if configured:
+            return configured
         host = str(self.headers.get("X-Forwarded-Host", "") or self.headers.get("Host", "") or "").strip()
         if not host:
             host = f"{self.server.server_address[0]}:{self.server.server_address[1]}"
         proto = str(self.headers.get("X-Forwarded-Proto", "") or "").strip().lower()
         if not proto:
-            proto = "https" if host.endswith(".ngrok.app") else "http"
+            proto = "https" if host.endswith(".app") or host.endswith(".ngrok.app") else "http"
         return f"{proto}://{host}"
 
     def _ensure_dev_profile(self) -> Dict[str, Any]:

@@ -274,6 +274,90 @@ def test_replay_meta_kickoff_window_drives_detection_and_suppression():
     assert "fifty_fifty_control" not in mids
 
 
+def test_kickoff_requires_true_center_reset_not_just_metadata_window():
+    timeline = []
+    for i in range(150):
+        t = i / 60.0
+        touch_moment = t >= 0.8
+        ball_vx = 0.0 if not touch_moment else 1300.0
+        ball_vy = 0.0 if not touch_moment else -900.0
+        ball_x = 1700.0 + ((t - 0.8) * 1300.0 if touch_moment else 0.0)
+        ball_y = -2600.0 + ((t - 0.8) * -900.0 if touch_moment else 0.0)
+        timeline.append(
+            {
+                "t": t,
+                "seconds_remaining": 230 - t,
+                "is_overtime": False,
+                "is_goal_pause": False,
+                "is_kickoff_pause": True,
+                "is_inactive_phase": False,
+                "active_play": True,
+                "ball": {
+                    "x": ball_x,
+                    "y": ball_y,
+                    "z": 105.0,
+                    "vx": ball_vx,
+                    "vy": ball_vy,
+                    "vz": 0.0,
+                },
+                "players": [
+                    _player("TestPlayer", -700.0 + t * 2300.0, -900.0 - t * 1700.0, 17.0, 2300.0, -1700.0),
+                    _player("Opponent", 2100.0 - t * 1200.0, -2500.0 + t * 900.0, 17.0, -1200.0, 900.0),
+                ],
+            }
+        )
+
+    payload = grade_game_mechanics(
+        timeline,
+        "TestPlayer",
+        {"TestPlayer": 0, "Opponent": 1},
+        {"kickoff_pause_windows": [{"start_s": 0.0, "end_s": 1.2}]},
+    )
+
+    assert "kickoff" not in _mechanic_ids(payload)
+
+
+def test_center_ball_play_without_kickoff_spawns_is_not_kickoff():
+    timeline = []
+    for i in range(130):
+        t = i / 60.0
+        touch_moment = t >= 0.7
+        ball_vx = 0.0 if not touch_moment else 700.0
+        ball_vy = 0.0 if not touch_moment else 400.0
+        timeline.append(
+            {
+                "t": t,
+                "seconds_remaining": 180 - t,
+                "is_overtime": False,
+                "is_goal_pause": False,
+                "is_kickoff_pause": True,
+                "is_inactive_phase": False,
+                "active_play": True,
+                "ball": {
+                    "x": (t - 0.7) * 700.0 if touch_moment else 0.0,
+                    "y": (t - 0.7) * 400.0 if touch_moment else 0.0,
+                    "z": 93.0,
+                    "vx": ball_vx,
+                    "vy": ball_vy,
+                    "vz": 0.0,
+                },
+                "players": [
+                    _player("TestPlayer", -600.0 + t * 1150.0, -600.0 + t * 1150.0, 17.0, 1150.0, 1150.0),
+                    _player("Opponent", 650.0 - t * 950.0, 650.0 - t * 950.0, 17.0, -950.0, -950.0),
+                ],
+            }
+        )
+
+    payload = grade_game_mechanics(
+        timeline,
+        "TestPlayer",
+        {"TestPlayer": 0, "Opponent": 1},
+        {"kickoff_pause_windows": [{"start_s": 0.0, "end_s": 1.1}]},
+    )
+
+    assert "kickoff" not in _mechanic_ids(payload)
+
+
 def test_flip_reset_requires_airborne_reset_then_offensive_use():
     timeline = []
     for i in range(110):

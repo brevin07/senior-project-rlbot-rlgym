@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 type ReplayFrame = {
@@ -81,8 +81,10 @@ type ReplayVisualizerProps = {
   boostPads: BoostPad[];
   onTimeChange?: (timeS: number, frameIdx: number) => void;
   onAutoEventPause?: (payload: MechanicEvent) => void;
+  onAutoEventClear?: () => void;
   eventPopup?: React.ReactNode;
   seekTime?: number | null;
+  reviewRequest?: { id: number; time: number; event: MechanicEvent } | null;
 };
 
 type TimelineAlignment = { alignedTime: number; alignedIndex: number };
@@ -94,6 +96,10 @@ const WALL_THICKNESS = 60;
 const GOAL_WIDTH = 1780;
 const GOAL_HEIGHT = 640;
 const TELEPORT_DIST_THRESHOLD = 900;
+const EVENT_REVIEW_FREEZE_MS = 5000;
+const EVENT_REVIEW_CARD_AFTER_RESUME_MS = 2000;
+const EVENT_REVIEW_CLICK_PREROLL_S = 1.5;
+const EVENT_REVIEW_CLICK_DELAY_MS = 1000;
 
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
@@ -576,8 +582,10 @@ export default function ReplayVisualizer({
   boostPads,
   onTimeChange,
   onAutoEventPause,
+  onAutoEventClear,
   eventPopup,
-  seekTime
+  seekTime,
+  reviewRequest
 }: ReplayVisualizerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const labelLayerRef = useRef<HTMLDivElement | null>(null);
@@ -626,6 +634,20 @@ export default function ReplayVisualizer({
   const goalHoldResumeReplayTRef = useRef(0);
   const playToEventTargetRef = useRef<number | null>(null);
   const lastAutoPausedEventKeyRef = useRef("");
+  const eventReviewPauseUntilWallMsRef = useRef(0);
+  const eventReviewClearAtWallMsRef = useRef(0);
+  const eventReviewReplayTRef = useRef(0);
+  const eventReviewActiveKeyRef = useRef("");
+  const eventReviewUiKeyRef = useRef("");
+  const eventReviewPausedSnapshotRef = useRef<{
+    phase: "paused" | "aftermath";
+    pauseRemainingMs: number;
+    clearRemainingMs: number;
+    replayT: number;
+  } | null>(null);
+  const manualReviewDelayTimerRef = useRef<number | null>(null);
+  const manualReviewStartAtWallMsRef = useRef(0);
+  const manualReviewStartReplayTRef = useRef(0);
   const lastBallTouchDetectTRef = useRef(0);
   const recentBallTouchUntilTRef = useRef(0);
 
@@ -636,6 +658,32 @@ export default function ReplayVisualizer({
   const [debugOpen, setDebugOpen] = useState(false);
   const [arenaStatus, setArenaStatus] = useState("Arena: procedural fallback");
   const [timelineEventMode, setTimelineEventMode] = useState<"top10" | "worst5" | "best5" | "all">("all");
+  const [eventReviewUi, setEventReviewUi] = useState<{ phase: "paused" | "aftermath"; remaining: number } | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const updateEventReviewUi = useCallback((next: { phase: "paused" | "aftermath"; remaining: number } | null) => {
+    const key = next ? `${next.phase}:${next.remaining}` : "";
+    if (key === eventReviewUiKeyRef.current) return;
+    eventReviewUiKeyRef.current = key;
+    setEventReviewUi(next);
+  }, []);
+
+  const clearManualReviewDelay = useCallback(() => {
+    if (manualReviewDelayTimerRef.current != null) {
+      window.clearTimeout(manualReviewDelayTimerRef.current);
+      manualReviewDelayTimerRef.current = null;
+    }
+    manualReviewStartAtWallMsRef.current = 0;
+    manualReviewStartReplayTRef.current = 0;
+  }, []);
+
+  const clearEventReviewState = useCallback(() => {
+    eventReviewPauseUntilWallMsRef.current = 0;
+    eventReviewClearAtWallMsRef.current = 0;
+    eventReviewActiveKeyRef.current = "";
+    eventReviewPausedSnapshotRef.current = null;
+    updateEventReviewUi(null);
+  }, [updateEventReviewUi]);
 
   const maxFrame = Math.max(0, (timeline?.length ?? 1) - 1);
   const currentTimeS = timeline?.[currentFrame]?.t ?? 0;
@@ -677,20 +725,70 @@ export default function ReplayVisualizer({
     recentBallTouchUntilTRef.current = 0;
   }, [timeline]);
 
+  const lastSeekTimeRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!timeline?.length || seekTime == null) return;
+    if (!timeline?.length || seekTime == null) {
+      lastSeekTimeRef.current = null;
+      return;
+    }
+    if (lastSeekTimeRef.current === seekTime) return;
+    lastSeekTimeRef.current = seekTime;
     const start = timeline[0]?.t ?? 0;
     const end = timeline[timeline.length - 1]?.t ?? 0;
     const t = clamp(seekTime, start, end);
     const aligned = alignTimeToTimeline(timeline, t);
     playToEventTargetRef.current = null;
     goalHoldUntilWallMsRef.current = 0;
+    clearManualReviewDelay();
+    clearEventReviewState();
+    onAutoEventClear?.();
     setPlaying(false);
     playingRef.current = false;
     playStartReplayRef.current = aligned.alignedTime;
     playStartWallRef.current = performance.now();
     setCurrentFrame(clamp(aligned.alignedIndex, 0, timeline.length - 1));
-  }, [seekTime, timeline]);
+  }, [seekTime, timeline, onAutoEventClear, clearEventReviewState, clearManualReviewDelay]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const lastReviewRequestIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!timeline?.length || !reviewRequest) {
+      lastReviewRequestIdRef.current = null;
+      return;
+    }
+    if (lastReviewRequestIdRef.current === reviewRequest.id) return;
+    lastReviewRequestIdRef.current = reviewRequest.id;
+    const start = timeline[0]?.t ?? 0;
+    const end = timeline[timeline.length - 1]?.t ?? 0;
+    const eventT = clamp(Number(reviewRequest.time ?? reviewRequest.event?.time ?? 0), start, end);
+    const prerollT = clamp(eventT - EVENT_REVIEW_CLICK_PREROLL_S, start, end);
+    const aligned = alignTimeToTimeline(timeline, prerollT);
+    clearManualReviewDelay();
+    clearEventReviewState();
+    onAutoEventClear?.();
+    lastAutoPausedEventKeyRef.current = "";
+    playToEventTargetRef.current = null;
+    goalHoldUntilWallMsRef.current = 0;
+    playStartReplayRef.current = aligned.alignedTime;
+    playStartWallRef.current = performance.now();
+    currentFrameRef.current = clamp(aligned.alignedIndex, 0, timeline.length - 1);
+    setCurrentFrame(currentFrameRef.current);
+    manualReviewStartReplayTRef.current = aligned.alignedTime;
+    manualReviewStartAtWallMsRef.current = performance.now() + EVENT_REVIEW_CLICK_DELAY_MS;
+    setPlaying(true);
+    playingRef.current = true;
+  }, [reviewRequest, timeline, onAutoEventClear, clearEventReviewState, clearManualReviewDelay]);
+
+  useEffect(() => {
+    return () => clearManualReviewDelay();
+  }, [clearManualReviewDelay]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -1286,32 +1384,7 @@ export default function ReplayVisualizer({
       const raw = dedupeMechanicEvents(events);
       if (!raw.length) return [] as (MechanicEvent & { __aligned_t?: number; __aligned_idx?: number })[];
       const withAligned = raw.map((e) => ({ ...e, ...alignEventToTimeline(e) }));
-      if (timelineEventMode === "all") {
-        return withAligned.sort((a, b) => Number((a as any).__aligned_t || 0) - Number((b as any).__aligned_t || 0));
-      }
-      const scored = withAligned.slice();
-      if (timelineEventMode === "worst5") {
-        return scored
-          .sort((a, b) => Number(a?.score ?? a?.quality_score ?? 0) - Number(b?.score ?? b?.quality_score ?? 0))
-          .slice(0, 5)
-          .sort((a, b) => Number((a as any).__aligned_t || 0) - Number((b as any).__aligned_t || 0));
-      }
-      if (timelineEventMode === "best5") {
-        return scored
-          .sort((a, b) => Number(b?.score ?? b?.quality_score ?? 0) - Number(a?.score ?? a?.quality_score ?? 0))
-          .slice(0, 5)
-          .sort((a, b) => Number((a as any).__aligned_t || 0) - Number((b as any).__aligned_t || 0));
-      }
-      const worst = scored
-        .sort((a, b) => Number(a?.score ?? a?.quality_score ?? 0) - Number(b?.score ?? b?.quality_score ?? 0))
-        .slice(0, 5);
-      const best = scored
-        .sort((a, b) => Number(b?.score ?? b?.quality_score ?? 0) - Number(a?.score ?? a?.quality_score ?? 0))
-        .slice(0, 5);
-      const merged = dedupeMechanicEvents([...worst, ...best]);
-      return merged
-        .map((e) => ({ ...e, ...alignEventToTimeline(e) }))
-        .sort((a, b) => Number((a as any).__aligned_t || 0) - Number((b as any).__aligned_t || 0));
+      return withAligned.sort((a, b) => Number((a as any).__aligned_t || 0) - Number((b as any).__aligned_t || 0));
     };
 
     const updateNameTags = (interpFrame: ReturnType<typeof getInterpolatedFrame>) => {
@@ -1498,6 +1571,40 @@ export default function ReplayVisualizer({
       if (!playingRef.current || !timeline.length) return;
       const start = timeline[0]?.t ?? 0;
       const end = timeline[timeline.length - 1]?.t ?? 0;
+
+      if (manualReviewStartAtWallMsRef.current > now) {
+        renderAtTime(clamp(manualReviewStartReplayTRef.current, start, end));
+        return;
+      }
+      if (manualReviewStartAtWallMsRef.current > 0) {
+        playStartReplayRef.current = manualReviewStartReplayTRef.current;
+        playStartWallRef.current = now;
+        manualReviewStartAtWallMsRef.current = 0;
+        manualReviewStartReplayTRef.current = 0;
+      }
+
+      if (eventReviewClearAtWallMsRef.current > 0 && now >= eventReviewClearAtWallMsRef.current) {
+        eventReviewClearAtWallMsRef.current = 0;
+        eventReviewPauseUntilWallMsRef.current = 0;
+        eventReviewActiveKeyRef.current = "";
+        eventReviewPausedSnapshotRef.current = null;
+        updateEventReviewUi(null);
+        onAutoEventClear?.();
+      } else if (eventReviewPauseUntilWallMsRef.current > now) {
+        const remaining = Math.ceil((eventReviewPauseUntilWallMsRef.current - now) / 1000);
+        updateEventReviewUi({ phase: "paused", remaining: clamp(remaining, 1, 5) });
+        renderAtTime(clamp(eventReviewReplayTRef.current, start, end));
+        return;
+      } else if (eventReviewPauseUntilWallMsRef.current > 0) {
+        eventReviewPauseUntilWallMsRef.current = 0;
+        playStartReplayRef.current = eventReviewReplayTRef.current;
+        playStartWallRef.current = now;
+        updateEventReviewUi({ phase: "aftermath", remaining: EVENT_REVIEW_CARD_AFTER_RESUME_MS / 1000 });
+      } else if (eventReviewClearAtWallMsRef.current > now) {
+        const remaining = Math.ceil((eventReviewClearAtWallMsRef.current - now) / 1000);
+        updateEventReviewUi({ phase: "aftermath", remaining: clamp(remaining, 1, 2) });
+      }
+
       const elapsed = (now - playStartWallRef.current) / 1000;
       let targetReplayT = playStartReplayRef.current + elapsed * speedRef.current;
 
@@ -1555,8 +1662,14 @@ export default function ReplayVisualizer({
             targetReplayT = Number((hit as any).__aligned_t || hit?.time || targetReplayT);
             playToEventTargetRef.current = null;
             lastAutoPausedEventKeyRef.current = key;
-            setPlaying(false);
-            playingRef.current = false;
+            eventReviewReplayTRef.current = targetReplayT;
+            eventReviewPauseUntilWallMsRef.current = now + EVENT_REVIEW_FREEZE_MS;
+            eventReviewClearAtWallMsRef.current = now + EVENT_REVIEW_FREEZE_MS + EVENT_REVIEW_CARD_AFTER_RESUME_MS;
+            eventReviewActiveKeyRef.current = key;
+            eventReviewPausedSnapshotRef.current = null;
+            playStartReplayRef.current = targetReplayT;
+            playStartWallRef.current = now + EVENT_REVIEW_FREEZE_MS;
+            updateEventReviewUi({ phase: "paused", remaining: EVENT_REVIEW_FREEZE_MS / 1000 });
             onAutoEventPause?.({
               ...hit,
               time: Number((hit as any).__aligned_t || hit?.time || targetReplayT),
@@ -1588,7 +1701,7 @@ export default function ReplayVisualizer({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-  }, [timeline, selectedPlayer, onTimeChange, onAutoEventPause, events, timelineEventMode]);
+  }, [timeline, selectedPlayer, onTimeChange, onAutoEventPause, onAutoEventClear, events, timelineEventMode, updateEventReviewUi]);
 
   const nextEvent = useMemo(() => {
     if (!displayMarkers.length) return null;
@@ -1624,11 +1737,54 @@ export default function ReplayVisualizer({
   }, [nextEvent, replayMeta?.ot_start_s, timeline]);
 
   const handlePlay = () => {
+    const snapshot = eventReviewPausedSnapshotRef.current;
+    if (snapshot) {
+      const now = performance.now();
+      eventReviewPausedSnapshotRef.current = null;
+      eventReviewReplayTRef.current = snapshot.replayT;
+      if (snapshot.phase === "paused") {
+        eventReviewPauseUntilWallMsRef.current = now + snapshot.pauseRemainingMs;
+        eventReviewClearAtWallMsRef.current = now + snapshot.clearRemainingMs;
+        playStartReplayRef.current = snapshot.replayT;
+        playStartWallRef.current = now + snapshot.pauseRemainingMs;
+        updateEventReviewUi({ phase: "paused", remaining: clamp(Math.ceil(snapshot.pauseRemainingMs / 1000), 1, 5) });
+      } else {
+        eventReviewPauseUntilWallMsRef.current = 0;
+        eventReviewClearAtWallMsRef.current = now + snapshot.clearRemainingMs;
+        playStartReplayRef.current = currentReplayTimeRef.current;
+        playStartWallRef.current = now;
+        updateEventReviewUi({ phase: "aftermath", remaining: clamp(Math.ceil(snapshot.clearRemainingMs / 1000), 1, 2) });
+      }
+    }
     setPlaying(true);
+    playingRef.current = true;
   };
 
   const handlePause = () => {
+    clearManualReviewDelay();
+    const now = performance.now();
+    if (eventReviewPauseUntilWallMsRef.current > now && eventReviewClearAtWallMsRef.current > now) {
+      const pauseRemainingMs = Math.max(0, eventReviewPauseUntilWallMsRef.current - now);
+      const clearRemainingMs = Math.max(pauseRemainingMs, eventReviewClearAtWallMsRef.current - now);
+      eventReviewPausedSnapshotRef.current = {
+        phase: "paused",
+        pauseRemainingMs,
+        clearRemainingMs,
+        replayT: eventReviewReplayTRef.current,
+      };
+      updateEventReviewUi({ phase: "paused", remaining: clamp(Math.ceil(pauseRemainingMs / 1000), 1, 5) });
+    } else if (eventReviewClearAtWallMsRef.current > now) {
+      const clearRemainingMs = Math.max(0, eventReviewClearAtWallMsRef.current - now);
+      eventReviewPausedSnapshotRef.current = {
+        phase: "aftermath",
+        pauseRemainingMs: 0,
+        clearRemainingMs,
+        replayT: currentReplayTimeRef.current,
+      };
+      updateEventReviewUi({ phase: "aftermath", remaining: clamp(Math.ceil(clearRemainingMs / 1000), 1, 2) });
+    }
     setPlaying(false);
+    playingRef.current = false;
   };
 
   const playToNextEvent = () => {
@@ -1639,6 +1795,9 @@ export default function ReplayVisualizer({
     const aligned = alignTimeToTimeline(timeline, next.t);
     playToEventTargetRef.current = null;
     goalHoldUntilWallMsRef.current = 0;
+    clearManualReviewDelay();
+    clearEventReviewState();
+    onAutoEventClear?.();
     setPlaying(false);
     playingRef.current = false;
     playStartReplayRef.current = aligned.alignedTime;
@@ -1654,6 +1813,9 @@ export default function ReplayVisualizer({
     const aligned = alignTimeToTimeline(timeline, prev.t);
     playToEventTargetRef.current = null;
     goalHoldUntilWallMsRef.current = 0;
+    clearManualReviewDelay();
+    clearEventReviewState();
+    onAutoEventClear?.();
     setPlaying(false);
     playingRef.current = false;
     playStartReplayRef.current = aligned.alignedTime;
@@ -1668,6 +1830,16 @@ export default function ReplayVisualizer({
       if (!document.fullscreenElement) {
         await el.requestFullscreen();
       } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // ignore fullscreen errors
+    }
+  };
+
+  const exitFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
     } catch {
@@ -1716,6 +1888,23 @@ export default function ReplayVisualizer({
           </div>
         </div>
         <div className="label-layer" ref={labelLayerRef} />
+        {eventReviewUi && (
+          <div className={`event-review-timer event-review-${eventReviewUi.phase}`}>
+            <span>{eventReviewUi.phase === "paused" ? "Paused review" : "Aftermath"}</span>
+            <strong>{eventReviewUi.remaining}s</strong>
+          </div>
+        )}
+        {isFullscreen && (
+          <button
+            type="button"
+            className="fullscreen-minimize-btn"
+            onClick={() => void exitFullscreen()}
+            aria-label="Exit fullscreen"
+          >
+            <i className="fas fa-compress"></i>
+            <span>Minimize</span>
+          </button>
+        )}
         {eventPopup}
       </div>
 

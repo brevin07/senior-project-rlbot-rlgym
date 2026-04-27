@@ -106,7 +106,7 @@ export default function LoginPage() {
     setMessage("");
     try {
       await signup(email, password);
-      setMessage("Verification code sent. Check your email.");
+      setMessage(`Code on its way to ${email.trim()} — check your inbox (peek in spam too, just in case).`);
       setMode("verify");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -149,7 +149,7 @@ export default function LoginPage() {
     setMessage("");
     try {
       await resendSignupCode(email);
-      setMessage("A new code was sent.");
+      setMessage(`Fresh code on its way to ${email.trim()}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

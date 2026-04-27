@@ -51,6 +51,13 @@ class GatewayHandler(BaseHTTPRequestHandler):
         parsed = urlparse(target_base)
         headers = {k: v for k, v in self.headers.items() if k.lower() not in {"host", "content-length"}}
         headers["Accept-Encoding"] = "identity"
+        forwarded_host = str(self.headers.get("X-Forwarded-Host", "") or self.headers.get("Host", "") or "").strip()
+        if forwarded_host:
+            headers["X-Forwarded-Host"] = forwarded_host
+            headers["X-Forwarded-Proto"] = str(
+                self.headers.get("X-Forwarded-Proto", "")
+                or ("https" if forwarded_host.endswith(".app") else "http")
+            ).strip().lower()
 
         body = None
         if self.command in {"POST", "PUT", "PATCH"}:

@@ -190,6 +190,28 @@ class AppDB:
 
                 CREATE INDEX IF NOT EXISTS idx_llm_event_explanations_lookup
                 ON llm_event_explanations(user_id, replay_fingerprint, model_id, prompt_version, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS mechanic_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    session_id TEXT,
+                    replay_name TEXT NOT NULL DEFAULT '',
+                    mechanic_id TEXT NOT NULL DEFAULT '',
+                    event_time REAL NOT NULL DEFAULT 0.0,
+                    quality_label TEXT NOT NULL DEFAULT '',
+                    quality_score REAL NOT NULL DEFAULT 0.0,
+                    reason TEXT NOT NULL DEFAULT '',
+                    verdict TEXT NOT NULL DEFAULT 'wrong',
+                    note TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_mechanic_feedback_user_time
+                ON mechanic_feedback(user_id, created_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_mechanic_feedback_mechanic
+                ON mechanic_feedback(mechanic_id, created_at DESC);
                 """
             )
             cols = conn.execute("PRAGMA table_info(replay_sessions)").fetchall()
@@ -899,6 +921,91 @@ class AppDB:
                     ),
                 )
 
+    def add_mechanic_feedback(
+        self,
+        *,
+        user_id: Optional[int],
+        session_id: Optional[str],
+        replay_name: str,
+        mechanic_id: str,
+        event_time: float,
+        quality_label: str = "",
+        quality_score: float = 0.0,
+        reason: str = "",
+        verdict: str = "wrong",
+        note: str = "",
+    ) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO mechanic_feedback (
+                    user_id, session_id, replay_name, mechanic_id, event_time,
+                    quality_label, quality_score, reason, verdict, note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(user_id) if user_id is not None else None,
+                    str(session_id) if session_id else None,
+                    str(replay_name or ""),
+                    str(mechanic_id or ""),
+                    float(event_time or 0.0),
+                    str(quality_label or ""),
+                    float(quality_score or 0.0),
+                    str(reason or ""),
+                    str(verdict or "wrong"),
+                    str(note or ""),
+                    _utc_now_iso(),
+                ),
+            )
+            return int(cur.lastrowid or 0)
+
+    def list_mechanic_feedback(
+        self,
+        *,
+        user_id: Optional[int] = None,
+        mechanic_id: Optional[str] = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        clauses: List[str] = []
+        params: List[Any] = []
+        if user_id is not None:
+            clauses.append("user_id = ?")
+            params.append(int(user_id))
+        if mechanic_id:
+            clauses.append("mechanic_id = ?")
+            params.append(str(mechanic_id))
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(max(1, int(limit)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT id, user_id, session_id, replay_name, mechanic_id, event_time,
+                       quality_label, quality_score, reason, verdict, note, created_at
+                FROM mechanic_feedback
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [
+                {
+                    "id": int(r["id"]),
+                    "user_id": int(r["user_id"]) if r["user_id"] is not None else None,
+                    "session_id": str(r["session_id"] or ""),
+                    "replay_name": str(r["replay_name"] or ""),
+                    "mechanic_id": str(r["mechanic_id"] or ""),
+                    "event_time": float(r["event_time"] or 0.0),
+                    "quality_label": str(r["quality_label"] or ""),
+                    "quality_score": float(r["quality_score"] or 0.0),
+                    "reason": str(r["reason"] or ""),
+                    "verdict": str(r["verdict"] or ""),
+                    "note": str(r["note"] or ""),
+                    "created_at": str(r["created_at"] or ""),
+                }
+                for r in rows
+            ]
+
     def delete_account(self, *, auth_user_id: int) -> None:
         auth_user_id = int(auth_user_id)
         with self._connect() as conn:
@@ -917,6 +1024,7 @@ class AppDB:
                 conn.execute("DELETE FROM recommendation_snapshots WHERE user_id = ?", (user_id,))
                 conn.execute("DELETE FROM drill_runs WHERE user_id = ?", (user_id,))
                 conn.execute("DELETE FROM llm_event_explanations WHERE user_id = ?", (user_id,))
+                conn.execute("DELETE FROM mechanic_feedback WHERE user_id = ?", (user_id,))
                 conn.execute("DELETE FROM app_state WHERE key = ?", (self._aliases_key(user_id),))
                 conn.execute(
                     "DELETE FROM app_state WHERE key = 'active_user_id' AND value = ?",

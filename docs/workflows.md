@@ -36,6 +36,33 @@ Default behavior:
 
 This is the canonical packaged entrypoint for the hosted-style dashboard experience.
 
+### Public `rocketcoach.app` hosting
+
+For the public site, use the gateway as the single web surface:
+
+```txt
+https://rocketcoach.app -> reverse proxy / load balancer -> gateway:8888
+gateway:8888 -> replay:8775 for /api/replay
+gateway:8888 -> React dashboard for all browser routes
+```
+
+Set this on the hosted server:
+
+```powershell
+ROCKETCOACH_PUBLIC_BASE_URL=https://rocketcoach.app
+```
+
+The frontend already uses same-origin `/api/...` requests, so it does not need a separate public API URL when served by the gateway. If a reverse proxy such as Caddy, Nginx, Cloudflare Tunnel, or a load balancer is in front of the gateway, preserve `Host` and set `X-Forwarded-Proto=https`. The gateway forwards those public headers to the replay service so local companion callbacks are generated as `https://rocketcoach.app/api/replay/...` instead of Docker-internal URLs.
+
+A Caddy example is included at `deploy/Caddyfile.rocketcoach.app`.
+
+Recommended DNS:
+
+```txt
+rocketcoach.app      A/CNAME -> public web host or proxy
+www.rocketcoach.app  CNAME   -> rocketcoach.app
+```
+
 Default packaged data location:
 - `artifacts\data\app.db`
 

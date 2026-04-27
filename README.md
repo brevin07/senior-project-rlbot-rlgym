@@ -12,6 +12,24 @@ The product goal is to help a player move through one continuous loop:
 
 This repository already includes that loop end to end for replay review, progress tracking, installer delivery, and RLBot-backed training launch. Some subsystems are still in migration, but the packaged dashboard now exposes the main user workflow directly.
 
+## Public Hosting
+
+The production domain is intended to be:
+
+```txt
+https://rocketcoach.app
+```
+
+RocketCoach is easiest to host with the dashboard gateway as the single public service. The React app uses same-origin `/api/...` calls, so `rocketcoach.app` can serve both the website and replay API through the gateway. On the hosted server, set:
+
+```powershell
+ROCKETCOACH_PUBLIC_BASE_URL=https://rocketcoach.app
+```
+
+Then point DNS for `rocketcoach.app` at the server or hosting provider and route HTTPS traffic to the gateway on port `8888`. A reverse proxy should preserve the public `Host` header and send `X-Forwarded-Proto=https`; the gateway forwards those headers to the replay service so local companion callbacks and session cookies use the real public domain.
+
+A Caddy reverse-proxy example lives at `deploy/Caddyfile.rocketcoach.app`.
+
 ## User Flow
 
 ### 1. Account creation and verification
