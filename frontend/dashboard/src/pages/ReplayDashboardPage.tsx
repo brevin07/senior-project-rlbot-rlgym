@@ -1866,7 +1866,7 @@ export default function ReplayDashboardPage() {
               <span>RocketCoach</span>
             </div>
             <h1>{activeTabMeta.title}</h1>
-            <div className="status-text">{activeTabMeta.description}</div>
+            <div className="status-text">{activeTab === "home" && !latestReplay ? "Upload your first replay in the Replay tab to get started." : activeTabMeta.description}</div>
           </div>
           <div className="top-actions">
             <button type="button" className="ghost" onClick={reopenTutorial}>
@@ -1930,41 +1930,24 @@ export default function ReplayDashboardPage() {
             )}
 
             {!latestReplay && !showTutorial ? (
-              <div className="metrics-card welcome-card">
-                <div className="welcome-header">
-                  <div className="welcome-icon"><i className="fa-solid fa-rocket" /></div>
-                  <div>
-                    <h2>Welcome to RocketCoach{profile?.username ? `, ${profile.username}` : ""}</h2>
-                    <p className="text-muted">Upload your first replay to unlock mechanic grades, trend tracking, and personalized training.</p>
-                  </div>
+              <div className="metrics-card home-empty-card">
+                <div className="home-empty-icon"><i className="fa-solid fa-rocket" /></div>
+                <h2>Nothing to see yet</h2>
+                <p className="home-empty-sub">
+                  Upload a replay in the Replay tab to unlock mechanic grades, trend tracking, and personalized training{profile?.username ? `, ${profile.username}` : ""}.
+                </p>
+                <div className="home-empty-points">
+                  <div className="home-empty-point"><i className="fa-solid fa-chart-line" /><span>Per-mechanic scores out of 100</span></div>
+                  <div className="home-empty-point"><i className="fa-solid fa-film" /><span>3D replay playback with coaching cues</span></div>
+                  <div className="home-empty-point"><i className="fa-solid fa-dumbbell" /><span>Bot training built around your weakest mechanic</span></div>
                 </div>
-                <div className="welcome-steps">
-                  <div className="welcome-step">
-                    <div className="welcome-step-number">1</div>
-                    <div>
-                      <strong>Upload a replay</strong>
-                      <p className="text-muted">Drop a .replay file from your Rocket League replays folder.</p>
-                    </div>
-                  </div>
-                  <div className="welcome-step">
-                    <div className="welcome-step-number">2</div>
-                    <div>
-                      <strong>Get graded</strong>
-                      <p className="text-muted">RocketCoach analyzes every mechanic and gives you scores.</p>
-                    </div>
-                  </div>
-                  <div className="welcome-step">
-                    <div className="welcome-step-number">3</div>
-                    <div>
-                      <strong>Train smarter</strong>
-                      <p className="text-muted">Practice recommendations tailored to your weaknesses.</p>
-                    </div>
-                  </div>
-                </div>
-                <button type="button" onClick={() => openTab("replay")}><i className="fa-solid fa-upload" /> Upload Your First Replay</button>
+                <button type="button" className="home-empty-cta" onClick={() => openTab("replay")}>
+                  <i className="fa-solid fa-upload" /> Upload a Replay
+                </button>
               </div>
             ) : null}
 
+            {latestReplay && (
             <div className="home-grid">
               <div className="home-grid-cell home-grid-cell--left">
                 <div className="metrics-card">
@@ -2040,6 +2023,7 @@ export default function ReplayDashboardPage() {
                 </div>
               </div>
             </div>
+            )}
           </section>
         )}
 
