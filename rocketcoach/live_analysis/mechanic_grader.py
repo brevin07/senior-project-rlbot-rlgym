@@ -19,7 +19,7 @@ MECHANIC_ALIASES = {
 
 # Bumped each time detection logic, scoring weights, or output schema changes so
 # the store knows which cached payloads are stale and need re-grading.
-GRADING_VERSION = "mechanic_v8_aerial_tags_kickoff_resets"
+GRADING_VERSION = "mechanic_v9_flick_grounded_aerial_transition"
 
 MIN_REPORTED_MECHANIC_CONFIDENCE = 0.30
 
@@ -1014,7 +1014,9 @@ _FLIP_RESET_MIN_AIRBORNE_S = 0.22
 _FLIP_RESET_MIN_USE_DELAY_S = 0.08
 _FLIP_RESET_MAX_USE_DELAY_S = 1.7
 _FLIP_RESET_MIN_POST_SPEED = 1100.0
-_FLICK_MIN_CARRY_S = 0.22
+_FLICK_MIN_CARRY_S = 0.40
+_FLICK_GROUNDED_LOOKBACK_S = 0.60
+_FLICK_GROUNDED_PZ_MAX = 80.0
 _FLICK_MAX_BALL_HEIGHT = 210.0
 _FLICK_MAX_REL_SPEED = 520.0
 _FLICK_MAX_BALL_X_OFFSET = 130.0
@@ -1997,6 +1999,14 @@ def _detect_mechanic_events(
             away = abs(by2 - own_goal) > abs(by - own_goal)
             center_clear = abs(bx2) > abs(bx) + 180.0
             double_commit = _teammate_double_commit(fr, player, player_teams, team, d_pb)
+            # If the touch sent the ball into the opponent half AND we kept possession,
+            # this is the start of an offensive transition, not a defensive clear.
+            # Suppress aerial_defense in that case and let aerial_offense pick it up.
+            into_opp_half = (team == 0 and by2 > 200.0) or (team == 1 and by2 < -200.0)
+            adf_our_out = _best_team_ball_dist(fr2, player_teams, team)
+            adf_opp_out = _best_team_ball_dist(fr2, player_teams, 1 - team)
+            adf_retain = adf_our_out <= adf_opp_out + 60.0
+            adf_offensive_transition = away and adf_retain and into_opp_half
             q = 0.35 + 0.35 * (1.0 if away else 0.2) + 0.20 * (1.0 if center_clear else 0.35) + 0.10 * (0.2 if double_commit else 1.0)
             # Shift event time to the frame of actual ball contact (min d_pb within next 0.7 s)
             j_contact = i
@@ -2007,21 +2017,22 @@ def _detect_mechanic_events(
                     min_dpb_adf = _dpb_ci
                     j_contact = _ci
             t_contact_adf = times[j_contact]
-            _add_event(
-                events,
-                "aerial_defense",
-                t_contact_adf,
-                _clamp01(q),
-                "aerial defensive clear quality",
-                execution_score_0_1=round(_clamp01(0.45 + 0.25 * (1.0 if away else 0.2) + 0.30 * (1.0 if center_clear else 0.35)), 3),
-                decision_score_0_1=round(_clamp01(0.45 + 0.30 * (1.0 if threat_zone else 0.3) + 0.25 * (1.0 if not double_commit else 0.2)), 3),
-                outcome_score_0_1=round(_clamp01(0.35 + 0.35 * (1.0 if away else 0.0) + 0.30 * (1.0 if center_clear else 0.2)), 3),
-                risk_score_0_1=round(_clamp01(1.0 - _safe_float(ctx_now.get("ball_danger_0_1", 0.0))), 3),
-                issue_tags=(["double_commit"] if double_commit else []) + (["failed_clear_distance"] if not away else []),
-                improvement_tags=(["clear_wide"] if not center_clear else []) + (["beat_ball_earlier"] if not away else []),
-            )
-            _apply_event_context(events[-1], timeline=timeline, times=times, idx=j_contact, player=player, player_teams=player_teams)
-            last_t_by_mech["aerial_defense"] = t_contact_adf
+            if not adf_offensive_transition:
+                _add_event(
+                    events,
+                    "aerial_defense",
+                    t_contact_adf,
+                    _clamp01(q),
+                    "aerial defensive clear quality",
+                    execution_score_0_1=round(_clamp01(0.45 + 0.25 * (1.0 if away else 0.2) + 0.30 * (1.0 if center_clear else 0.35)), 3),
+                    decision_score_0_1=round(_clamp01(0.45 + 0.30 * (1.0 if threat_zone else 0.3) + 0.25 * (1.0 if not double_commit else 0.2)), 3),
+                    outcome_score_0_1=round(_clamp01(0.35 + 0.35 * (1.0 if away else 0.0) + 0.30 * (1.0 if center_clear else 0.2)), 3),
+                    risk_score_0_1=round(_clamp01(1.0 - _safe_float(ctx_now.get("ball_danger_0_1", 0.0))), 3),
+                    issue_tags=(["double_commit"] if double_commit else []) + (["failed_clear_distance"] if not away else []),
+                    improvement_tags=(["clear_wide"] if not center_clear else []) + (["beat_ball_earlier"] if not away else []),
+                )
+                _apply_event_context(events[-1], timeline=timeline, times=times, idx=j_contact, player=player, player_teams=player_teams)
+                last_t_by_mech["aerial_defense"] = t_contact_adf
 
         rel_v = _rel_speed_player_ball(fr, player)
         jump = int(_safe_float(p.get("jump", 0.0)))
@@ -2041,7 +2052,20 @@ def _detect_mechanic_events(
         prev_p_flick = _player_frame(timeline[max(0, i - 1)], player) if i > 0 else None
         prev_djump_flick = int(_safe_float(prev_p_flick.get("double_jump", 0.0))) if prev_p_flick else 0
         dodge_release = prev_djump_flick == 1 and djump == 0
-        if had_flick_carry and dodge_release and (t - last_t_by_mech["flicking"]) >= cooldown["flicking"]:
+        # Real flicks launch from a ground carry. Reject false positives where the ball
+        # briefly settles near the car after an aerial or 50/50 and the player happens
+        # to release a double-jump from the descent.
+        grounded_recent = True
+        if dodge_release and had_flick_carry:
+            lookback_start_t = max(0.0, t - _FLICK_GROUNDED_LOOKBACK_S)
+            for _k in range(i, -1, -1):
+                if times[_k] < lookback_start_t:
+                    break
+                _pk = _player_frame(timeline[_k], player)
+                if _pk and _safe_float(_pk.get("z", 0.0)) > _FLICK_GROUNDED_PZ_MAX:
+                    grounded_recent = False
+                    break
+        if had_flick_carry and dodge_release and grounded_recent and (t - last_t_by_mech["flicking"]) >= cooldown["flicking"]:
             carry_duration = max(0.0, t - times[flick_carry_origin_idx])
             if carry_duration < _FLICK_MIN_CARRY_S:
                 pass
