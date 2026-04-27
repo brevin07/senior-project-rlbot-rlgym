@@ -354,8 +354,68 @@ def copytree_contents(source: Path, destination: Path) -> None:
         raise FileNotFoundError(f"Bundled resource folder is missing: {source}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
-        shutil.rmtree(destination)
+        # ignore_errors so files held briefly by an exiting bridge process don't
+        # abort the whole install — they get retried below.
+        shutil.rmtree(destination, ignore_errors=True)
+        if destination.exists():
+            # Second pass after a short pause so any straggler file handles
+            # (e.g. Python .pyd / __pycache__ from a process we just killed) clear.
+            import time as _time
+            _time.sleep(1.0)
+            shutil.rmtree(destination, ignore_errors=False)
     shutil.copytree(source, destination)
+
+
+def stop_running_bridge_processes(install_root: Path | None = None) -> None:
+    """Kill any python.exe running rocketcoach.training.launcher_server, plus
+    anything still holding the bridge port. Called before file operations so a
+    fresh installer cleanly overwrites the previous one without users having to
+    touch the filesystem or Task Manager.
+    """
+    if os.name != "nt":
+        return
+    try:
+        # Match by command line so we don't kill unrelated python processes.
+        ps_script = (
+            "$ErrorActionPreference = 'SilentlyContinue'; "
+            "Get-CimInstance Win32_Process | "
+            "Where-Object { "
+            "  ($_.Name -eq 'python.exe' -or $_.Name -eq 'pythonw.exe') -and "
+            "  $_.CommandLine -like '*rocketcoach.training.launcher_server*' "
+            "} | "
+            "ForEach-Object { "
+            "  Write-Output ('killing pid=' + $_.ProcessId + ' cmd=' + $_.CommandLine); "
+            "  Stop-Process -Id $_.ProcessId -Force "
+            "}"
+        )
+        result = run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+            check=False,
+        )
+        if result.stdout:
+            for line in str(result.stdout).splitlines():
+                if line.strip():
+                    log(f"Stopped previous bridge: {line.strip()}")
+    except Exception as exc:
+        log(f"Warning: could not enumerate running bridge processes: {exc}")
+
+    # Also free the bridge port (8766) in case a crashed process left it bound.
+    try:
+        ps_port = (
+            "$ErrorActionPreference = 'SilentlyContinue'; "
+            "Get-NetTCPConnection -LocalPort 8766 -State Listen | "
+            "ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }"
+        )
+        run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_port],
+            check=False,
+        )
+    except Exception:
+        pass
+
+    # Give Windows a moment to release file handles before overwrites.
+    import time as _time
+    _time.sleep(0.5)
 
 
 def download_file(url: str, destination: Path) -> Path:
@@ -1085,6 +1145,11 @@ def parse_args() -> argparse.Namespace:
         help="Skip Windows custom protocol registration for rocketcoach:// helper launches.",
     )
     parser.add_argument(
+        "--skip-stop-bridge",
+        action="store_true",
+        help="Do not kill any running training bridge before installing. By default the installer stops the previous bridge so a re-install cleanly overwrites it.",
+    )
+    parser.add_argument(
         "--protocol-name",
         default=DEFAULT_TRAINING_BRIDGE_PROTOCOL,
         help="Custom protocol name to register for starting the local RocketCoach helper.",
@@ -1100,6 +1165,11 @@ def run_installation(args: argparse.Namespace, ui: InstallerProgressWindow | Non
     log(f"Writing installer log to {log_path}")
     log(f"Using bundled resources from {resource_root}")
     log(f"Installing RocketCoach runtime into {install_root}")
+
+    if not getattr(args, "skip_stop_bridge", False):
+        if ui:
+            ui.phase("Cleanup", "Stopping any running RocketCoach training bridge so files can be overwritten...", 4)
+        stop_running_bridge_processes(install_root)
 
     if ui:
         ui.phase("Bundled Files", "Copying the bundled RocketCoach runtime into the install root...", 8)
