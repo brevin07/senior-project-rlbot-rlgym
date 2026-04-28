@@ -19,7 +19,7 @@ MECHANIC_ALIASES = {
 
 # Bumped each time detection logic, scoring weights, or output schema changes so
 # the store knows which cached payloads are stale and need re-grading.
-GRADING_VERSION = "mechanic_v9_flick_grounded_aerial_transition"
+GRADING_VERSION = "mechanic_v10_context_first_redefine"
 
 MIN_REPORTED_MECHANIC_CONFIDENCE = 0.30
 
@@ -1003,7 +1003,7 @@ _CHALLENGE_MIN_APPROACH_CLOSING = 260.0
 _CHALLENGE_MIN_DISTANCE_GAIN = 120.0
 _CHALLENGE_MAX_INTERCEPT_S = 1.35
 _FIFTY_OPP_CONVERGE_SPEED = 220.0
-_FIFTY_MAX_PRE_IMPACT_GAP = 0.18
+_FIFTY_MAX_PRE_IMPACT_GAP = 0.15
 _FLIP_RESET_MIN_BALL_Z = 220.0
 _FLIP_RESET_MIN_PLAYER_Z = 140.0
 _FLIP_RESET_MAX_DIST = 230.0
@@ -1012,7 +1012,7 @@ _FLIP_RESET_MAX_Z_GAP = 120.0
 _FLIP_RESET_MAX_PLAYER_Z = 1650.0
 _FLIP_RESET_MIN_AIRBORNE_S = 0.22
 _FLIP_RESET_MIN_USE_DELAY_S = 0.08
-_FLIP_RESET_MAX_USE_DELAY_S = 1.7
+_FLIP_RESET_MAX_USE_DELAY_S = 3.0
 _FLIP_RESET_MIN_POST_SPEED = 1100.0
 _FLICK_MIN_CARRY_S = 0.40
 _FLICK_GROUNDED_LOOKBACK_S = 0.60
@@ -1811,7 +1811,51 @@ def _detect_mechanic_events(
         # Suppress shadow_defense within 2.5 s of an aerial_defense event — after an aerial clear
         # the player is landing/recovering and their positioning looks like shadow but isn't.
         _post_aerial_shadow_suppression_s = 2.5
-        if defending_half and opp_has_control and goal_side and spacing_band and speed_match and (t - last_t_by_mech["shadow_defense"]) >= cooldown["shadow_defense"] and (t - last_t_by_mech["aerial_defense"]) >= _post_aerial_shadow_suppression_s:
+        # Suppress shadow_defense if the player just touched the ball — what looks like a "shadow"
+        # right after an own-touch is rotation home, not active shadow defense.
+        _post_own_touch_shadow_suppression_s = 2.0
+        _shadow_recent_touch = False
+        _otk_lookback_start = max(0.0, t - _post_own_touch_shadow_suppression_s)
+        for _kk in range(i, -1, -1):
+            if times[_kk] < _otk_lookback_start:
+                break
+            _pk = _player_frame(timeline[_kk], player)
+            if _pk and _player_ball_dist(timeline[_kk], player) < 130.0:
+                _shadow_recent_touch = True
+                break
+        # Require the shadow predicate to have held for at least 0.5s — one-frame coincidence
+        # (briefly defending-half + spacing) shouldn't fire.
+        _shadow_sustained_min_s = 0.5
+        _shadow_sustained = False
+        if defending_half and opp_has_control and goal_side and spacing_band:
+            _sustained_start_t = max(0.0, t - _shadow_sustained_min_s)
+            _sustained_ok = True
+            for _kk in range(i, -1, -1):
+                if times[_kk] < _sustained_start_t:
+                    _shadow_sustained = True
+                    break
+                _frk = timeline[_kk]
+                _pk = _player_frame(_frk, player)
+                if not _pk:
+                    _sustained_ok = False
+                    break
+                _bk = _frk.get("ball", {}) or {}
+                _byk = _safe_float(_bk.get("y", 0.0))
+                _pyk = _safe_float(_pk.get("y", 0.0))
+                _dpb_k = _player_ball_dist(_frk, player)
+                _opp_db_k = _nearest_opponent_dist_ball(_frk, player, player_teams, team)
+                _def_half_k = (team == 0 and _byk < -300.0) or (team == 1 and _byk > 300.0)
+                _own_g_dist_k = abs(_pyk - own_goal)
+                _ball_g_dist_k = abs(_byk - own_goal)
+                _goal_side_k = _own_g_dist_k < _ball_g_dist_k
+                _opp_ctrl_k = _opp_db_k + 120.0 < _dpb_k
+                _spacing_k = 500.0 <= _dpb_k <= 1500.0
+                if not (_def_half_k and _opp_ctrl_k and _goal_side_k and _spacing_k):
+                    _sustained_ok = False
+                    break
+            if _sustained_ok:
+                _shadow_sustained = True
+        if defending_half and opp_has_control and goal_side and spacing_band and speed_match and not _shadow_recent_touch and _shadow_sustained and (t - last_t_by_mech["shadow_defense"]) >= cooldown["shadow_defense"] and (t - last_t_by_mech["aerial_defense"]) >= _post_aerial_shadow_suppression_s:
             j = _find_next_idx_by_time(times, i, 1.0)
             fr2 = timeline[j]
             b2 = fr2.get("ball", {}) or {}
@@ -1856,7 +1900,11 @@ def _detect_mechanic_events(
             d_touch = _player_ball_dist(fr_touch, player)
             touch_conf = _touch_confidence(fr, fr_touch, p_touch)
             aligned_impact = _ball_dir_flip(fr, fr_touch) and d_touch <= 235.0 and _safe_float(approach_window.get("mean_alignment", 0.0)) >= 0.66
-            contact_like = touch_conf >= 0.50 or aligned_impact
+            # Require the player to have actually been close to the ball at the touch moment.
+            # touch_conf alone can fire on a nearby touch where the analyzed player ended up far —
+            # that's a passive bystander, not a challenger.
+            credible_distance_at_touch = d_touch <= 320.0
+            contact_like = (touch_conf >= 0.50 and credible_distance_at_touch) or aligned_impact
             if not contact_like:
                 continue
             our_mid = _best_team_ball_dist(fr_mid, player_teams, team)
@@ -1911,7 +1959,12 @@ def _detect_mechanic_events(
             last_t_by_mech["challenge"] = t
 
         opp_ready, opp_name, opp_ball_dist = _opponent_contest_ready(fr, player, player_teams, team)
-        if d_pb < 300.0 and opp_db < 300.0 and bz < 260.0 and (t - last_t_by_mech["fifty_fifty_control"]) >= cooldown["fifty_fifty_control"] and not _in_kickoff_window(t) and not kickoff_context and not _ball_in_kickoff_zone(fr) and opp_ready:
+        # Require the analyzed player to also be closing (mirror of the opp_ready check).
+        # Without this, a 50/50 could fire when the player just happens to be near a ball
+        # an opponent is converging on — that's a one-sided contest, not a 50/50.
+        own_closing_to_ball = _closing_speed_toward_ball(fr, player)
+        own_ready_for_fifty = own_closing_to_ball >= _FIFTY_OPP_CONVERGE_SPEED
+        if d_pb < 300.0 and opp_db < 300.0 and bz < 260.0 and (t - last_t_by_mech["fifty_fifty_control"]) >= cooldown["fifty_fifty_control"] and not _in_kickoff_window(t) and not kickoff_context and not _ball_in_kickoff_zone(fr) and opp_ready and own_ready_for_fifty:
             j = _find_next_idx_by_time(times, i, 0.20)
             k = _find_next_idx_by_time(times, i, 0.80)
             frj = timeline[j]
@@ -1952,7 +2005,11 @@ def _detect_mechanic_events(
                 _apply_event_context(events[-1], timeline=timeline, times=times, idx=i, player=player, player_teams=player_teams)
                 last_t_by_mech["fifty_fifty_control"] = t
 
-        if attacking_half and pz > 150.0 and bz > 300.0 and d_pb < 950.0 and not on_wall_surface and (t - last_t_by_mech["aerial_offense"]) >= cooldown["aerial_offense"]:
+        # aerial_offense is now gated by OUTCOME (ball moves toward opp goal) rather than by
+        # starting field position. An aerial in midfield or even defending-half can be offensive
+        # if it sends the ball toward the opponent's goal with retained possession — that's a
+        # counter-attack initiation. Field position gets factored into the score, not the gate.
+        if pz > 150.0 and bz > 300.0 and d_pb < 950.0 and not on_wall_surface and (t - last_t_by_mech["aerial_offense"]) >= cooldown["aerial_offense"]:
             j = _find_next_idx_by_time(times, i, 0.90)
             fr2 = timeline[j]
             b2 = fr2.get("ball", {}) or {}
@@ -1961,6 +2018,9 @@ def _detect_mechanic_events(
             our_out = _best_team_ball_dist(fr2, player_teams, team)
             opp_out = _best_team_ball_dist(fr2, player_teams, 1 - team)
             retain = our_out <= opp_out + 60.0
+            # Require the touch's outcome to actually be offensive — ball moved toward opp goal.
+            # Without this, midfield aerials whose result is neutral/defensive misclassify as offense.
+            aerial_offensive_outcome = toward_opp_goal
             q = _clamp01(0.35 + 0.30 * (1.0 if toward_opp_goal else 0.25) + 0.25 * (1.0 if retain else 0.3) + 0.10 * _clamp01(p_speed / 2100.0))
             reason = "air touch created attacking value" if q >= 0.5 else "aerial touch gave up pressure"
             # Shift event time to the frame of closest approach (actual contact), up to 0.6 s ahead
@@ -1972,21 +2032,22 @@ def _detect_mechanic_events(
                     min_dpb = _dpb_ci
                     j_contact = _ci
             t_contact = times[j_contact]
-            _add_event(
-                events,
-                "aerial_offense",
-                t_contact,
-                q,
-                reason,
-                execution_score_0_1=round(_clamp01(0.45 + 0.20 * _clamp01(p_speed / 2100.0) + 0.35 * (1.0 if toward_opp_goal else 0.25)), 3),
-                decision_score_0_1=round(_clamp01(0.45 + 0.25 * (1.0 if attacking_half else 0.3) + 0.30 * (0.4 if bool(ctx_now.get("last_man")) else 1.0)), 3),
-                outcome_score_0_1=round(_clamp01(0.40 + 0.30 * (1.0 if toward_opp_goal else 0.0) + 0.30 * (1.0 if retain else 0.2)), 3),
-                risk_score_0_1=round(_clamp01(1.0 - _safe_float(ctx_now.get("ball_danger_0_1", 0.0))), 3),
-                issue_tags=(["gave_up_pressure"] if q < 0.5 else []) + (["last_man_commit"] if bool(ctx_now.get("last_man")) else []),
-                improvement_tags=(["hit_toward_target"] if not toward_opp_goal else []) + (["maintain_follow_up"] if not retain else []),
-            )
-            _apply_event_context(events[-1], timeline=timeline, times=times, idx=j_contact, player=player, player_teams=player_teams)
-            last_t_by_mech["aerial_offense"] = t_contact
+            if aerial_offensive_outcome:
+                _add_event(
+                    events,
+                    "aerial_offense",
+                    t_contact,
+                    q,
+                    reason,
+                    execution_score_0_1=round(_clamp01(0.45 + 0.20 * _clamp01(p_speed / 2100.0) + 0.35 * (1.0 if toward_opp_goal else 0.25)), 3),
+                    decision_score_0_1=round(_clamp01(0.45 + 0.25 * (1.0 if attacking_half else 0.3) + 0.30 * (0.4 if bool(ctx_now.get("last_man")) else 1.0)), 3),
+                    outcome_score_0_1=round(_clamp01(0.40 + 0.30 * (1.0 if toward_opp_goal else 0.0) + 0.30 * (1.0 if retain else 0.2)), 3),
+                    risk_score_0_1=round(_clamp01(1.0 - _safe_float(ctx_now.get("ball_danger_0_1", 0.0))), 3),
+                    issue_tags=(["gave_up_pressure"] if q < 0.5 else []) + (["last_man_commit"] if bool(ctx_now.get("last_man")) else []),
+                    improvement_tags=(["hit_toward_target"] if not toward_opp_goal else []) + (["maintain_follow_up"] if not retain else []),
+                )
+                _apply_event_context(events[-1], timeline=timeline, times=times, idx=j_contact, player=player, player_teams=player_teams)
+                last_t_by_mech["aerial_offense"] = t_contact
 
         threat_zone = abs(by - own_goal) < 2600.0
         # Exclude wall/backboard players — wall pinches and backboard waits are not aerial defense
@@ -2080,8 +2141,13 @@ def _detect_mechanic_events(
                 forward_gain = fwd1 - fwd0
                 up_spike = up_gain >= _FLICK_MIN_POST_UP_GAIN
                 forward_spike = forward_gain >= _FLICK_MIN_POST_FORWARD_GAIN
+                # Require the dodge to be FORWARD-ish — reject when it sends the ball back
+                # toward own goal. A backward "dodge release" while a ball happens to be on
+                # the car is recovery, not a real flick.
+                _FLICK_BACKWARD_TOLERANCE = -100.0
+                forward_dodge_ok = forward_gain >= _FLICK_BACKWARD_TOLERANCE
                 power = _ball_speed(fr2) > b_speed + 300.0
-                if up_spike or forward_spike:
+                if (up_spike or forward_spike) and forward_dodge_ok:
                     q = _clamp01(
                         0.30
                         + 0.20 * _clamp01(carry_duration / 0.45)
