@@ -1044,6 +1044,9 @@ class ReplayStateStore:
         replay_date_iso = str((session.replay_meta or {}).get("replay_date_iso", "") or "")
         summary["replay_date_iso"] = replay_date_iso
         summary["replay_date_source"] = "replay_meta" if replay_date_iso else "created_at_fallback"
+        player_count = len([p for p in (session.players or []) if str(p or "").strip()])
+        summary["player_count"] = int(player_count)
+        summary["gamemode"] = "1v1" if player_count == 2 else ("2v2" if player_count == 4 else ("3v3" if player_count == 6 else f"{player_count} players"))
         summary.update(self._summary_team_context(session))
         summary.update(summarize_mechanic_scores(mechanics_payload or {}))
         summary["mechanic_event_count"] = len((mechanics_payload or {}).get("mechanic_events", []) or [])
@@ -1176,6 +1179,9 @@ class ReplayStateStore:
                 replay_date_iso = str((session.replay_meta or {}).get("replay_date_iso", "") or "")
                 summary["replay_date_iso"] = replay_date_iso
                 summary["replay_date_source"] = "replay_meta" if replay_date_iso else "created_at_fallback"
+                player_count = len([p for p in (session.players or []) if str(p or "").strip()])
+                summary["player_count"] = int(player_count)
+                summary["gamemode"] = "1v1" if player_count == 2 else ("2v2" if player_count == 4 else ("3v3" if player_count == 6 else f"{player_count} players"))
                 summary.update(self._summary_team_context(session))
                 summary.update(summarize_mechanic_scores(mechanics_payload or {}))
                 summary["mechanic_event_count"] = len((mechanics_payload or {}).get("mechanic_events", []) or [])
@@ -1409,6 +1415,8 @@ class ReplayStateStore:
                             "quality_label": str(it.get("quality_label", "") or "neutral"),
                             "score": float(it.get("score", 0.0) or 0.0),
                             "reason": str(it.get("reason", "") or ""),
+                            "rank_tier": str(it.get("rank_tier", "") or ""),
+                            "rank_band": str(it.get("rank_band", "") or ""),
                         }
                         for it in chunk
                     ]
@@ -1510,7 +1518,9 @@ class ReplayStateStore:
         ordered = sorted(uniq.items(), key=lambda kv: float(kv[1].get("time", 0.0) or 0.0))
 
         model_id = str(os.environ.get("RLBOT_LLM_MODEL", "gpt-4o-mini") or "gpt-4o-mini")
-        prompt_version = str(os.environ.get("RLBOT_LLM_PROMPT_VERSION", "v1") or "v1")
+        rank_tier = str(profile.get("rank_tier", "") or "")
+        prompt_version_base = str(os.environ.get("RLBOT_LLM_PROMPT_VERSION", "v2_ranked") or "v2_ranked")
+        prompt_version = f"{prompt_version_base}:{rank_tier.strip().lower() or 'unranked'}"
         mode_norm = str(mode or "hybrid").strip().lower()
         if mode_norm not in {"hybrid", "full"}:
             mode_norm = "hybrid"
@@ -1526,12 +1536,21 @@ class ReplayStateStore:
             q = str(e.get("quality_label", "") or "neutral")
             score = float(e.get("score", e.get("quality_score", 0.0)) or 0.0)
             reason = str(e.get("reason", "") or "")
-            event_hash = self._event_hash_for_cache(mechanic_id=mid, time_s=t, quality_label=q, score=score, reason=reason)
-            title = f"{mid or 'mechanic'} @ {t:.2f}s"
-            body = (
-                f"At {t:.2f}s, {mid or 'this mechanic'} was {q} ({score:.1f}/100). "
-                f"{reason if reason else 'Focus on cleaner setup and faster recovery on the next attempt.'}"
+            detail = explain_mechanic_event(
+                list(session.timeline or []),
+                str(player or ""),
+                dict((session.replay_meta or {}).get("player_teams", {}) or {}),
+                dict(e or {}),
+                rank_tier=rank_tier,
             )
+            event_hash = self._event_hash_for_cache(mechanic_id=mid, time_s=t, quality_label=q, score=score, reason=reason)
+            title = str(detail.get("template_title", "") or detail.get("title", "") or f"{mid or 'mechanic'} @ {t:.2f}s")
+            body = str(detail.get("template_body", "") or "").strip()
+            if not body:
+                body = (
+                    f"At {t:.2f}s, {mid or 'this mechanic'} was {q} ({score:.1f}/100). "
+                    f"{reason if reason else 'Focus on cleaner setup and faster recovery on the next attempt.'}"
+                )
             item = {
                 "key": key,
                 "time": t,
@@ -1553,6 +1572,8 @@ class ReplayStateStore:
                     "quality_label": q,
                     "score": score,
                     "reason": reason,
+                    "rank_tier": rank_tier,
+                    "rank_band": str((detail.get("coaching_context", {}) or {}).get("rank_band", "")),
                     "title": title,
                     "event_hash": event_hash,
                 }
@@ -1615,6 +1636,8 @@ class ReplayStateStore:
                         "quality_label": str(it.get("quality_label", "") or "neutral"),
                         "score": float(it.get("score", 0.0) or 0.0),
                         "reason": str(it.get("reason", "") or ""),
+                        "rank_tier": str(it.get("rank_tier", "") or ""),
+                        "rank_band": str(it.get("rank_band", "") or ""),
                     }
                     for it in upfront
                 ]
@@ -2163,7 +2186,8 @@ def _rc_home_summary(self: ReplayStateStore) -> dict:
     latest = sessions[0] if sessions else {}
     progress = self.profile_progress(limit=10)
     plan = self.training_plan()
-    top_recs = list(plan.get("recommendations", []) or [])[:3]
+    has_replays = len(sessions) > 0
+    top_recs = list(plan.get("recommendations", []) or [])[:3] if has_replays else []
     quick_launch = top_recs[0] if top_recs else {}
     return {
         "profile": {

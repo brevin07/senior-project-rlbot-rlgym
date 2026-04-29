@@ -127,7 +127,47 @@ def test_rotate_back_past_ball_does_not_flag_challenge():
     assert "challenge" not in mids
 
 
-def test_center_lane_drive_without_clear_contest_does_not_force_challenge():
+def test_committed_opponent_first_contest_flags_challenge():
+    timeline = []
+    for i in range(100):
+        t = i / 60.0
+        impact = t >= 0.58
+        ball_x = 0.0
+        ball_y = 0.0 if not impact else (t - 0.58) * 850.0
+        ball_vx = 0.0
+        ball_vy = 0.0 if not impact else 850.0
+        timeline.append(
+            {
+                "t": t,
+                "seconds_remaining": 250 - t,
+                "is_overtime": False,
+                "is_goal_pause": False,
+                "is_kickoff_pause": False,
+                "is_inactive_phase": False,
+                "active_play": True,
+                "ball": {
+                    "x": ball_x,
+                    "y": ball_y,
+                    "z": 95.0,
+                    "vx": ball_vx,
+                    "vy": ball_vy,
+                    "vz": 0.0,
+                },
+                "players": [
+                    _player("TestPlayer", -760.0 + t * 1180.0, 0.0, 17.0, 1180.0, 0.0),
+                    _player("Opponent", 720.0 - t * 1120.0, 0.0, 17.0, -1120.0, 0.0),
+                ],
+            }
+        )
+
+    payload = grade_game_mechanics(timeline, "TestPlayer", {"TestPlayer": 0, "Opponent": 1})
+    mids = _mechanic_ids(payload)
+
+    assert "fifty_fifty_control" in mids
+    assert "challenge" not in mids
+
+
+def test_center_lane_committed_contest_flags_single_fifty_not_overlapping_challenge():
     timeline = []
     for i in range(120):
         t = i / 60.0
@@ -170,8 +210,8 @@ def test_center_lane_drive_without_clear_contest_does_not_force_challenge():
     payload = grade_game_mechanics(timeline, "TestPlayer", {"TestPlayer": 0, "Opponent": 1})
     mids = _mechanic_ids(payload)
 
+    assert "fifty_fifty_control" in mids
     assert "challenge" not in mids
-    assert "fifty_fifty_control" not in mids
 
 
 def test_opponent_first_touch_still_stays_kickoff_when_player_commits():
@@ -216,6 +256,44 @@ def test_opponent_first_touch_still_stays_kickoff_when_player_commits():
                 "players": [
                     _player("TestPlayer", -2048.0 + t * 2650.0, -2560.0 + t * 3320.0, 17.0, 1850.0, 2320.0),
                     _player("Opponent", 0.0, 4608.0 - t * 5600.0, 17.0, 0.0, -2550.0),
+                ],
+            }
+        )
+
+    payload = grade_game_mechanics(timeline, "TestPlayer", {"TestPlayer": 0, "Opponent": 1})
+    mids = _mechanic_ids(payload)
+
+    assert "kickoff" in mids
+    assert "challenge" not in mids
+    assert "fifty_fifty_control" not in mids
+
+
+def test_player_first_kickoff_touch_flags_even_when_opponent_is_late():
+    timeline = []
+    for i in range(150):
+        t = i / 60.0
+        kickoff_pause = t < 0.35
+        touch_moment = t >= 0.72
+        timeline.append(
+            {
+                "t": t,
+                "seconds_remaining": 300 - t,
+                "is_overtime": False,
+                "is_goal_pause": False,
+                "is_kickoff_pause": kickoff_pause,
+                "is_inactive_phase": kickoff_pause,
+                "active_play": not kickoff_pause,
+                "ball": {
+                    "x": 0.0,
+                    "y": (t - 0.72) * 1200.0 if touch_moment else 0.0,
+                    "z": 93.0,
+                    "vx": 0.0,
+                    "vy": 1200.0 if touch_moment else 0.0,
+                    "vz": 0.0,
+                },
+                "players": [
+                    _player("TestPlayer", -2048.0 + t * 2850.0, -2560.0 + t * 3600.0, 17.0, 2050.0, 2600.0),
+                    _player("Opponent", 0.0, 4608.0 - t * 1200.0, 17.0, 0.0, -1200.0),
                 ],
             }
         )
@@ -513,3 +591,110 @@ def test_loose_ball_flip_hit_does_not_flag_flick():
     mids = _mechanic_ids(payload)
 
     assert "flicking" not in mids
+
+
+def test_ground_open_net_chance_does_not_become_flick():
+    timeline = []
+    for i in range(90):
+        t = i / 60.0
+        shot = t >= 0.45
+        timeline.append(
+            {
+                "t": t,
+                "seconds_remaining": 120 - t,
+                "is_overtime": False,
+                "is_goal_pause": False,
+                "is_kickoff_pause": False,
+                "is_inactive_phase": False,
+                "active_play": True,
+                "ball": {
+                    "x": 120.0,
+                    "y": 3550.0 + (900.0 * (t - 0.45) if shot else 0.0),
+                    "z": 105.0,
+                    "vx": 0.0,
+                    "vy": 900.0 if shot else 0.0,
+                    "vz": 0.0,
+                },
+                "players": [
+                    _player("TestPlayer", 90.0, 3450.0 + 760.0 * t, 17.0, 0.0, 760.0),
+                    _player("Opponent", -2600.0, -3500.0, 17.0, 0.0, 0.0),
+                ],
+            }
+        )
+
+    payload = grade_game_mechanics(timeline, "TestPlayer", {"TestPlayer": 0, "Opponent": 1})
+    mids = _mechanic_ids(payload)
+
+    assert "flicking" not in mids
+
+
+def test_aerial_defense_requires_real_pressure():
+    timeline = []
+    for i in range(100):
+        t = i / 60.0
+        touch = t >= 0.48
+        timeline.append(
+            {
+                "t": t,
+                "seconds_remaining": 160 - t,
+                "is_overtime": False,
+                "is_goal_pause": False,
+                "is_kickoff_pause": False,
+                "is_inactive_phase": False,
+                "active_play": True,
+                "ball": {
+                    "x": -400.0,
+                    "y": -1700.0 + (700.0 * (t - 0.48) if touch else 0.0),
+                    "z": 420.0,
+                    "vx": 0.0,
+                    "vy": 700.0 if touch else 120.0,
+                    "vz": 0.0,
+                },
+                "players": [
+                    _player("TestPlayer", -430.0, -1780.0 + 580.0 * t, 260.0, 0.0, 580.0, 40.0),
+                    _player("Opponent", 2500.0, 2800.0, 17.0, 0.0, 0.0),
+                ],
+            }
+        )
+
+    payload = grade_game_mechanics(timeline, "TestPlayer", {"TestPlayer": 0, "Opponent": 1})
+    mids = _mechanic_ids(payload)
+
+    assert "aerial_defense" not in mids
+
+
+def test_low_fifty_detects_slightly_delayed_ground_contest():
+    timeline = []
+    for i in range(100):
+        t = i / 60.0
+        contest = t >= 0.55
+        ball_vx = 0.0 if not contest else 240.0
+        ball_vy = 0.0 if not contest else 180.0
+        player_y = 1160.0 + 520.0 * t
+        opp_y = 2040.0 - 460.0 * t
+        timeline.append(
+            {
+                "t": t,
+                "is_kickoff_pause": False,
+                "is_inactive_phase": False,
+                "active_play": True,
+                "ball": {
+                    "x": 0.0,
+                    "y": 1600.0 + (40.0 if contest else 0.0),
+                    "z": 105.0,
+                    "vx": ball_vx,
+                    "vy": ball_vy,
+                    "vz": 0.0,
+                },
+                "players": [
+                    _player("TestPlayer", 0.0, player_y, 17.0, 0.0, 520.0),
+                    _player("Opponent", 25.0, opp_y, 17.0, 0.0, -460.0),
+                ],
+            }
+        )
+
+    payload = grade_game_mechanics(timeline, "TestPlayer", {"TestPlayer": 0, "Opponent": 1})
+    fifties = [event for event in _events(payload) if str(event.get("mechanic_id", "")) == "fifty_fifty_control"]
+
+    assert fifties
+    assert any(str(event.get("event_type", "")) == "low_50" for event in fifties)

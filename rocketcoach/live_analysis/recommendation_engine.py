@@ -269,6 +269,8 @@ def _recommend_from_signals(
 
 def compute_recommendations(db, user_id: int, window_size: int = 5) -> Dict[str, Any]:
     sessions = db.list_replay_sessions_detailed(user_id=int(user_id), limit=max(1, int(window_size)))
+    if not sessions:
+        return {"window_size": int(window_size), "recommendations": [], "session_count": 0}
     label_score, label_evidence = _accumulate_label_signals(sessions)
     mechanic_avg, n_valid, mechanic_evidence = _accumulate_mechanic_signals(sessions)
     recs = _recommend_from_signals(label_score, label_evidence, mechanic_avg, n_valid, mechanic_evidence)

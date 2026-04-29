@@ -194,7 +194,7 @@ PLAYLIST_DEFS = {
     },
     "flicking": {
         "title": "Flicking",
-        "description": "Builds controlled dribbles into simple, pressured flick opportunities.",
+        "description": "Builds controlled dribbles into clear flick releases, not direct 50/50 spawn races.",
         "difficulties": {
             "beginner": [
                 ("CARRY", "NET", PLAYER_ROLE_OFFENSE),
@@ -203,22 +203,22 @@ PLAYLIST_DEFS = {
             ],
             "intermediate": [
                 ("CARRY", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
-                ("POSSESSION", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
-                ("BREAKOUT", "NET", PLAYER_ROLE_OFFENSE),
+                ("POSSESSION", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
+                ("CARRY", "NET", PLAYER_ROLE_OFFENSE),
                 ("CARRY", "NET", PLAYER_ROLE_OFFENSE),
             ],
             "advanced": [
-                ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
+                ("CARRY", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
                 ("POSSESSION", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
-                ("BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
-                ("BACKPASS", "NET", PLAYER_ROLE_OFFENSE),
+                ("CARRY", "FAR_SHADOW", PLAYER_ROLE_OFFENSE),
+                ("POSSESSION", "NET", PLAYER_ROLE_OFFENSE),
             ],
             "expert": [
-                ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
+                ("CARRY", "FAR_SHADOW", PLAYER_ROLE_OFFENSE),
                 ("POSSESSION", "FAR_SHADOW", PLAYER_ROLE_OFFENSE),
-                ("BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
-                ("OVER_SHOULDER", "NET", PLAYER_ROLE_OFFENSE),
-                ("BACKPASS", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
+                ("CARRY", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
+                ("POSSESSION", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
+                ("CARRY", "RECOVERING", PLAYER_ROLE_OFFENSE),
             ],
         },
     },
@@ -306,8 +306,8 @@ def build_playlist_payload(mechanic_id: str, difficulty_id: str) -> dict:
     }
 
 
-def main() -> int:
-    playlist_dir = appdata_playlist_dir()
+def write_playlists(playlist_dir: Path | None = None) -> list[Path]:
+    playlist_dir = playlist_dir or appdata_playlist_dir()
     written = []
     for mechanic_id in PLAYLIST_DEFS:
         for difficulty_id in DIFFICULTY_SETTINGS:
@@ -315,7 +315,12 @@ def main() -> int:
             target = playlist_dir / playlist_filename(mechanic_id, difficulty_id)
             target.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
             written.append(target)
+    return written
 
+
+def main() -> int:
+    playlist_dir = appdata_playlist_dir()
+    written = write_playlists(playlist_dir)
     print(f"Wrote {len(written)} RLDojo playlists to {playlist_dir}")
     print("Kickoff was intentionally skipped because RLDojo does not model true kickoff reps cleanly.")
     return 0

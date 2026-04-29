@@ -49,6 +49,7 @@ try {
         --add-data ".\requirements.txt;." `
         --add-data ".\rocketcoach;rocketcoach" `
         --add-data ".\configs;configs" `
+        --paths ".\scripts" `
         ".\scripts\install_rlbot_stack.py"
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller build failed."

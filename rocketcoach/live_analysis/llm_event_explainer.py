@@ -170,7 +170,8 @@ def maybe_rewrite_explanations_batch(events: List[Dict[str, Any]]) -> Dict[str, 
                     "role": "system",
                     "content": (
                         "You are a Rocket League coach. "
-                        "For each input event, write exactly 2 short sentences in plain language. "
+                        "For each input event, write exactly 2 short sentences. "
+                        "Use simpler wording for bronze through platinum, clear coaching terms for diamond/champ, and more precise Rocket League wording for GC/SSL. "
                         "Do not invent facts. "
                         "Return STRICT JSON object mapping each event key to its text."
                     ),

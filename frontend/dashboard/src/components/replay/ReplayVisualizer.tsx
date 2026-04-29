@@ -588,6 +588,7 @@ export default function ReplayVisualizer({
   reviewRequest
 }: ReplayVisualizerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const sceneWrapRef = useRef<HTMLDivElement | null>(null);
   const labelLayerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -752,6 +753,8 @@ export default function ReplayVisualizer({
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
+      window.setTimeout(() => window.dispatchEvent(new Event("resize")), 60);
+      window.setTimeout(() => window.dispatchEvent(new Event("resize")), 180);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
@@ -1166,6 +1169,23 @@ export default function ReplayVisualizer({
       .filter((e) => !Number.isNaN(e.t));
   }, [events, timeline]);
 
+  const reviewableMechanicEvents = useMemo(() => {
+    if (!timeline?.length) return [] as (MechanicEvent & { __aligned_t?: number; __aligned_idx?: number })[];
+    const byKey = new Map<string, MechanicEvent & { __aligned_t?: number; __aligned_idx?: number }>();
+    for (const ev of events || []) {
+      const aligned = alignTimeToTimeline(timeline, Number(ev.time ?? 0));
+      const key = `${String(ev.mechanic_id || "event")}|${aligned.alignedIndex}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          ...ev,
+          __aligned_t: aligned.alignedTime,
+          __aligned_idx: aligned.alignedIndex,
+        });
+      }
+    }
+    return Array.from(byKey.values()).sort((a, b) => Number(a.__aligned_t || 0) - Number(b.__aligned_t || 0));
+  }, [events, timeline]);
+
   const displayMarkers = useMemo(() => {
     if (!eventMarkers.length) return [];
     if (timelineEventMode === "all") return [...eventMarkers].sort((a, b) => a.t - b.t);
@@ -1362,29 +1382,6 @@ export default function ReplayVisualizer({
         if (t >= iv.start && t <= iv.end) return true;
       }
       return false;
-    };
-
-    const alignEventToTimeline = (e: MechanicEvent) => {
-      const aligned = alignTimeToTimeline(timeline, Number(e?.time || 0));
-      return { __aligned_t: aligned.alignedTime, __aligned_idx: aligned.alignedIndex };
-    };
-
-    const dedupeMechanicEvents = (arr: MechanicEvent[]) => {
-      const byKey = new Map<string, MechanicEvent>();
-      for (const e of arr) {
-        const aligned = alignEventToTimeline(e);
-        const idx = Number((aligned as any).__aligned_idx || 0);
-        const k = `${String(e?.mechanic_id || "mech")}|${idx}`;
-        if (!byKey.has(k)) byKey.set(k, { ...e, ...(aligned as any) });
-      }
-      return Array.from(byKey.values());
-    };
-
-    const filteredMechanicEvents = () => {
-      const raw = dedupeMechanicEvents(events);
-      if (!raw.length) return [] as (MechanicEvent & { __aligned_t?: number; __aligned_idx?: number })[];
-      const withAligned = raw.map((e) => ({ ...e, ...alignEventToTimeline(e) }));
-      return withAligned.sort((a, b) => Number((a as any).__aligned_t || 0) - Number((b as any).__aligned_t || 0));
     };
 
     const updateNameTags = (interpFrame: ReturnType<typeof getInterpolatedFrame>) => {
@@ -1645,7 +1642,7 @@ export default function ReplayVisualizer({
       }
 
       if (playingRef.current && playToEventTargetRef.current === null && goalHoldUntilWallMsRef.current <= 0) {
-        const evs = filteredMechanicEvents();
+        const evs = reviewableMechanicEvents;
         let hit: (MechanicEvent & { __aligned_t?: number }) | null = null;
         const prevReplayT = currentReplayTimeRef.current;
         for (const ev of evs) {
@@ -1701,7 +1698,7 @@ export default function ReplayVisualizer({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     };
-  }, [timeline, selectedPlayer, onTimeChange, onAutoEventPause, onAutoEventClear, events, timelineEventMode, updateEventReviewUi]);
+  }, [timeline, selectedPlayer, onTimeChange, onAutoEventPause, onAutoEventClear, events, timelineEventMode, updateEventReviewUi, reviewableMechanicEvents]);
 
   const nextEvent = useMemo(() => {
     if (!displayMarkers.length) return null;
@@ -1823,8 +1820,75 @@ export default function ReplayVisualizer({
     setCurrentFrame(aligned.alignedIndex);
   };
 
+  const startReviewFlowAtEvent = (ev: MechanicEvent & { __aligned_t?: number; __aligned_idx?: number }, now = performance.now()) => {
+    if (!timeline.length) return;
+    const eventT = Number(ev.__aligned_t ?? ev.time ?? 0);
+    const aligned = alignTimeToTimeline(timeline, eventT);
+    const reviewT = aligned.alignedTime;
+    const key = `${String(ev?.mechanic_id || "")}|${reviewT.toFixed(3)}`;
+    clearManualReviewDelay();
+    clearEventReviewState();
+    goalHoldUntilWallMsRef.current = 0;
+    playToEventTargetRef.current = null;
+    lastAutoPausedEventKeyRef.current = key;
+    eventReviewReplayTRef.current = reviewT;
+    eventReviewPauseUntilWallMsRef.current = now + EVENT_REVIEW_FREEZE_MS;
+    eventReviewClearAtWallMsRef.current = now + EVENT_REVIEW_FREEZE_MS + EVENT_REVIEW_CARD_AFTER_RESUME_MS;
+    eventReviewActiveKeyRef.current = key;
+    eventReviewPausedSnapshotRef.current = null;
+    playStartReplayRef.current = reviewT;
+    playStartWallRef.current = now + EVENT_REVIEW_FREEZE_MS;
+    currentFrameRef.current = aligned.alignedIndex;
+    setCurrentFrame(aligned.alignedIndex);
+    setPlaying(true);
+    playingRef.current = true;
+    updateEventReviewUi({ phase: "paused", remaining: EVENT_REVIEW_FREEZE_MS / 1000 });
+    onAutoEventPause?.({
+      ...ev,
+      time: reviewT,
+    });
+  };
+
+  const handleTimelineSliderChange = (nextFrame: number) => {
+    if (!timeline.length) return;
+    const frameIdx = clamp(nextFrame, 0, timeline.length - 1);
+    const oldT = Number(currentReplayTimeRef.current || timeline[currentFrameRef.current]?.t || 0);
+    const nextT = Number(timeline[frameIdx]?.t || 0);
+    const movedBackward = nextT < oldT - 0.02;
+    const crossedEvent = movedBackward
+      ? [...reviewableMechanicEvents]
+        .reverse()
+        .find((ev) => {
+          const et = Number(ev.__aligned_t ?? ev.time ?? 0);
+          return Number.isFinite(et) && et >= nextT - 0.02 && et <= oldT + 0.02;
+        })
+      : null;
+
+    playToEventTargetRef.current = null;
+    goalHoldUntilWallMsRef.current = 0;
+    clearManualReviewDelay();
+    clearEventReviewState();
+    onAutoEventClear?.();
+
+    if (crossedEvent) {
+      lastAutoPausedEventKeyRef.current = "";
+      const et = Number(crossedEvent.__aligned_t ?? crossedEvent.time ?? 0);
+      if (Math.abs(nextT - et) <= 0.25) {
+        startReviewFlowAtEvent(crossedEvent);
+        return;
+      }
+    }
+
+    setPlaying(false);
+    playingRef.current = false;
+    playStartReplayRef.current = nextT;
+    playStartWallRef.current = performance.now();
+    currentFrameRef.current = frameIdx;
+    setCurrentFrame(frameIdx);
+  };
+
   const toggleFullscreen = async () => {
-    const el = containerRef.current?.parentElement;
+    const el = sceneWrapRef.current;
     if (!el) return;
     try {
       if (!document.fullscreenElement) {
@@ -1863,7 +1927,7 @@ export default function ReplayVisualizer({
         <h2>3D Replay View</h2>
         <div className="scene-card-subtitle">{replayNameLabel(replayName)}</div>
       </div>
-      <div className="scene-wrap">
+      <div className="scene-wrap" ref={sceneWrapRef}>
         <div className="scene-canvas" ref={containerRef} />
         <div className="hud-bar">
           <div className={`team-score ${leftScoreClass}`}>{leftScore}</div>
@@ -1915,8 +1979,7 @@ export default function ReplayVisualizer({
         max={maxFrame}
         value={currentFrame}
         onChange={(e) => {
-          setCurrentFrame(Number(e.target.value));
-          setPlaying(false);
+          handleTimelineSliderChange(Number(e.target.value));
         }}
       />
 

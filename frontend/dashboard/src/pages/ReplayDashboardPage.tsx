@@ -70,6 +70,8 @@ type LibrarySession = {
     replay_date_iso?: string;
     analysis_player?: string;
     team_scores_final?: { blue?: number; orange?: number };
+    gamemode?: string;
+    player_count?: number;
   };
 };
 
@@ -562,6 +564,13 @@ function buildMechanicEventExplain(ev?: MechanicEvent) {
   };
 }
 
+function mechanicEventKey(ev?: MechanicEvent, fallback = "") {
+  const mid = String(ev?.mechanic_id || "event");
+  const t = Number(ev?.time ?? 0);
+  const rounded = Number.isFinite(t) ? t.toFixed(2) : "0.00";
+  return `${mid}:${rounded}:${fallback}`;
+}
+
 function alignEventTimeToTimeline(timeline: { t: number }[] | undefined, targetTime: number) {
   const arr = timeline ?? [];
   if (!arr.length) return Number(targetTime || 0);
@@ -643,11 +652,12 @@ function pointReplayDisplayName(point?: ProgressPoint): string {
 
 function mechanicEventTags(ev?: MechanicEvent): string[] {
   const labels = (ev?.mechanic_tag_labels || []).map((tag) => String(tag || "").trim()).filter(Boolean);
-  if (labels.length) return labels;
+  if (labels.length) return labels.slice(0, 3);
   return (ev?.mechanic_tags || [])
     .map((tag) => String(tag || "").trim())
     .filter(Boolean)
-    .map((tag) => tag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
+    .map((tag) => tag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()))
+    .slice(0, 3);
 }
 
 function qualityClassName(value?: string) {
@@ -746,6 +756,46 @@ function replayCardLines(
   };
 }
 
+function sessionGamemode(s: LibrarySession) {
+  const summary = (s?.summary || {}) as Record<string, unknown>;
+  const explicit = String(summary.gamemode || "").trim().toLowerCase();
+  if (explicit === "1v1" || explicit === "2v2" || explicit === "3v3") return explicit;
+  const count = Number(summary.player_count || 0);
+  if (count === 2) return "1v1";
+  if (count === 4) return "2v2";
+  if (count === 6) return "3v3";
+  const teams = (s?.player_teams || (summary.player_teams as Record<string, number> | undefined) || {}) as Record<string, number>;
+  const playerCount = Object.keys(teams).length;
+  if (playerCount === 2) return "1v1";
+  if (playerCount === 4) return "2v2";
+  if (playerCount === 6) return "3v3";
+  return "unknown";
+}
+
+function hasRealReplayData(s?: LibrarySession | null) {
+  if (!s) return false;
+  const summary = s.summary || {};
+  const replayName = String(s.replay_name || "").trim();
+  const replayDate = String(summary.replay_date_iso || "").trim();
+  const replaySha = String((summary as any).replay_sha1 || "").trim();
+  const player = String(s.tracked_player_name || summary.analysis_player || "").trim();
+  const mapName = String(s.map_name || "").trim();
+  const duration = Number(s.duration_s || 0);
+  const eventCount = Number((summary as any).mechanic_event_count || 0);
+  const grade = Number(summary.overall_mechanics_score || 0);
+  const id = String(s.session_id || s.id || "").trim();
+  const hasIdentity = Boolean(replayName || replayDate || replaySha || id);
+  const hasReplayShape =
+    duration > 0 ||
+    eventCount > 0 ||
+    grade > 0 ||
+    Boolean(replayDate || replaySha) ||
+    (Boolean(replayName) && replayName.toLowerCase() !== "replay.replay") ||
+    (Boolean(player) && player.toLowerCase() !== "unknown") ||
+    (Boolean(mapName) && mapName.toLowerCase() !== "arena");
+  return hasIdentity && hasReplayShape;
+}
+
 function platformUsesEpicReplayFolder(platform?: string) {
   const normalized = String(platform || "").trim().toLowerCase();
   return normalized === "epic" || normalized === "epic games";
@@ -789,11 +839,13 @@ export default function ReplayDashboardPage() {
   const [scoreExplain, setScoreExplain] = useState<{ title: string; body: string } | null>(null);
   const [librarySearch, setLibrarySearch] = useState("");
   const [libraryResultFilter, setLibraryResultFilter] = useState("all");
+  const [libraryGamemodeFilter, setLibraryGamemodeFilter] = useState("all");
   const [librarySort, setLibrarySort] = useState("newest");
   const [libraryPage, setLibraryPage] = useState(0);
   const [showLibraryDrawer, setShowLibraryDrawer] = useState(false);
   const [mechanicView, setMechanicView] = useState<"grouped" | "timeline">("timeline");
-  const [hiddenMechanicIds, setHiddenMechanicIds] = useState<Set<string>>(new Set());
+  const [focusedMechanicIds, setFocusedMechanicIds] = useState<Set<string>>(new Set());
+  const [activeMechanicEventKey, setActiveMechanicEventKey] = useState("");
   const [trainingSelections, setTrainingSelections] = useState<Record<string, { tier: string; drillMode: string }>>({});
   const [launchingFocus, setLaunchingFocus] = useState("");
   const lastProtocolLaunchRef = useRef<{ url: string; at: number }>({ url: "", at: 0 });
@@ -1448,15 +1500,24 @@ export default function ReplayDashboardPage() {
     [perMechanicSeries]
   );
 
+  useEffect(() => {
+    if (!activeMechanicEventKey) return;
+    const selector = `[data-event-key="${CSS.escape(activeMechanicEventKey)}"]`;
+    const id = window.setTimeout(() => {
+      const el = document.querySelector(selector);
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, 60);
+    return () => window.clearTimeout(id);
+  }, [activeMechanicEventKey, mechanicView, focusedMechanicIds]);
+
   const openReplayFromTrend = useCallback(
     async (sessionId?: string, focusMechanicId?: string) => {
       const sid = String(sessionId || "");
       if (!sid) return;
       if (focusMechanicId) {
-        const nextHidden = new Set(Object.keys(perMechanicSeries).filter((id) => id !== focusMechanicId));
-        setHiddenMechanicIds(nextHidden);
+        setFocusedMechanicIds(new Set([focusMechanicId]));
       } else {
-        setHiddenMechanicIds(new Set());
+        setFocusedMechanicIds(new Set());
       }
       await openSaved(sid);
     },
@@ -1478,6 +1539,14 @@ export default function ReplayDashboardPage() {
     }
     return [...groups.values()].sort((a, b) => a.avg - b.avg);
   }, [mechanicEvents]);
+
+  const currentReplayOverallScore = useMemo(() => {
+    const fromPayload = Number(mechanics?.data?.overall_mechanics_score);
+    if (Number.isFinite(fromPayload) && fromPayload > 0) return normalizeScore100(fromPayload);
+    if (!groupedMechanics.length) return 0;
+    const sum = groupedMechanics.reduce((acc, group) => acc + Number(group.avg || 0), 0);
+    return normalizeScore100(sum / groupedMechanics.length);
+  }, [groupedMechanics, mechanics]);
 
   const librarySessions = library?.data?.sessions ?? [];
   const filteredLibrarySessions = useMemo(() => {
@@ -1501,7 +1570,11 @@ export default function ReplayDashboardPage() {
       if (libraryResultFilter === "all") return true;
       return replayCardLines(sessionItem, profile).result.toLowerCase() === libraryResultFilter;
     };
-    const items = librarySessions.filter((sessionItem) => matchesQuery(sessionItem) && matchesResult(sessionItem));
+    const matchesGamemode = (sessionItem: LibrarySession) => {
+      if (libraryGamemodeFilter === "all") return true;
+      return sessionGamemode(sessionItem) === libraryGamemodeFilter;
+    };
+    const items = librarySessions.filter((sessionItem) => matchesQuery(sessionItem) && matchesResult(sessionItem) && matchesGamemode(sessionItem));
     const scoreOf = (sessionItem: LibrarySession) => normalizeScore100(Number(sessionItem.summary?.overall_mechanics_score || 0));
     const timeOf = (sessionItem: LibrarySession) => {
       const raw = String(sessionItem.summary?.replay_date_iso || sessionItem.created_at || "");
@@ -1515,10 +1588,18 @@ export default function ReplayDashboardPage() {
       return timeOf(b) - timeOf(a);
     });
     return items;
-  }, [librarySessions, librarySearch, libraryResultFilter, librarySort, profile]);
+  }, [librarySessions, librarySearch, libraryResultFilter, libraryGamemodeFilter, librarySort, profile]);
 
-  const recommendations = trainingPlan?.data?.recommendations ?? homeSummary?.data?.recommendations ?? [];
-  const latestReplay = homeSummary?.data?.latest_replay || librarySessions[0];
+  const realLibrarySessions = useMemo(
+    () => librarySessions.filter((item) => hasRealReplayData(item)),
+    [librarySessions]
+  );
+  const latestReplayRaw = homeSummary?.data?.latest_replay || realLibrarySessions[0];
+  const latestReplay = hasRealReplayData(latestReplayRaw) ? latestReplayRaw : null;
+  const hasReplayHistory = Boolean(latestReplay) || realLibrarySessions.length > 0 || progressPoints.length > 0;
+  const recommendations = hasReplayHistory
+    ? (trainingPlan?.data?.recommendations ?? homeSummary?.data?.recommendations ?? [])
+    : [];
   const trackedPlayerLabel = selectedPlayer || session?.analysis_player || latestReplay?.tracked_player_name || latestReplay?.summary?.analysis_player || "";
   const headerReplayStudioActive = activeTab === "replay" && Boolean(session && replayStudioReady);
   const trainingPreflightKnown = trainingPreflightFetchedAt > 0;
@@ -1540,7 +1621,7 @@ export default function ReplayDashboardPage() {
 
   useEffect(() => {
     setLibraryPage(0);
-  }, [librarySearch, libraryResultFilter, librarySort]);
+  }, [librarySearch, libraryResultFilter, libraryGamemodeFilter, librarySort]);
 
   useEffect(() => {
     if (libraryPage > replayLibraryPageCount - 1) {
@@ -1890,7 +1971,7 @@ export default function ReplayDashboardPage() {
 
         {activeTab === "home" && (
           <section className="panel-stack home-layout">
-            {showTutorial && (
+            {showTutorial && latestReplay && (
               <div className="metrics-card welcome-card">
                 <div className="welcome-header">
                   <div className="welcome-icon"><i className="fa-solid fa-rocket" /></div>
@@ -1929,17 +2010,17 @@ export default function ReplayDashboardPage() {
               </div>
             )}
 
-            {!latestReplay && !showTutorial ? (
+            {!latestReplay ? (
               <div className="metrics-card home-empty-card">
-                <div className="home-empty-icon"><i className="fa-solid fa-rocket" /></div>
-                <h2>Nothing to see yet</h2>
+                <div className="home-empty-icon"><i className="fa-solid fa-upload" /></div>
+                <h2>Upload your first replay</h2>
                 <p className="home-empty-sub">
-                  Upload a replay in the Replay tab to unlock mechanic grades, trend tracking, and personalized training{profile?.username ? `, ${profile.username}` : ""}.
+                  RocketCoach starts once you add a match. Upload a `.replay` file to unlock the replay viewer, mechanic grades, coaching notes, progress tracking, and training recommendations{profile?.username ? `, ${profile.username}` : ""}.
                 </p>
                 <div className="home-empty-points">
-                  <div className="home-empty-point"><i className="fa-solid fa-chart-line" /><span>Per-mechanic scores out of 100</span></div>
                   <div className="home-empty-point"><i className="fa-solid fa-film" /><span>3D replay playback with coaching cues</span></div>
-                  <div className="home-empty-point"><i className="fa-solid fa-dumbbell" /><span>Bot training built around your weakest mechanic</span></div>
+                  <div className="home-empty-point"><i className="fa-solid fa-chart-line" /><span>Per-mechanic scores and progress trends</span></div>
+                  <div className="home-empty-point"><i className="fa-solid fa-dumbbell" /><span>Training ideas based on your replay</span></div>
                 </div>
                 <button type="button" className="home-empty-cta" onClick={() => openTab("replay")}>
                   <i className="fa-solid fa-upload" /> Upload a Replay
@@ -1962,7 +2043,7 @@ export default function ReplayDashboardPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setHiddenMechanicIds(new Set());
+                          setFocusedMechanicIds(new Set());
                           void openSaved(latestReplay.session_id || latestReplay.id || "");
                         }}
                       >
@@ -2086,6 +2167,13 @@ export default function ReplayDashboardPage() {
                   <option value="draw">Draws</option>
                   <option value="result">Unknown Result</option>
                 </select>
+                <select value={libraryGamemodeFilter} onChange={(e) => setLibraryGamemodeFilter(e.target.value)}>
+                  <option value="all">All Modes</option>
+                  <option value="1v1">1v1</option>
+                  <option value="2v2">2v2</option>
+                  <option value="3v3">3v3</option>
+                  <option value="unknown">Unknown Mode</option>
+                </select>
                 <select value={librarySort} onChange={(e) => setLibrarySort(e.target.value)}>
                   <option value="newest">Newest First</option>
                   <option value="oldest">Oldest First</option>
@@ -2111,7 +2199,7 @@ export default function ReplayDashboardPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            setHiddenMechanicIds(new Set());
+                            setFocusedMechanicIds(new Set());
                             void openSaved(sid);
                             if (studioActive) setShowLibraryDrawer(false);
                           }}
@@ -2159,15 +2247,16 @@ export default function ReplayDashboardPage() {
           );
 
           // Build flat timeline list (sorted by time)
+          const mechanicFocusActive = focusedMechanicIds.size > 0;
           const timelineEvents = mechanicEvents
-            .filter((ev) => !hiddenMechanicIds.has(String(ev.mechanic_id || "")))
+            .filter((ev) => !mechanicFocusActive || focusedMechanicIds.has(String(ev.mechanic_id || "")))
             .slice()
             .sort((a, b) => Number(a.time ?? 0) - Number(b.time ?? 0));
 
-          const visibleGroups = groupedMechanics.filter((g) => !hiddenMechanicIds.has(g.mechanicId));
+          const visibleGroups = groupedMechanics.filter((g) => !mechanicFocusActive || focusedMechanicIds.has(g.mechanicId));
 
-          const toggleMechanicVisibility = (mid: string) => {
-            setHiddenMechanicIds((prev) => {
+          const toggleMechanicFocus = (mid: string) => {
+            setFocusedMechanicIds((prev) => {
               const next = new Set(prev);
               if (next.has(mid)) next.delete(mid);
               else next.add(mid);
@@ -2175,11 +2264,14 @@ export default function ReplayDashboardPage() {
             });
           };
 
+          const clearMechanicFocus = () => setFocusedMechanicIds(new Set());
+
           const jumpToEvent = (ev: MechanicEvent) => {
             const alignedTime = alignEventTimeToTimeline(session?.timeline, Number(ev.time ?? 0));
             setCurrentTime(Math.max(0, alignedTime - 1.5));
             setSeekTime(undefined);
             setEventExplain(null);
+            setActiveMechanicEventKey(mechanicEventKey({ ...ev, time: alignedTime }));
             setReviewRequest({
               id: Date.now(),
               time: alignedTime,
@@ -2290,7 +2382,12 @@ export default function ReplayDashboardPage() {
                   {groupedMechanics.length > 0 && (
                     <div className="metrics-card mechanic-rings-bar">
                       <div className="mechanic-rings-header">
-                        <h3>Mechanic Grades</h3>
+                        <div className="mechanic-rings-title-row">
+                          <h3>Mechanic Grades</h3>
+                          <span className="mechanic-overall-score">
+                            Overall {fmtNumber(currentReplayOverallScore, 1)}
+                          </span>
+                        </div>
                         {trackedPlayerLabel && (
                           <div className="library-item-meta">
                             Tracking <strong>{trackedPlayerLabel}</strong>
@@ -2379,7 +2476,19 @@ export default function ReplayDashboardPage() {
                       events={mechanicEvents}
                       selectedPlayer={selectedPlayer}
                       onTimeChange={(t) => setCurrentTime(t)}
-                      onAutoEventPause={(ev) => setEventExplain(buildMechanicEventExplain(ev))}
+                      onAutoEventPause={(ev) => {
+                        setEventExplain(buildMechanicEventExplain(ev));
+                        setActiveMechanicEventKey(mechanicEventKey(ev));
+                        const mid = String(ev?.mechanic_id || "");
+                        if (mid) {
+                          setFocusedMechanicIds((prev) => {
+                            if (!prev.size || prev.has(mid)) return prev;
+                            const next = new Set(prev);
+                            next.add(mid);
+                            return next;
+                          });
+                        }
+                      }}
                       onAutoEventClear={() => setEventExplain(null)}
                       eventPopup={
                         eventExplain ? (
@@ -2442,15 +2551,23 @@ export default function ReplayDashboardPage() {
 
                         {groupedMechanics.length > 0 && (
                           <div className="mech-filter-chips">
+                            <button
+                              type="button"
+                              className={`mech-chip ${mechanicFocusActive ? "off" : "on"}`}
+                              onClick={clearMechanicFocus}
+                              title="Show every mechanic"
+                            >
+                              All
+                            </button>
                             {groupedMechanics.map((g) => {
-                              const hidden = hiddenMechanicIds.has(g.mechanicId);
+                              const focused = focusedMechanicIds.has(g.mechanicId);
                               return (
                                 <button
                                   type="button"
                                   key={`chip-${g.mechanicId}`}
-                                  className={`mech-chip ${hidden ? "off" : "on"}`}
-                                  onClick={() => toggleMechanicVisibility(g.mechanicId)}
-                                  title={hidden ? `Show ${g.label}` : `Hide ${g.label}`}
+                                  className={`mech-chip ${focused ? "on" : mechanicFocusActive ? "off" : ""}`}
+                                  onClick={() => toggleMechanicFocus(g.mechanicId)}
+                                  title={focused ? `Remove ${g.label} from focus` : `Focus ${g.label}`}
                                 >
                                   {g.label}
                                 </button>
@@ -2485,8 +2602,18 @@ export default function ReplayDashboardPage() {
                                     const fbKey = makeFbKey(ev, `g:${group.mechanicId}:${idx}`);
                                     const isSaved = feedbackSavedKeys.has(fbKey);
                                     const isOpen = feedbackKey === fbKey;
+                                    const eventKey = mechanicEventKey({
+                                      ...ev,
+                                      time: alignEventTimeToTimeline(session?.timeline, Number(ev.time ?? 0)),
+                                    });
+                                    const isActiveEvent = activeMechanicEventKey === eventKey;
                                     return (
-                                      <div key={`${group.mechanicId}-${idx}`} className="library-item mech-event-item" data-quality={qualityClassName(ev.quality_label)}>
+                                      <div
+                                        key={`${group.mechanicId}-${idx}`}
+                                        className={`library-item mech-event-item${isActiveEvent ? " mech-event-item--active" : ""}`}
+                                        data-quality={qualityClassName(ev.quality_label)}
+                                        data-event-key={eventKey}
+                                      >
                                         <button
                                           type="button"
                                           className="mech-event-clickable"
@@ -2524,7 +2651,7 @@ export default function ReplayDashboardPage() {
                                 </div>
                               </div>
                             ))}
-                            {!visibleGroups.length && <div className="library-item-meta">{groupedMechanics.length ? "All mechanics hidden — click a chip to enable." : "Analyze a replay to view mechanic grades."}</div>}
+                            {!visibleGroups.length && <div className="library-item-meta">{groupedMechanics.length ? "No focused mechanics selected." : "Analyze a replay to view mechanic grades."}</div>}
                           </div>
                         ) : (
                           <div className="library-list mechanic-timeline-list">
@@ -2532,8 +2659,18 @@ export default function ReplayDashboardPage() {
                               const fbKey = makeFbKey(ev, `tl:${idx}`);
                               const isSaved = feedbackSavedKeys.has(fbKey);
                               const isOpen = feedbackKey === fbKey;
+                              const eventKey = mechanicEventKey({
+                                ...ev,
+                                time: alignEventTimeToTimeline(session?.timeline, Number(ev.time ?? 0)),
+                              });
+                              const isActiveEvent = activeMechanicEventKey === eventKey;
                               return (
-                                <div key={`tl-${idx}`} className="library-item mech-event-item" data-quality={qualityClassName(ev.quality_label)}>
+                                <div
+                                  key={`tl-${idx}`}
+                                  className={`library-item mech-event-item${isActiveEvent ? " mech-event-item--active" : ""}`}
+                                  data-quality={qualityClassName(ev.quality_label)}
+                                  data-event-key={eventKey}
+                                >
                                   <button
                                     type="button"
                                     className="mech-event-clickable"
@@ -2569,7 +2706,7 @@ export default function ReplayDashboardPage() {
                                 </div>
                               );
                             })}
-                            {!timelineEvents.length && <div className="library-item-meta">{mechanicEvents.length ? "All mechanics hidden — click a chip to enable." : "Analyze a replay to view mechanic events."}</div>}
+                            {!timelineEvents.length && <div className="library-item-meta">{mechanicEvents.length ? "No events match the focused mechanics." : "Analyze a replay to view mechanic events."}</div>}
                           </div>
                         )}
                       </div>
@@ -2675,7 +2812,7 @@ export default function ReplayDashboardPage() {
                 A standalone Windows installer. No Python installation required — it downloads and configures RLBot GUI, RLBotPack, and the full Python environment.
               </p>
               <a
-                href={`${REPLAY_PREFIX}/installer/download`}
+                href={`${REPLAY_PREFIX}/installer/download?v=${encodeURIComponent(String(import.meta.env.VITE_APP_VERSION || "latest"))}`}
                 download="RLBotStackInstaller.exe"
                 className="installer-download-link"
               >
@@ -2703,7 +2840,7 @@ export default function ReplayDashboardPage() {
                   RocketCoach could not start the local companion and the training dependencies are not ready on this machine yet.
                 </p>
                 <a
-                  href={`${REPLAY_PREFIX}/installer/download`}
+                  href={`${REPLAY_PREFIX}/installer/download?v=${encodeURIComponent(String(import.meta.env.VITE_APP_VERSION || "latest"))}`}
                   download="RLBotStackInstaller.exe"
                   className="installer-download-link"
                 >

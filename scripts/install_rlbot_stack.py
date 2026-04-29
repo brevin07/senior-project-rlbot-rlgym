@@ -589,6 +589,16 @@ def install_bundled_project_files(resource_root: Path, install_root: Path) -> No
         log(f"Installed bundled {folder_name} into {destination}")
 
 
+def install_rldojo_playlists() -> None:
+    try:
+        from generate_rldojo_mechanic_playlists import write_playlists
+
+        written = write_playlists()
+        log(f"Installed/updated {len(written)} RocketCoach RLDojo playlists.")
+    except Exception as exc:
+        log(f"Warning: could not install RocketCoach RLDojo playlists: {exc}")
+
+
 def install_python_requirements(resource_root: Path, python_exe: Path, extra_packages: list[str]) -> None:
     requirements_file = resource_root / "requirements" / "base.txt"
     if not requirements_file.exists():
@@ -651,11 +661,30 @@ def write_training_bridge_launcher(install_root: Path) -> tuple[Path, Path]:
 
             function Stop-DuplicateBridgeProcesses {{
                 $escapedPythonExe = [Regex]::Escape($pythonExe)
-                $bridgeProcesses = Get-CimInstance Win32_Process | Where-Object {{
+                $bridgeProcesses = @(Get-CimInstance Win32_Process | Where-Object {{
                     $_.Name -eq 'python.exe' -and
                     $_.CommandLine -like '*rocketcoach.training.launcher_server*' -and
                     $_.CommandLine -like '*--port 8766*'
+                }})
+                if (-not $bridgeProcesses -or $bridgeProcesses.Count -le 0) {{
+                    return
                 }}
+                foreach ($proc in $bridgeProcesses) {{
+                    if ($proc.CommandLine -notmatch $escapedPythonExe) {{
+                        try {{
+                            Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+                            Write-CallbackLog ("Stopped stale bridge process from older install pid=" + $proc.ProcessId)
+                        }}
+                        catch {{
+                            Write-CallbackLog ("Could not stop stale bridge process pid=" + $proc.ProcessId + ": " + $_.Exception.Message)
+                        }}
+                    }}
+                }}
+                $bridgeProcesses = @(Get-CimInstance Win32_Process | Where-Object {{
+                    $_.Name -eq 'python.exe' -and
+                    $_.CommandLine -like '*rocketcoach.training.launcher_server*' -and
+                    $_.CommandLine -like '*--port 8766*'
+                }})
                 if (-not $bridgeProcesses -or $bridgeProcesses.Count -le 1) {{
                     return
                 }}
@@ -1174,6 +1203,7 @@ def run_installation(args: argparse.Namespace, ui: InstallerProgressWindow | Non
     if ui:
         ui.phase("Bundled Files", "Copying the bundled RocketCoach runtime into the install root...", 8)
     install_bundled_project_files(resource_root, install_root)
+    install_rldojo_playlists()
 
     extra_packages = list(DEFAULT_EXTRA_PACKAGES)
     extra_packages.extend(args.extra_package)

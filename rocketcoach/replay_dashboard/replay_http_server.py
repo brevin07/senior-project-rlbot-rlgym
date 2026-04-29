@@ -1052,7 +1052,7 @@ class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
                 size_mb = round(installer_path.stat().st_size / (1024 * 1024), 1)
                 return self._send_json({"ok": True, "data": {"available": True, "filename": "RLBotStackInstaller.exe", "size_mb": size_mb}})
             return self._send_json({"ok": True, "data": {"available": False}})
-        if self.path == "/api/installer/download":
+        if self.path.split("?", 1)[0] == "/api/installer/download":
             repo_root = Path(__file__).resolve().parents[2]
             installer_path = repo_root / "dist" / "RLBotStackInstaller.exe"
             if not installer_path.exists():
@@ -1062,6 +1062,9 @@ class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Disposition", 'attachment; filename="RLBotStackInstaller.exe"')
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
