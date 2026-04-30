@@ -21,6 +21,40 @@ except Exception:  # pragma: no cover - optional import guard
 from rocketcoach.replay_dashboard.replay_state_store import DuplicateReplayError, ReplayStateStore
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _resolve_installer_path() -> tuple[Path | None, list[Path]]:
+    repo_root = _repo_root()
+    candidates: list[Path] = []
+    env_path = str(os.environ.get("ROCKETCOACH_INSTALLER_PATH", "") or "").strip()
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.extend(
+        [
+            repo_root / "dist" / "RLBotStackInstaller.exe",
+            Path.cwd() / "dist" / "RLBotStackInstaller.exe",
+            Path("/app/dist/RLBotStackInstaller.exe"),
+        ]
+    )
+    seen: set[str] = set()
+    unique_candidates: list[Path] = []
+    for candidate in candidates:
+        try:
+            key = str(candidate.resolve())
+        except Exception:
+            key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_candidates.append(candidate)
+    for candidate in unique_candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate, unique_candidates
+    return None, unique_candidates
+
+
 class _ReplayDashboardHandler(BaseHTTPRequestHandler):
     store: ReplayStateStore = None
     web_dir: Path = None
@@ -1045,18 +1079,28 @@ class _ReplayDashboardHandler(_BaseReplayDashboardHandler):
                 return self._send_json({"ok": True, "data": data})
             except Exception as exc:
                 return self._send_json({"ok": False, "error": str(exc)}, status=400)
-        if self.path == "/api/installer/info":
-            repo_root = Path(__file__).resolve().parents[2]
-            installer_path = repo_root / "dist" / "RLBotStackInstaller.exe"
-            if installer_path.exists():
+        api_path = urlparse(self.path).path
+        if api_path.startswith("/api/replay/installer/"):
+            api_path = "/api/installer/" + api_path.removeprefix("/api/replay/installer/")
+        if api_path == "/api/installer/info":
+            installer_path, checked_paths = _resolve_installer_path()
+            if installer_path:
                 size_mb = round(installer_path.stat().st_size / (1024 * 1024), 1)
                 return self._send_json({"ok": True, "data": {"available": True, "filename": "RLBotStackInstaller.exe", "size_mb": size_mb}})
-            return self._send_json({"ok": True, "data": {"available": False}})
-        if self.path.split("?", 1)[0] == "/api/installer/download":
-            repo_root = Path(__file__).resolve().parents[2]
-            installer_path = repo_root / "dist" / "RLBotStackInstaller.exe"
-            if not installer_path.exists():
-                self.send_error(HTTPStatus.NOT_FOUND, "Installer not found")
+            return self._send_json(
+                {
+                    "ok": True,
+                    "data": {
+                        "available": False,
+                        "checked_paths": [str(path) for path in checked_paths],
+                    },
+                }
+            )
+        if api_path == "/api/installer/download":
+            installer_path, checked_paths = _resolve_installer_path()
+            if not installer_path:
+                message = "Installer not found. Checked: " + ", ".join(str(path) for path in checked_paths)
+                self.send_error(HTTPStatus.NOT_FOUND, message)
                 return
             data = installer_path.read_bytes()
             self.send_response(HTTPStatus.OK)

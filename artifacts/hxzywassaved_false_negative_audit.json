@@ -1,0 +1,453 @@
+[
+  {
+    "replay": "300F73EE4FFBA48E8BFB138C0C7E89E8.replay",
+    "players": [
+      "Juicy_Dom12",
+      "hxzywassaved"
+    ],
+    "event_counts": {
+      "kickoff": 6,
+      "aerial_offense": 10,
+      "aerial_defense": 10,
+      "fifty_fifty_control": 1,
+      "shadow_defense": 6,
+      "challenge": 12
+    },
+    "findings": [
+      {
+        "mechanic": "Aerial",
+        "time_s": 43.41,
+        "clock": "0:43.41",
+        "confidence": 0.74,
+        "reason": "high-touch candidate, ball_z=1141, car_z=1064, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 46.97,
+        "clock": "0:46.97",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.57s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 67.54,
+        "clock": "1:07.54",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.57s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 82.36,
+        "clock": "1:22.36",
+        "confidence": 0.58,
+        "reason": "high-touch candidate, ball_z=1136, car_z=998, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 83.53,
+        "clock": "1:23.53",
+        "confidence": 0.56,
+        "reason": "high-touch candidate, ball_z=1602, car_z=1501, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 85.16,
+        "clock": "1:25.16",
+        "confidence": 0.49,
+        "reason": "high-touch candidate, ball_z=1421, car_z=1376, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 107.95,
+        "clock": "1:47.95",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.47s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 120.69,
+        "clock": "2:00.69",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.70s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 126.09,
+        "clock": "2:06.09",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.43s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 126.35,
+        "clock": "2:06.35",
+        "confidence": 0.63,
+        "reason": "high-touch candidate, ball_z=572, car_z=454, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 177.04,
+        "clock": "2:57.04",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.47s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 183.74,
+        "clock": "3:03.74",
+        "confidence": 0.52,
+        "reason": "high-touch candidate, ball_z=811, car_z=619, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 185.4,
+        "clock": "3:05.40",
+        "confidence": 0.68,
+        "reason": "high-touch candidate, ball_z=1521, car_z=1423, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 206.84,
+        "clock": "3:26.84",
+        "confidence": 0.64,
+        "reason": "high-touch candidate, ball_z=526, car_z=455, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 210.64,
+        "clock": "3:30.64",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.53s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 246.04,
+        "clock": "4:06.04",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.47s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 252.66,
+        "clock": "4:12.66",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.43s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 255.76,
+        "clock": "4:15.76",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.73s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 257.6,
+        "clock": "4:17.60",
+        "confidence": 0.51,
+        "reason": "high-touch candidate, ball_z=638, car_z=474, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 284.32,
+        "clock": "4:44.32",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.40s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 289.27,
+        "clock": "4:49.27",
+        "confidence": 0.5,
+        "reason": "high-touch candidate, ball_z=1428, car_z=1376, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 290.68,
+        "clock": "4:50.68",
+        "confidence": 0.62,
+        "reason": "high-touch candidate, ball_z=1212, car_z=1096, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 292.68,
+        "clock": "4:52.68",
+        "confidence": 0.55,
+        "reason": "high-touch candidate, ball_z=295, car_z=361, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 310.95,
+        "clock": "5:10.95",
+        "confidence": 0.62,
+        "reason": "high-touch candidate, ball_z=594, car_z=570, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 325.32,
+        "clock": "5:25.32",
+        "confidence": 0.68,
+        "reason": "high-touch candidate, ball_z=96, car_z=189, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 331.54,
+        "clock": "5:31.54",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.43s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 334.05,
+        "clock": "5:34.05",
+        "confidence": 0.56,
+        "reason": "high-touch candidate, ball_z=384, car_z=272, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 375.75,
+        "clock": "6:15.75",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.43s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 416.95,
+        "clock": "6:56.95",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.64s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 495.86,
+        "clock": "8:15.86",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.43s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 497.9,
+        "clock": "8:17.90",
+        "confidence": 0.61,
+        "reason": "high-touch candidate, ball_z=433, car_z=246, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 499.44,
+        "clock": "8:19.44",
+        "confidence": 0.69,
+        "reason": "high-touch candidate, ball_z=1496, car_z=1441, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 500.92,
+        "clock": "8:20.92",
+        "confidence": 0.6,
+        "reason": "high-touch candidate, ball_z=1125, car_z=1083, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 506.7,
+        "clock": "8:26.70",
+        "confidence": 0.49,
+        "reason": "high-touch candidate, ball_z=339, car_z=445, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Challenge / 50-50",
+        "time_s": 506.7,
+        "clock": "8:26.70",
+        "confidence": 0.49,
+        "reason": "low contested touch near Juicy_Dom12 but no challenge or 50/50 event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 511.34,
+        "clock": "8:31.34",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.57s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 516.1,
+        "clock": "8:36.10",
+        "confidence": 0.61,
+        "reason": "high-touch candidate, ball_z=838, car_z=727, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 527.59,
+        "clock": "8:47.59",
+        "confidence": 0.54,
+        "reason": "high-touch candidate, ball_z=401, car_z=270, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 528.95,
+        "clock": "8:48.95",
+        "confidence": 0.59,
+        "reason": "high-touch candidate, ball_z=1123, car_z=958, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 530.21,
+        "clock": "8:50.21",
+        "confidence": 0.55,
+        "reason": "high-touch candidate, ball_z=1539, car_z=1402, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 531.86,
+        "clock": "8:51.86",
+        "confidence": 0.53,
+        "reason": "high-touch candidate, ball_z=1158, car_z=1128, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 538.0,
+        "clock": "8:58.00",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.46s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 566.51,
+        "clock": "9:26.51",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.40s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 567.6,
+        "clock": "9:27.60",
+        "confidence": 0.61,
+        "reason": "high-touch candidate, ball_z=800, car_z=678, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 597.56,
+        "clock": "9:57.56",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.63s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 598.49,
+        "clock": "9:58.49",
+        "confidence": 0.62,
+        "reason": "high-touch candidate, ball_z=372, car_z=258, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 612.04,
+        "clock": "10:12.04",
+        "confidence": 0.57,
+        "reason": "high-touch candidate, ball_z=1706, car_z=1620, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 621.01,
+        "clock": "10:21.01",
+        "confidence": 0.56,
+        "reason": "high-touch candidate, ball_z=381, car_z=230, but no aerial event was emitted"
+      }
+    ]
+  },
+  {
+    "replay": "AE64DC9044CEC18B60A1D6B5E8B462B7.replay",
+    "players": [
+      "Jones.RL",
+      "Juicy_Dom12",
+      "MacunaHutata",
+      "SteammyRayVaughn",
+      "champalamp2",
+      "hxzywassaved"
+    ],
+    "event_counts": {
+      "challenge": 5,
+      "aerial_defense": 4,
+      "shadow_defense": 5,
+      "fifty_fifty_control": 2,
+      "aerial_offense": 4,
+      "kickoff": 1
+    },
+    "findings": [
+      {
+        "mechanic": "Flick",
+        "time_s": 32.67,
+        "clock": "0:32.67",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.50s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 77.35,
+        "clock": "1:17.35",
+        "confidence": 0.66,
+        "reason": "high-touch candidate, ball_z=341, car_z=300, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Challenge / 50-50",
+        "time_s": 80.04,
+        "clock": "1:20.04",
+        "confidence": 0.5,
+        "reason": "low contested touch near SteammyRayVaughn but no challenge or 50/50 event was emitted"
+      },
+      {
+        "mechanic": "Challenge / 50-50",
+        "time_s": 81.34,
+        "clock": "1:21.34",
+        "confidence": 0.63,
+        "reason": "low contested touch near champalamp2 but no challenge or 50/50 event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 81.84,
+        "clock": "1:21.84",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.50s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 102.31,
+        "clock": "1:42.31",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.74s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 141.74,
+        "clock": "2:21.74",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.43s close carry but no flick event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 169.62,
+        "clock": "2:49.62",
+        "confidence": 0.68,
+        "reason": "high-touch candidate, ball_z=330, car_z=266, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Aerial",
+        "time_s": 189.71,
+        "clock": "3:09.71",
+        "confidence": 0.63,
+        "reason": "high-touch candidate, ball_z=448, car_z=426, but no aerial event was emitted"
+      },
+      {
+        "mechanic": "Challenge / 50-50",
+        "time_s": 319.0,
+        "clock": "5:19.00",
+        "confidence": 0.66,
+        "reason": "low contested touch near champalamp2 but no challenge or 50/50 event was emitted"
+      },
+      {
+        "mechanic": "Flick",
+        "time_s": 319.4,
+        "clock": "5:19.40",
+        "confidence": 0.55,
+        "reason": "dodge release after 0.43s close carry but no flick event was emitted"
+      }
+    ]
+  }
+]

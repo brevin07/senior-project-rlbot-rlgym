@@ -1287,7 +1287,10 @@ _CHALLENGE_OPP_MAX_DIST = 1050.0
 _CHALLENGE_MAX_DISTANCE_GAP = 520.0
 _CHALLENGE_TOUCHLIKE_MAX_DIST = 420.0
 _FIFTY_OPP_CONVERGE_SPEED = 180.0
-_FIFTY_MAX_PRE_IMPACT_GAP = 0.28
+_FIFTY_MAX_PRE_IMPACT_GAP = 0.45
+_FIFTY_PLAYER_MAX_DIST = 430.0
+_FIFTY_OPP_MAX_DIST = 470.0
+_FIFTY_MAX_BALL_Z = 420.0
 _FLIP_RESET_MIN_BALL_Z = 220.0
 _FLIP_RESET_MIN_PLAYER_Z = 140.0
 _FLIP_RESET_MAX_DIST = 230.0
@@ -1832,7 +1835,7 @@ def _detect_kickoff_events(
             player,
             player_teams,
             start_idx,
-            min(end_t, start_t + 5.0),
+            min(end_t, max(reset_end_t + 0.35, start_t + 7.0)),
         )
         if touch_idx < 0 and player_touch_idx < 0:
             continue
@@ -1848,6 +1851,15 @@ def _detect_kickoff_events(
             scoring_touch_idx,
             reset_window=(start_t, reset_end_t),
         )
+        # If the replay parser's kickoff window points at this player's first
+        # contact, keep the kickoff even when the approach samples are noisy.
+        # This catches slower starts where the first-touch evidence is stronger
+        # than the throttle/alignment telemetry.
+        if not player_attempted and player_touch_idx >= 0 and scoring_touch_idx == player_touch_idx:
+            player_attempted = reset_end_t > start_t or any(
+                bool((timeline[j] or {}).get("is_kickoff_pause"))
+                for j in range(start_idx, min(player_touch_idx + 1, len(timeline)))
+            )
         if not player_attempted:
             continue
         sustained_pause_window = any(
@@ -2133,21 +2145,33 @@ def _detect_mechanic_events(
     # mechanic — it's already scored as kickoff.
     _KICKOFF_TAIL_BUFFER_S = 3.0   # was 1.5 — cover post-kickoff recovery (shadow, challenge)
     _KICKOFF_PRE_BUFFER_S = 0.5
+    merged_kickoff_windows = _merge_kickoff_windows(
+        _collect_kickoff_reset_windows(timeline, times) + parser_kickoff_windows
+    )
+    _kickoff_direct_windows: List[Tuple[float, float]] = [
+        (max(0.0, start_t - _KICKOFF_PRE_BUFFER_S), end_t + 0.75)
+        for start_t, end_t in merged_kickoff_windows
+    ]
     _kickoff_windows: List[Tuple[float, float]] = [
         (max(0.0, start_t - _KICKOFF_PRE_BUFFER_S), end_t + _KICKOFF_TAIL_BUFFER_S)
-        for start_t, end_t in _merge_kickoff_windows(
-            _collect_kickoff_reset_windows(timeline, times) + parser_kickoff_windows
-        )
+        for start_t, end_t in merged_kickoff_windows
     ]
     for k in kickoff_events:
         start_t = _safe_float(k.get("kickoff_window_start", k.get("time", 0.0)))
         end_t = _safe_float(k.get("kickoff_window_end", k.get("time", 0.0)))
         if end_t <= 0.0 and start_t <= 0.0:
             continue
+        _kickoff_direct_windows.append((max(0.0, start_t - _KICKOFF_PRE_BUFFER_S), end_t + 0.75))
         _kickoff_windows.append((max(0.0, start_t - _KICKOFF_PRE_BUFFER_S), end_t + _KICKOFF_TAIL_BUFFER_S))
 
     def _in_kickoff_window(ts: float) -> bool:
         for ws, we in _kickoff_windows:
+            if ws <= ts <= we:
+                return True
+        return False
+
+    def _in_kickoff_direct_window(ts: float) -> bool:
+        for ws, we in _kickoff_direct_windows:
             if ws <= ts <= we:
                 return True
         return False
@@ -2354,15 +2378,16 @@ def _detect_mechanic_events(
         own_closing_to_ball = _closing_speed_toward_ball(fr, player)
         own_ready_for_fifty = own_closing_to_ball >= _FIFTY_OPP_CONVERGE_SPEED
         own_committed_for_fifty = own_ready_for_fifty or bool(approach_window.get("committed"))
-        if d_pb < 380.0 and opp_db < 420.0 and bz < 300.0 and (t - last_t_by_mech["fifty_fifty_control"]) >= cooldown["fifty_fifty_control"] and not _in_kickoff_window(t) and not kickoff_context and opp_ready and own_committed_for_fifty:
+        if d_pb < _FIFTY_PLAYER_MAX_DIST and opp_db < _FIFTY_OPP_MAX_DIST and bz < _FIFTY_MAX_BALL_Z and (t - last_t_by_mech["fifty_fifty_control"]) >= cooldown["fifty_fifty_control"] and not _in_kickoff_direct_window(t) and opp_ready and own_committed_for_fifty:
             j = _find_next_idx_by_time(times, i, 0.20)
             k = _find_next_idx_by_time(times, i, 0.80)
             frj = timeline[j]
             frk = timeline[k]
-            player_recently_grounded = pz <= 130.0 and (t - _last_ground_t) <= 0.35
+            player_recently_grounded = (pz <= 130.0 and (t - _last_ground_t) <= 0.35) or pz <= 215.0
             impact = player_recently_grounded and (_ball_dir_flip(fr, frj) or abs(_ball_speed(frj) - b_speed) > 180.0)
             pre_impact_gap = abs(_time_to_intercept_estimate(fr, player) - _time_to_intercept_estimate(fr, opp_name)) if opp_name else 999.0
-            if impact and pre_impact_gap <= _FIFTY_MAX_PRE_IMPACT_GAP:
+            contest_pop = impact and bz >= 260.0 and abs(_ball_speed(frj) - b_speed) > 260.0
+            if impact and (pre_impact_gap <= _FIFTY_MAX_PRE_IMPACT_GAP or contest_pop):
                 our_k = _best_team_ball_dist(frk, player_teams, team)
                 opp_k = _best_team_ball_dist(frk, player_teams, 1 - team)
                 b_k = frk.get("ball", {}) or {}
@@ -2792,9 +2817,28 @@ def _suppress_redundant_followup_events(events: List[Dict[str, Any]]) -> List[Di
     for ev in ordered:
         mid = _canonical_mid(str(ev.get("mechanic_id", "")))
         t = _safe_float(ev.get("time", 0.0))
-        if mid in {"challenge", "fifty_fifty_control"} and any(start <= t <= end for start, end in kickoff_windows):
+        if mid in {"challenge", "fifty_fifty_control", "aerial_offense", "aerial_defense"} and any(start <= t <= end for start, end in kickoff_windows):
             continue
         pruned.append(ev)
+
+    contest_windows: List[tuple[float, float]] = []
+    for ev in pruned:
+        mid = _canonical_mid(str(ev.get("mechanic_id", "")))
+        t = _safe_float(ev.get("time", 0.0))
+        if mid == "fifty_fifty_control":
+            contest_windows.append((t - 1.0, t + 1.0))
+        elif mid == "challenge":
+            contest_windows.append((t - 0.55, t + 0.55))
+
+    if contest_windows:
+        contest_pruned: List[Dict[str, Any]] = []
+        for ev in pruned:
+            mid = _canonical_mid(str(ev.get("mechanic_id", "")))
+            t = _safe_float(ev.get("time", 0.0))
+            if mid in {"aerial_offense", "aerial_defense"} and any(start <= t <= end for start, end in contest_windows):
+                continue
+            contest_pruned.append(ev)
+        pruned = contest_pruned
 
     filtered: List[Dict[str, Any]] = []
     cluster: List[Dict[str, Any]] = []

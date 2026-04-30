@@ -31,6 +31,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt && \
 COPY rocketcoach ./rocketcoach
 COPY collision_meshes ./collision_meshes
 COPY dist ./dist
+RUN test -f /app/dist/RLBotStackInstaller.exe
 
 EXPOSE 8775
 

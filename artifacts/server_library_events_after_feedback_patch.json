@@ -1,0 +1,1903 @@
+[
+  {
+    "display": "10-7-25.replay",
+    "player": "what_the_shigma",
+    "raw": "2109473049EF73F8ED31D8B40E2C3C10.replay",
+    "events": [
+      {
+        "mid": "aerial_offense",
+        "clock": "4:38",
+        "t": 38.2,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:36",
+        "t": 39.7,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:12",
+        "t": 81.72,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:10",
+        "t": 83.52,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:40",
+        "t": 113.6,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:46",
+        "t": 167.93,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:36",
+        "t": 177.56,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:32",
+        "t": 182.26,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "2:30",
+        "t": 183.72,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:14",
+        "t": 218.48,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "2:08",
+        "t": 223.71,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "challenge",
+        "clock": "2:03",
+        "t": 228.77,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:02",
+        "t": 229.94,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:32",
+        "t": 259.84,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      }
+    ],
+    "counts": {
+      "aerial_offense": 4,
+      "aerial_defense": 5,
+      "fifty_fifty_control": 4,
+      "challenge": 1
+    }
+  },
+  {
+    "display": "4-28-26.replay",
+    "player": "what_the_shigma",
+    "raw": "F15325304AF63D2C46762DB79AEEA05E.replay",
+    "events": [
+      {
+        "mid": "aerial_offense",
+        "clock": "4:57",
+        "t": 14.04,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "4:55",
+        "t": 16.04,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "4:47",
+        "t": 33.69,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "4:14",
+        "t": 77.2,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "4:08",
+        "t": 82.33,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "4:08",
+        "t": 92.58,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:43",
+        "t": 131.55,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:17",
+        "t": 167.23,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:30",
+        "t": 213.27,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "2:28",
+        "t": 215.33,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "challenge",
+        "clock": "2:23",
+        "t": 220.33,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:16",
+        "t": 227.86,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "2:08",
+        "t": 235.33,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:57",
+        "t": 246.63,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:54",
+        "t": 259.14,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:51",
+        "t": 261.68,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:34",
+        "t": 278.97,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:29",
+        "t": 284.49,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:25",
+        "t": 288.27,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:22",
+        "t": 291.05,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "carrying_dribbling",
+        "clock": "1:19",
+        "t": 293.96,
+        "reason": "carry kept control and progressed play",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:15",
+        "t": 297.67,
+        "reason": "missed open net opportunity",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "challenge",
+        "clock": "1:01",
+        "t": 311.79,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:52",
+        "t": 321.62,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "0:49",
+        "t": 324.4,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "challenge",
+        "clock": "0:42",
+        "t": 331.63,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:27",
+        "t": 346.35,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "challenge",
+        "clock": "0:25",
+        "t": 348.22,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:19",
+        "t": 354.24,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "0:16",
+        "t": 357.42,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "challenge",
+        "clock": "0:07",
+        "t": 366.78,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:01",
+        "t": 372.04,
+        "reason": "ceiling shot toward goal",
+        "etype": "ceiling_shot"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:00",
+        "t": 373.85,
+        "reason": "air touch created attacking value",
+        "etype": "wall_setup"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:00",
+        "t": 375.29,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      }
+    ],
+    "counts": {
+      "aerial_offense": 16,
+      "fifty_fifty_control": 3,
+      "kickoff": 1,
+      "aerial_defense": 8,
+      "challenge": 5,
+      "carrying_dribbling": 1
+    }
+  },
+  {
+    "display": "7-29-25.replay",
+    "player": "hxzywassaved",
+    "raw": "6337C69043A4615EDE7FF39BD280F242.replay",
+    "events": [
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "4:51",
+        "t": 21.39,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "challenge",
+        "clock": "4:51",
+        "t": 21.76,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "4:46",
+        "t": 25.89,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "4:33",
+        "t": 39.71,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:31",
+        "t": 40.98,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "4:24",
+        "t": 47.92,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:13",
+        "t": 59.05,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "challenge",
+        "clock": "4:07",
+        "t": 64.96,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:52",
+        "t": 80.64,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:40",
+        "t": 92.42,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:35",
+        "t": 96.89,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:31",
+        "t": 101.73,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "3:30",
+        "t": 113.02,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:16",
+        "t": 127.53,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "challenge",
+        "clock": "3:15",
+        "t": 127.9,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:07",
+        "t": 135.97,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:54",
+        "t": 148.68,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:54",
+        "t": 149.18,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:53",
+        "t": 159.5,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:46",
+        "t": 177.23,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "2:43",
+        "t": 180.06,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:29",
+        "t": 193.54,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:26",
+        "t": 196.67,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "challenge",
+        "clock": "2:21",
+        "t": 201.84,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:19",
+        "t": 213.65,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:11",
+        "t": 236.17,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "1:58",
+        "t": 261.34,
+        "reason": "kickoff neutral but safe",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:48",
+        "t": 271.28,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "1:40",
+        "t": 290.98,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:39",
+        "t": 292.82,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:30",
+        "t": 311.27,
+        "reason": "50/50 won to team control",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:18",
+        "t": 323.19,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:16",
+        "t": 325.36,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "1:00",
+        "t": 351.94,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "0:55",
+        "t": 367.91,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:38",
+        "t": 384.48,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "0:38",
+        "t": 400.82,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "0:19",
+        "t": 447.87,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:17",
+        "t": 450.78,
+        "reason": "controlled aerial setup touch",
+        "etype": "setup_touch"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "0:09",
+        "t": 458.08,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      }
+    ],
+    "counts": {
+      "fifty_fifty_control": 12,
+      "challenge": 5,
+      "aerial_offense": 7,
+      "aerial_defense": 5,
+      "kickoff": 9,
+      "shadow_defense": 2
+    }
+  },
+  {
+    "display": "4-10-26.replay",
+    "player": "hxzywassaved",
+    "raw": "5E5592334777F3E3E5137CA68C6F3B3A.replay",
+    "events": [
+      {
+        "mid": "kickoff",
+        "clock": "5:00",
+        "t": 10.43,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "4:57",
+        "t": 14.33,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "4:47",
+        "t": 23.65,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "4:43",
+        "t": 27.52,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "4:31",
+        "t": 39.36,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:30",
+        "t": 41.12,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:19",
+        "t": 52.09,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "challenge",
+        "clock": "4:14",
+        "t": 56.53,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "4:11",
+        "t": 70.99,
+        "reason": "kickoff neutral but safe",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "4:03",
+        "t": 79.69,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "4:01",
+        "t": 81.19,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:48",
+        "t": 94.73,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "challenge",
+        "clock": "3:42",
+        "t": 100.21,
+        "reason": "challenge conceded easy counter",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:16",
+        "t": 143.8,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "3:09",
+        "t": 166.14,
+        "reason": "kickoff neutral but safe",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "2:50",
+        "t": 185.61,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:36",
+        "t": 199.7,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:24",
+        "t": 211.9,
+        "reason": "50/50 lost into danger",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:15",
+        "t": 238.98,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:12",
+        "t": 241.79,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:10",
+        "t": 258.84,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:03",
+        "t": 266.04,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "1:59",
+        "t": 270.65,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:53",
+        "t": 276.63,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:51",
+        "t": 278.54,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:27",
+        "t": 302.81,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:24",
+        "t": 305.42,
+        "reason": "controlled aerial setup touch",
+        "etype": "setup_touch"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:18",
+        "t": 311.08,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "1:11",
+        "t": 331.73,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:48",
+        "t": 371.25,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "0:46",
+        "t": 372.72,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "challenge",
+        "clock": "0:44",
+        "t": 374.49,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:32",
+        "t": 386.52,
+        "reason": "controlled aerial setup touch",
+        "etype": "setup_touch"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "0:20",
+        "t": 398.83,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:19",
+        "t": 399.9,
+        "reason": "air touch created attacking value",
+        "etype": "wall_setup"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "0:18",
+        "t": 400.9,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:00",
+        "t": 419.99,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "0:00",
+        "t": 421.36,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "0:00",
+        "t": 425.07,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      }
+    ],
+    "counts": {
+      "kickoff": 5,
+      "shadow_defense": 2,
+      "fifty_fifty_control": 9,
+      "aerial_offense": 13,
+      "aerial_defense": 5,
+      "challenge": 5
+    }
+  },
+  {
+    "display": "2-17-26.replay",
+    "player": "what_the_shigma",
+    "raw": "813B575742916BF2F8354E8DEC8FAAF5.replay",
+    "events": [
+      {
+        "mid": "challenge",
+        "clock": "4:49",
+        "t": 27.3,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "4:31",
+        "t": 45.7,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "challenge",
+        "clock": "4:05",
+        "t": 81.96,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "4:02",
+        "t": 84.33,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:56",
+        "t": 90.66,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:38",
+        "t": 108.59,
+        "reason": "ceiling shot toward goal",
+        "etype": "ceiling_shot"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:31",
+        "t": 115.36,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:23",
+        "t": 139.14,
+        "reason": "50/50 won to team control",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:05",
+        "t": 156.63,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:01",
+        "t": 160.76,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "challenge",
+        "clock": "2:51",
+        "t": 170.93,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:50",
+        "t": 171.73,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "2:47",
+        "t": 174.53,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:31",
+        "t": 207.39,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "challenge",
+        "clock": "2:31",
+        "t": 207.75,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "2:22",
+        "t": 216.45,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "2:17",
+        "t": 221.95,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:13",
+        "t": 225.12,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:13",
+        "t": 241.65,
+        "reason": "kickoff neutral but safe",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "2:01",
+        "t": 252.95,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:01",
+        "t": 268.75,
+        "reason": "kickoff neutral but safe",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "1:55",
+        "t": 274.31,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:55",
+        "t": 275.18,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "1:41",
+        "t": 288.8,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:33",
+        "t": 296.86,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:25",
+        "t": 321.4,
+        "reason": "50/50 won to team control",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "1:25",
+        "t": 332.12,
+        "reason": "kickoff lost into pressure",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "1:14",
+        "t": 342.52,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:55",
+        "t": 362.22,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "0:54",
+        "t": 363.43,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "0:50",
+        "t": 385.68,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "challenge",
+        "clock": "0:45",
+        "t": 389.83,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "0:12",
+        "t": 423.26,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "0:02",
+        "t": 433.77,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      }
+    ],
+    "counts": {
+      "challenge": 8,
+      "aerial_offense": 6,
+      "shadow_defense": 3,
+      "fifty_fifty_control": 8,
+      "aerial_defense": 6,
+      "kickoff": 3
+    }
+  },
+  {
+    "display": "1-26-25.replay",
+    "player": "what_the_shigma",
+    "raw": "BF4E4128460D8C98E524B29EA9C8D866.replay",
+    "events": [
+      {
+        "mid": "shadow_defense",
+        "clock": "4:17",
+        "t": 73.87,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "4:16",
+        "t": 74.67,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "4:10",
+        "t": 80.83,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "4:07",
+        "t": 84.36,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "3:39",
+        "t": 112.49,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "2:32",
+        "t": 178.71,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "2:01",
+        "t": 210.2,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:00",
+        "t": 230.34,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "+0:05",
+        "t": 403.05,
+        "reason": "ceiling shot toward goal",
+        "etype": "ceiling_shot"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "+0:07",
+        "t": 405.23,
+        "reason": "flip reset executed and directed toward goal",
+        "etype": "flip_reset"
+      }
+    ],
+    "counts": {
+      "shadow_defense": 6,
+      "challenge": 1,
+      "kickoff": 1,
+      "aerial_offense": 2
+    }
+  },
+  {
+    "display": "4-7-26.replay",
+    "player": "hxzywassaved",
+    "raw": "AD302DEC40A4720913EEABA10D8C6E54.replay",
+    "events": [
+      {
+        "mid": "aerial_defense",
+        "clock": "4:43",
+        "t": 30.5,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "4:37",
+        "t": 52.49,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:05",
+        "t": 83.78,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:48",
+        "t": 101.17,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:30",
+        "t": 136.72,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:23",
+        "t": 143.97,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:17",
+        "t": 149.23,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:16",
+        "t": 150.43,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:46",
+        "t": 180.61,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:43",
+        "t": 183.11,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "2:26",
+        "t": 200.06,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:37",
+        "t": 249.18,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "1:33",
+        "t": 253.32,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:15",
+        "t": 271.56,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:12",
+        "t": 274.41,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:08",
+        "t": 278.26,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:08",
+        "t": 278.99,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "1:08",
+        "t": 288.51,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:58",
+        "t": 299.08,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "0:50",
+        "t": 307.04,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "0:45",
+        "t": 324.14,
+        "reason": "kickoff neutral but safe",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "0:12",
+        "t": 357.11,
+        "reason": "50/50 won to team control",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:10",
+        "t": 358.92,
+        "reason": "air touch created attacking value",
+        "etype": "wall_setup"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "0:00",
+        "t": 372.69,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "0:00",
+        "t": 378.71,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:00",
+        "t": 381.12,
+        "reason": "controlled aerial setup touch",
+        "etype": "setup_touch"
+      }
+    ],
+    "counts": {
+      "aerial_defense": 8,
+      "kickoff": 3,
+      "fifty_fifty_control": 7,
+      "aerial_offense": 5,
+      "shadow_defense": 2,
+      "challenge": 1
+    }
+  },
+  {
+    "display": "3-8-26.replay",
+    "player": "what_the_shigma",
+    "raw": "7EDFBDAD472E7D9BCF743CA4FC860931.replay",
+    "events": [
+      {
+        "mid": "aerial_offense",
+        "clock": "4:55",
+        "t": 16.17,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "4:47",
+        "t": 40.18,
+        "reason": "kickoff lost into pressure",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "4:39",
+        "t": 48.39,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "4:33",
+        "t": 54.49,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:58",
+        "t": 88.88,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "challenge",
+        "clock": "3:48",
+        "t": 98.98,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:34",
+        "t": 113.6,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:03",
+        "t": 154.85,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "2:56",
+        "t": 161.95,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:49",
+        "t": 186.16,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:47",
+        "t": 187.99,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:38",
+        "t": 197.91,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:22",
+        "t": 213.4,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "2:04",
+        "t": 231.33,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:57",
+        "t": 238.42,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "1:53",
+        "t": 242.43,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "1:29",
+        "t": 266.56,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:26",
+        "t": 269.67,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "1:24",
+        "t": 289.38,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "1:08",
+        "t": 305.26,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:58",
+        "t": 329.15,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:49",
+        "t": 338.57,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:47",
+        "t": 340.37,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "0:46",
+        "t": 356.27,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:11",
+        "t": 391.31,
+        "reason": "air touch created attacking value",
+        "etype": "wall_setup"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "0:09",
+        "t": 393.15,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "0:08",
+        "t": 394.25,
+        "reason": "won possession after challenge",
+        "etype": ""
+      }
+    ],
+    "counts": {
+      "aerial_offense": 14,
+      "kickoff": 3,
+      "aerial_defense": 5,
+      "challenge": 2,
+      "fifty_fifty_control": 3
+    }
+  },
+  {
+    "display": "3-11-26.replay",
+    "player": "what_the_shigma",
+    "raw": "ADE7D74E40C14CDF5183999B8BF79EE2.replay",
+    "events": [
+      {
+        "mid": "shadow_defense",
+        "clock": "4:50",
+        "t": 21.24,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "4:35",
+        "t": 51.85,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "4:27",
+        "t": 60.22,
+        "reason": "challenge failed to improve outcome",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "4:17",
+        "t": 70.25,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "kickoff",
+        "clock": "4:11",
+        "t": 86.2,
+        "reason": "kickoff neutral but safe",
+        "etype": ""
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "4:02",
+        "t": 95.03,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "4:00",
+        "t": 96.87,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:58",
+        "t": 98.97,
+        "reason": "50/50 neutral outcome",
+        "etype": "low_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:48",
+        "t": 108.83,
+        "reason": "flip reset executed and directed toward goal",
+        "etype": "flip_reset"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:47",
+        "t": 109.6,
+        "reason": "open net chance converted into pressure",
+        "etype": "open_net_chance"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "3:47",
+        "t": 122.55,
+        "reason": "kickoff neutral but safe",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:43",
+        "t": 126.02,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:41",
+        "t": 128.05,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:38",
+        "t": 131.22,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:35",
+        "t": 134.55,
+        "reason": "50/50 won to team control",
+        "etype": "low_50"
+      },
+      {
+        "mid": "shadow_defense",
+        "clock": "3:29",
+        "t": 140.32,
+        "reason": "goal-side shadow spacing and delay quality",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:27",
+        "t": 141.82,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:18",
+        "t": 150.82,
+        "reason": "50/50 won to team control",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:16",
+        "t": 153.58,
+        "reason": "double tap contact without goal threat",
+        "etype": "double_tap"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:15",
+        "t": 154.68,
+        "reason": "aerial defensive clear quality",
+        "etype": "clear"
+      },
+      {
+        "mid": "aerial_defense",
+        "clock": "3:11",
+        "t": 158.05,
+        "reason": "aerial defensive clear quality",
+        "etype": ""
+      },
+      {
+        "mid": "challenge",
+        "clock": "3:06",
+        "t": 162.88,
+        "reason": "won possession after challenge",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "3:03",
+        "t": 165.85,
+        "reason": "air touch created attacking value",
+        "etype": "wall_setup"
+      },
+      {
+        "mid": "fifty_fifty_control",
+        "clock": "3:00",
+        "t": 169.18,
+        "reason": "50/50 neutral outcome",
+        "etype": "standard_50"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:50",
+        "t": 179.14,
+        "reason": "air touch created attacking value",
+        "etype": "wall_setup"
+      },
+      {
+        "mid": "kickoff",
+        "clock": "2:48",
+        "t": 191.94,
+        "reason": "kickoff won with follow-up control",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:43",
+        "t": 196.84,
+        "reason": "air touch created attacking value",
+        "etype": "wall_setup"
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:41",
+        "t": 198.84,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      },
+      {
+        "mid": "aerial_offense",
+        "clock": "2:38",
+        "t": 201.27,
+        "reason": "air touch created attacking value",
+        "etype": ""
+      }
+    ],
+    "counts": {
+      "shadow_defense": 3,
+      "kickoff": 4,
+      "challenge": 3,
+      "fifty_fifty_control": 6,
+      "aerial_offense": 10,
+      "aerial_defense": 3
+    }
+  }
+]
