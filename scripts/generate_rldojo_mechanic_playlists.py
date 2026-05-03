@@ -35,10 +35,10 @@ DEFENSIVE_MODE = {
 }
 
 DIFFICULTY_SETTINGS = {
-    "beginner": {"label": "Beginner", "timeout": 7.5, "boost_range": [35, 75], "rule_zero": False},
-    "intermediate": {"label": "Intermediate", "timeout": 8.0, "boost_range": [30, 75], "rule_zero": False},
-    "advanced": {"label": "Advanced", "timeout": 8.5, "boost_range": [25, 80], "rule_zero": True},
-    "expert": {"label": "Expert", "timeout": 9.0, "boost_range": [20, 85], "rule_zero": True},
+    "beginner": {"label": "Beginner", "timeout": 8.5, "boost_range": [45, 85], "rule_zero": False},
+    "intermediate": {"label": "Intermediate", "timeout": 8.0, "boost_range": [35, 80], "rule_zero": False},
+    "advanced": {"label": "Advanced", "timeout": 7.5, "boost_range": [25, 75], "rule_zero": True},
+    "expert": {"label": "Expert", "timeout": 7.0, "boost_range": [15, 70], "rule_zero": True},
 }
 
 PLAYLIST_DEFS = {
@@ -74,121 +74,121 @@ PLAYLIST_DEFS = {
     },
     "challenge": {
         "title": "Challenge Timing",
-        "description": "Builds confidence taking controlled front-foot challenges without overcommitting.",
+        "description": "Builds head-on challenge timing against a bot carrying or breaking out with the ball.",
         "difficulties": {
             "beginner": [
                 ("POSSESSION", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
-                ("PASS", "NET", PLAYER_ROLE_DEFENSE),
+                ("BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
             ],
             "intermediate": [
-                ("POSSESSION", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
+                ("POSSESSION", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("SIDEWALL_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
             ],
             "advanced": [
-                ("BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("SIDEWALL", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
-                ("BACKPASS", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
+                ("OVER_SHOULDER", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
+                ("SIDEWALL_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
             ],
             "expert": [
+                ("OVER_SHOULDER", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("SIDEWALL_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("BACK_CORNER_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
-                ("OVER_SHOULDER", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
-                ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("PASS", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
+                ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
             ],
         },
     },
     "fifty_fifty_control": {
         "title": "50-50 Control",
-        "description": "Focuses on entering contests balanced and forcing playable ball outcomes.",
+        "description": "Creates repeated head-to-head contests where the goal is to center the car and control the exit.",
         "difficulties": {
             "beginner": [
                 ("POSSESSION", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
-                ("BACKPASS", "NET", PLAYER_ROLE_OFFENSE),
+                ("BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
             ],
             "intermediate": [
                 ("POSSESSION", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
-                ("BACKPASS", "RECOVERING", PLAYER_ROLE_OFFENSE),
+                ("SIDEWALL_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
             ],
             "advanced": [
+                ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("SIDEWALL_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("BACK_CORNER_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
-                ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
             ],
             "expert": [
+                ("OVER_SHOULDER", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("SIDEWALL", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("SIDEWALL_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("BACK_CORNER_BREAKOUT", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
-                ("OVER_SHOULDER", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("CARRY", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
             ],
         },
     },
     "aerial_offense": {
         "title": "Aerial Offense",
-        "description": "Targets reads and touches from wall, backboard, and lofted attacking balls.",
+        "description": "Targets wall, pop-up, and backboard setups that require an airborne attacking touch.",
         "difficulties": {
             "beginner": [
                 ("LOB_ON_GOAL", "NET", PLAYER_ROLE_OFFENSE),
-                ("BACKWALL_BOUNCE", "NET", PLAYER_ROLE_OFFENSE),
                 ("SIDEWALL", "NET", PLAYER_ROLE_OFFENSE),
+                ("BACKWALL_BOUNCE", "NET", PLAYER_ROLE_OFFENSE),
             ],
             "intermediate": [
+                ("SIDEWALL", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
                 ("LOB_ON_GOAL", "NET", PLAYER_ROLE_OFFENSE),
                 ("BACKBOARD_PASS", "NET", PLAYER_ROLE_OFFENSE),
-                ("SIDEWALL", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
                 ("SIDE_BACKBOARD_PASS", "NET", PLAYER_ROLE_OFFENSE),
             ],
             "advanced": [
-                ("BACKBOARD_PASS", "NET", PLAYER_ROLE_OFFENSE),
-                ("SIDE_BACKBOARD_PASS", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
                 ("SIDEWALL_BREAKOUT", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
+                ("SIDE_BACKBOARD_PASS", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
+                ("BACKBOARD_PASS", "NET", PLAYER_ROLE_OFFENSE),
                 ("OVER_SHOULDER", "NET", PLAYER_ROLE_OFFENSE),
             ],
             "expert": [
-                ("SIDEWALL", "NET", PLAYER_ROLE_OFFENSE),
+                ("SIDEWALL", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("SIDE_BACKBOARD_PASS", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("BACKBOARD_PASS", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
-                ("OVER_SHOULDER", "NEAR_SHADOW", PLAYER_ROLE_OFFENSE),
+                ("OVER_SHOULDER", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
                 ("BACKWALL_BOUNCE", "FRONT_INTERCEPT", PLAYER_ROLE_OFFENSE),
             ],
         },
     },
     "aerial_defense": {
         "title": "Aerial Defense",
-        "description": "Improves backboard reads, goal-line reactions, and airborne defensive touches.",
+        "description": "Spawns goal-line and backboard reads where the player must aerial to remove danger.",
         "difficulties": {
             "beginner": [
                 ("LOB_ON_GOAL", "NET", PLAYER_ROLE_DEFENSE),
-                ("BACKWALL_BOUNCE", "NET", PLAYER_ROLE_DEFENSE),
                 ("PASS", "NET", PLAYER_ROLE_DEFENSE),
+                ("BACKWALL_BOUNCE", "NET", PLAYER_ROLE_DEFENSE),
             ],
             "intermediate": [
-                ("BACKWALL_BOUNCE", "NET", PLAYER_ROLE_DEFENSE),
                 ("SIDE_BACKBOARD_PASS", "NET", PLAYER_ROLE_DEFENSE),
                 ("BACKBOARD_PASS", "NET", PLAYER_ROLE_DEFENSE),
-                ("PASS", "CORNER", PLAYER_ROLE_DEFENSE),
+                ("OVER_SHOULDER", "NET", PLAYER_ROLE_DEFENSE),
+                ("PASS", "NET", PLAYER_ROLE_DEFENSE),
             ],
             "advanced": [
-                ("BACKWALL_BOUNCE", "NET", PLAYER_ROLE_DEFENSE),
+                ("BACKBOARD_PASS", "NET", PLAYER_ROLE_DEFENSE),
                 ("SIDE_BACKBOARD_PASS", "NET", PLAYER_ROLE_DEFENSE),
                 ("OVER_SHOULDER", "NET", PLAYER_ROLE_DEFENSE),
                 ("BACKBOARD_PASS", "CORNER", PLAYER_ROLE_DEFENSE),
             ],
             "expert": [
                 ("SIDE_BACKBOARD_PASS", "NET", PLAYER_ROLE_DEFENSE),
-                ("BACKBOARD_PASS", "NET", PLAYER_ROLE_DEFENSE),
+                ("BACKBOARD_PASS", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
                 ("OVER_SHOULDER", "NET", PLAYER_ROLE_DEFENSE),
-                ("BACKWALL_BOUNCE", "CORNER", PLAYER_ROLE_DEFENSE),
                 ("PASS", "FRONT_INTERCEPT", PLAYER_ROLE_DEFENSE),
+                ("BACKWALL_BOUNCE", "CORNER", PLAYER_ROLE_DEFENSE),
             ],
         },
     },

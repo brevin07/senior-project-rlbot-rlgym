@@ -772,6 +772,52 @@ function sessionGamemode(s: LibrarySession) {
   return "unknown";
 }
 
+type TrendSeriesPoint = { t: number; v: number; sessionId?: string; replayName?: string };
+type TrendSummary = {
+  label: string;
+  className: "up" | "down" | "flat" | "new";
+  title: string;
+  delta: number;
+  relativePct: number | null;
+};
+
+function trendSummary(series: TrendSeriesPoint[]): TrendSummary {
+  const usable = [...series]
+    .filter((p) => Number.isFinite(Number(p.v)))
+    .sort((a, b) => Number(a.t || 0) - Number(b.t || 0));
+  if (usable.length < 2) {
+    return {
+      label: "New trend",
+      className: "new",
+      title: "Analyze more replays to calculate a trend.",
+      delta: 0,
+      relativePct: null,
+    };
+  }
+  const first = Number(usable[0].v || 0);
+  const latest = Number(usable[usable.length - 1].v || 0);
+  const delta = latest - first;
+  const className = Math.abs(delta) < 0.05 ? "flat" : delta > 0 ? "up" : "down";
+  if (Math.abs(first) < 0.01) {
+    return {
+      label: `${delta >= 0 ? "+" : ""}${fmtNumber(delta, 1)} pts`,
+      className,
+      title: `Changed from ${fmtNumber(first, 1)} to ${fmtNumber(latest, 1)}.`,
+      delta,
+      relativePct: null,
+    };
+  }
+  const relativePct = (delta / first) * 100;
+  const pctLabel = `${relativePct >= 0 ? "+" : ""}${fmtNumber(relativePct, 1)}%`;
+  return {
+    label: pctLabel,
+    className,
+    title: `Changed from ${fmtNumber(first, 1)} to ${fmtNumber(latest, 1)} (${delta >= 0 ? "+" : ""}${fmtNumber(delta, 1)} points).`,
+    delta,
+    relativePct,
+  };
+}
+
 function hasRealReplayData(s?: LibrarySession | null) {
   if (!s) return false;
   const summary = s.summary || {};
@@ -1467,11 +1513,7 @@ export default function ReplayDashboardPage() {
   );
 
   const latestScore = progressSeries.length ? Math.round(progressSeries[progressSeries.length - 1].v) : 0;
-  const prevScores = progressSeries.slice(-6, -3);
-  const recentScores = progressSeries.slice(-3);
-  const trendUp = recentScores.length && prevScores.length
-    ? recentScores.reduce((s, p) => s + p.v, 0) / recentScores.length >= prevScores.reduce((s, p) => s + p.v, 0) / prevScores.length
-    : true;
+  const overallTrendSummary = useMemo(() => trendSummary(progressSeries), [progressSeries]);
 
   const perMechanicSeries = useMemo(() => {
     const out: Record<string, { t: number; v: number; sessionId: string; replayName: string }[]> = {};
@@ -1499,6 +1541,13 @@ export default function ReplayDashboardPage() {
       ),
     [perMechanicSeries]
   );
+  const mechanicTrendSummaries = useMemo(() => {
+    const out: Record<string, TrendSummary> = {};
+    for (const [mechanicId, series] of Object.entries(perMechanicSeries)) {
+      out[mechanicId] = trendSummary(series);
+    }
+    return out;
+  }, [perMechanicSeries]);
 
   useEffect(() => {
     if (!activeMechanicEventKey) return;
@@ -2061,8 +2110,20 @@ export default function ReplayDashboardPage() {
                 </div>
 
                 <div className="metrics-card home-progress-mini">
-                  <h3>Progress Snapshot</h3>
-                  <p className="library-item-meta">All-mechanic grade trend</p>
+                  <div className="chart-card-heading">
+                    <div>
+                      <h3>Progress Snapshot</h3>
+                      <p className="library-item-meta">All-mechanic grade trend</p>
+                    </div>
+                    {progressSeries.length > 0 && (
+                      <span
+                        className={`trend-badge trend-badge--${overallTrendSummary.className}`}
+                        title={overallTrendSummary.title}
+                      >
+                        {overallTrendSummary.label}
+                      </span>
+                    )}
+                  </div>
                   <div className="chart-container" style={{ width: "100%" }}>
                     <LineChart series={progressSeries} width={800} height={180} yMin={0} yMax={100} />
                   </div>
@@ -2749,15 +2810,36 @@ export default function ReplayDashboardPage() {
                 </div>
                 <div className="summary-stat">
                   <div className="summary-stat-label">Trend</div>
-                  <div className="summary-stat-value">
-                    <i className={`fa-solid ${trendUp ? "fa-arrow-trend-up" : "fa-arrow-trend-down"}`}
-                       style={{ color: trendUp ? "var(--success)" : "var(--danger)" }} />
+                  <div className={`summary-stat-value trend-summary-value trend-summary-value--${overallTrendSummary.className}`}>
+                    <i
+                      className={`fa-solid ${
+                        overallTrendSummary.className === "up"
+                          ? "fa-arrow-trend-up"
+                          : overallTrendSummary.className === "down"
+                            ? "fa-arrow-trend-down"
+                            : "fa-minus"
+                      }`}
+                    />
+                    <span title={overallTrendSummary.title}>{overallTrendSummary.label}</span>
                   </div>
                 </div>
               </div>
             )}
             <div className="metrics-card">
-              <h3>Overall Mechanics Score Over Time</h3>
+              <div className="chart-card-heading">
+                <div>
+                  <h3>Overall Mechanics Score Over Time</h3>
+                  <p className="library-item-meta">Latest replay compared to your first replay in this graph.</p>
+                </div>
+                {progressSeries.length > 0 && (
+                  <span
+                    className={`trend-badge trend-badge--${overallTrendSummary.className}`}
+                    title={overallTrendSummary.title}
+                  >
+                    {overallTrendSummary.label}
+                  </span>
+                )}
+              </div>
               <div className="chart-container">
                 <LineChart
                   series={progressSeries}
@@ -2775,9 +2857,19 @@ export default function ReplayDashboardPage() {
               {!progressSeries.length && <div className="library-item-meta">No replay trend data yet.</div>}
             </div>
             <div className="improvement-layout">
-              {mechanicTrendEntries.map(([mechanicId, series]) => (
+              {mechanicTrendEntries.map(([mechanicId, series]) => {
+                const mechanicTrend = mechanicTrendSummaries[mechanicId] || trendSummary(series);
+                return (
                 <div className="metrics-card" key={mechanicId}>
-                  <h3>{englishEventName(mechanicId)}</h3>
+                  <div className="chart-card-heading chart-card-heading--compact">
+                    <h3>{englishEventName(mechanicId)}</h3>
+                    <span
+                      className={`trend-badge trend-badge--${mechanicTrend.className}`}
+                      title={mechanicTrend.title}
+                    >
+                      {mechanicTrend.label}
+                    </span>
+                  </div>
                   <div className="chart-container">
                     <LineChart
                       series={series}
@@ -2799,7 +2891,8 @@ export default function ReplayDashboardPage() {
                     Click a point to open that replay and jump into a {englishEventName(mechanicId).toLowerCase()} review.
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}

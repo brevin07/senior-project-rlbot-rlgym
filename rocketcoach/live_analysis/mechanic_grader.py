@@ -1301,7 +1301,7 @@ _FLIP_RESET_MIN_AIRBORNE_S = 0.22
 _FLIP_RESET_MIN_USE_DELAY_S = 0.08
 _FLIP_RESET_MAX_USE_DELAY_S = 3.0
 _FLIP_RESET_MIN_POST_SPEED = 1100.0
-_FLICK_MIN_CARRY_S = 0.48
+_FLICK_MIN_CARRY_S = 0.62
 _FLICK_GROUNDED_LOOKBACK_S = 0.60
 _FLICK_GROUNDED_PZ_MAX = 80.0
 _FLICK_MAX_BALL_HEIGHT = 195.0
@@ -2341,7 +2341,8 @@ def _detect_mechanic_events(
                 q -= 0.15
             if teammate_cover and gamemode != "1v1" and easy_counter:
                 q += 0.10
-            if bool(ctx_now.get("last_man")) and easy_counter:
+            last_man_risk = bool(ctx_now.get("last_man")) and gamemode != "1v1" and not teammate_cover
+            if last_man_risk and easy_counter:
                 q -= 0.10
             if (opp_out + 150.0 < our_out) and (d_touch > d_pb):
                 q -= 0.10
@@ -2361,10 +2362,10 @@ def _detect_mechanic_events(
                 q,
                 reason,
                 execution_score_0_1=round(_clamp01(0.30 + 0.25 * close_gain + 0.20 * (1.0 if contact_like else 0.0) + 0.25 * _safe_float(approach_window.get("mean_alignment", 0.0))), 3),
-                decision_score_0_1=round(_clamp01(0.35 + 0.35 * (1.0 if opp_had_control else 0.35) + 0.30 * (0.25 if bool(ctx_now.get("last_man")) and not teammate_cover else 1.0)), 3),
+                decision_score_0_1=round(_clamp01(0.35 + 0.35 * (1.0 if opp_had_control else 0.35) + 0.30 * (0.25 if last_man_risk else 1.0)), 3),
                 outcome_score_0_1=round(_clamp01(0.30 + 0.40 * (1.0 if win_possession else 0.0) + 0.30 * (1.0 if force_bad_touch else 0.2)), 3),
-                risk_score_0_1=round(_clamp01((1.0 - _safe_float(ctx_now.get("ball_danger_0_1", 0.0))) * (0.8 if bool(ctx_now.get("last_man")) else 1.0)), 3),
-                issue_tags=(["easy_counter"] if easy_counter else []) + (["double_commit"] if double_commit else []) + (["last_man_risk"] if bool(ctx_now.get("last_man")) and not teammate_cover else []) + (["weak_commitment"] if _safe_float(approach_window.get("mean_alignment", 0.0)) < 0.68 else []),
+                risk_score_0_1=round(_clamp01((1.0 - _safe_float(ctx_now.get("ball_danger_0_1", 0.0))) * (0.8 if last_man_risk else 1.0)), 3),
+                issue_tags=(["easy_counter"] if easy_counter else []) + (["double_commit"] if double_commit else []) + (["last_man_risk"] if last_man_risk else []) + (["weak_commitment"] if _safe_float(approach_window.get("mean_alignment", 0.0)) < 0.68 else []),
                 improvement_tags=(["stay_goal_side"] if easy_counter else []) + (["force_weak_touch"] if not force_bad_touch else []) + (["use_teammate_cover"] if teammate_cover else ["delay_challenge"]) + (["square_up_earlier"] if _safe_float(approach_window.get("mean_alignment", 0.0)) < 0.68 else []),
                 commitment_score_0_1=round(_clamp01(0.45 * _safe_float(approach_window.get("mean_alignment", 0.0)) + 0.35 * _clamp01(_safe_float(approach_window.get("mean_closing", 0.0)) / 1200.0) + 0.20 * _clamp01(_safe_float(approach_window.get("distance_gain", 0.0)) / 450.0)), 3),
             )
@@ -2387,6 +2388,15 @@ def _detect_mechanic_events(
             impact = player_recently_grounded and (_ball_dir_flip(fr, frj) or abs(_ball_speed(frj) - b_speed) > 180.0)
             pre_impact_gap = abs(_time_to_intercept_estimate(fr, player) - _time_to_intercept_estimate(fr, opp_name)) if opp_name else 999.0
             contest_pop = impact and bz >= 260.0 and abs(_ball_speed(frj) - b_speed) > 260.0
+            recent_airborne_play = t - max(
+                last_t_by_mech.get("aerial_offense", -9999.0),
+                last_t_by_mech.get("aerial_defense", -9999.0),
+                last_t_by_mech.get("flip_reset", -9999.0),
+            ) <= 1.15
+            falling_from_air = pz > 120.0 and _safe_float(p.get("vz", 0.0)) < -250.0
+            active_contest_contact = d_pb <= 320.0 and opp_ball_dist <= 360.0 and own_closing_to_ball >= (_FIFTY_OPP_CONVERGE_SPEED + 80.0)
+            if recent_airborne_play and (falling_from_air or not active_contest_contact):
+                impact = False
             if impact and (pre_impact_gap <= _FIFTY_MAX_PRE_IMPACT_GAP or contest_pop):
                 our_k = _best_team_ball_dist(frk, player_teams, team)
                 opp_k = _best_team_ball_dist(frk, player_teams, 1 - team)
@@ -2450,7 +2460,15 @@ def _detect_mechanic_events(
                     min_dpb = _dpb_ci
                     j_contact = _ci
             t_contact = times[j_contact]
-            if aerial_offensive_outcome:
+            p_contact = _player_frame(timeline[j_contact], player) or p
+            fr_contact_next = timeline[min(j_contact + 1, len(timeline) - 1)]
+            air_touch_like = min_dpb <= 360.0 and (
+                _touch_confidence(timeline[max(0, j_contact - 1)], fr_contact_next, p_contact) >= 0.28
+                or _ball_dir_flip(timeline[max(0, j_contact - 1)], fr_contact_next)
+                or abs(_ball_speed(fr_contact_next) - _ball_speed(timeline[max(0, j_contact - 1)])) > 220.0
+            )
+            ground_carry_setup = _ball_balanced_on_car(fr, player) or (pz <= _FLICK_GROUNDED_PZ_MAX and bz <= _FLICK_MAX_BALL_HEIGHT and d_pb <= 220.0)
+            if aerial_offensive_outcome and air_touch_like and not ground_carry_setup:
                 setup_touch = retain and bspd2 < 1350.0 and not attacking_half
                 event_type = "setup_touch" if setup_touch else ("wall_setup" if abs(px) > 3100.0 or abs(py) > 3900.0 else "")
                 _add_event(
@@ -2490,8 +2508,8 @@ def _detect_mechanic_events(
             adf_retain = adf_our_out <= adf_opp_out + 60.0
             adf_offensive_transition = away and adf_retain and into_opp_half
             defensive_pressure = (
-                opp_db <= 1900.0
-                or str(ctx_now.get("pressure_level", "medium")) != "low"
+                _safe_float(ctx_now.get("ball_danger_0_1", 0.0)) >= 0.35
+                or (opp_db <= 1350.0 and threat_zone)
                 or _ball_toward_own_goal_fast(fr, fr2, team)
             )
             q = 0.35 + 0.35 * (1.0 if away else 0.2) + 0.20 * (1.0 if center_clear else 0.35) + 0.10 * (0.2 if double_commit else 1.0)
@@ -2504,7 +2522,14 @@ def _detect_mechanic_events(
                     min_dpb_adf = _dpb_ci
                     j_contact = _ci
             t_contact_adf = times[j_contact]
-            if defensive_pressure and not adf_offensive_transition:
+            p_contact_adf = _player_frame(timeline[j_contact], player) or p
+            fr_contact_next_adf = timeline[min(j_contact + 1, len(timeline) - 1)]
+            adf_touch_like = min_dpb_adf <= 390.0 and (
+                _touch_confidence(timeline[max(0, j_contact - 1)], fr_contact_next_adf, p_contact_adf) >= 0.26
+                or _ball_dir_flip(timeline[max(0, j_contact - 1)], fr_contact_next_adf)
+                or abs(_ball_speed(fr_contact_next_adf) - _ball_speed(timeline[max(0, j_contact - 1)])) > 220.0
+            )
+            if defensive_pressure and adf_touch_like and not adf_offensive_transition:
                 _add_event(
                     events,
                     "aerial_defense",
@@ -2526,7 +2551,18 @@ def _detect_mechanic_events(
         jump = int(_safe_float(p.get("jump", 0.0)))
         djump = int(_safe_float(p.get("double_jump", 0.0)))
         carry_like = d_pb <= 200.0 and bz < 250.0 and rel_v < 700.0
-        ball_balanced = _ball_balanced_on_car(fr, player)
+        recent_airborne_play_for_flick = t - max(
+            last_t_by_mech.get("aerial_offense", -9999.0),
+            last_t_by_mech.get("aerial_defense", -9999.0),
+            last_t_by_mech.get("flip_reset", -9999.0),
+        ) <= 1.20
+        ball_balanced = (
+            _ball_balanced_on_car(fr, player)
+            and pz <= _FLICK_GROUNDED_PZ_MAX
+            and bz <= _FLICK_MAX_BALL_HEIGHT
+            and not on_wall_surface
+            and not recent_airborne_play_for_flick
+        )
         had_flick_carry = flick_carry_active
         flick_carry_origin_idx = flick_carry_start_idx
         if ball_balanced:
@@ -2577,7 +2613,8 @@ def _detect_mechanic_events(
                 _FLICK_BACKWARD_TOLERANCE = -100.0
                 forward_dodge_ok = forward_gain >= _FLICK_BACKWARD_TOLERANCE
                 power = _ball_speed(fr2) > _ball_speed(fr_base) + 300.0
-                if (up_spike or forward_spike) and forward_dodge_ok:
+                release_contact = d_pb <= 240.0 or _touch_confidence(fr_base, fr2, p) >= 0.22 or _ball_dir_flip(fr_base, fr2)
+                if (up_spike or forward_spike) and forward_dodge_ok and release_contact:
                     q = _clamp01(
                         0.30
                         + 0.20 * _clamp01(carry_duration / 0.45)

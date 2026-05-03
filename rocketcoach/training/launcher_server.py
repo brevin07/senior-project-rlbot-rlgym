@@ -24,8 +24,11 @@ from rocketcoach.training.rldojo_catalog import (
 def _launcher_preference(launcher_name: str):
     from rlbot.setup_manager import RocketLeagueLauncherPreference
 
+    launcher_name = str(launcher_name or "auto").strip().lower()
     if launcher_name == "auto":
         return None
+    if launcher_name in {"epic", "epic games", "epicgames"}:
+        launcher_name = getattr(RocketLeagueLauncherPreference, "EPIC_ONLY", "epic_only")
     return RocketLeagueLauncherPreference(preferred_launcher=launcher_name, use_login_tricks=True)
 
 
@@ -233,7 +236,12 @@ class TrainingLauncher:
 
         # Resolve launcher from user's platform setting (epic/steam), falling back to
         # the server's default (self.launcher, typically "auto").
-        _PLATFORM_TO_LAUNCHER = {"epic": "epic", "steam": "steam"}
+        _PLATFORM_TO_LAUNCHER = {
+            "epic": "epic_only",
+            "epic games": "epic_only",
+            "epicgames": "epic_only",
+            "steam": "steam",
+        }
         raw_platform = str(body.get("platform", "") or "").strip().lower()
         launcher_name = _PLATFORM_TO_LAUNCHER.get(raw_platform, self.launcher)
 

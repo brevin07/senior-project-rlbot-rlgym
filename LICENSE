@@ -1,0 +1,30 @@
+RocketCoach Proprietary License
+
+Copyright (c) 2026 Brevin Tating. All rights reserved.
+
+This repository and its contents are proprietary software. No license is
+granted to copy, modify, publish, distribute, sublicense, sell, host, deploy,
+or create derivative works from this software without prior written permission
+from the copyright holder.
+
+You may view the source code only for evaluation, security review, feedback,
+or educational review connected to the RocketCoach project. Viewing the source
+code does not grant permission to use it in another project, product, service,
+repository, assignment, model, dataset, or commercial or non-commercial work.
+
+You may not remove or alter copyright, license, or attribution notices.
+
+Third-party dependencies, tools, libraries, assets, and referenced projects
+included by package managers or external downloads remain governed by their
+own respective licenses. This license applies only to original RocketCoach
+source code, documentation, configuration, scripts, and project-specific assets
+in this repository.
+
+If you want permission to use any part of this project, contact the copyright
+holder first and obtain written permission.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR
+A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OF OTHER DEALINGS IN THE SOFTWARE.

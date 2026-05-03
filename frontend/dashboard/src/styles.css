@@ -2302,6 +2302,65 @@ a.ghost {
   margin-top: 10px;
 }
 
+.chart-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.chart-card-heading h3,
+.chart-card-heading p {
+  margin-top: 0;
+}
+
+.chart-card-heading--compact {
+  align-items: center;
+}
+
+.trend-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 70px;
+  padding: 5px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.trend-badge--up,
+.trend-summary-value--up {
+  color: var(--success);
+}
+
+.trend-badge--down,
+.trend-summary-value--down {
+  color: var(--danger);
+}
+
+.trend-badge--flat,
+.trend-summary-value--flat {
+  color: var(--warning);
+}
+
+.trend-badge--new,
+.trend-summary-value--new {
+  color: var(--text-secondary);
+}
+
+.trend-summary-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 /* ── Mechanic Summary Grid ───────────────────────────────────── */
 .mechanic-summary-grid {
   display: grid;

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import tempfile
+import time
 import urllib.request
 import zipfile
 import re
@@ -354,16 +355,67 @@ def copytree_contents(source: Path, destination: Path) -> None:
         raise FileNotFoundError(f"Bundled resource folder is missing: {source}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
-        # ignore_errors so files held briefly by an exiting bridge process don't
-        # abort the whole install — they get retried below.
-        shutil.rmtree(destination, ignore_errors=True)
-        if destination.exists():
-            # Second pass after a short pause so any straggler file handles
-            # (e.g. Python .pyd / __pycache__ from a process we just killed) clear.
-            import time as _time
-            _time.sleep(1.0)
-            shutil.rmtree(destination, ignore_errors=False)
+        remove_tree_with_retries(destination, label=f"bundled {destination.name}", attempts=6, delay_s=0.75)
     shutil.copytree(source, destination)
+
+
+def remove_tree_with_retries(destination: Path, *, label: str, attempts: int = 5, delay_s: float = 1.0) -> None:
+    if not destination.exists():
+        return
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            shutil.rmtree(destination)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            log(f"{label} is locked; retrying cleanup ({attempt}/{attempts}): {exc}")
+            stop_rlbot_stack_processes()
+            time.sleep(delay_s)
+        except OSError as exc:
+            last_error = exc
+            log(f"{label} cleanup did not finish; retrying ({attempt}/{attempts}): {exc}")
+            time.sleep(delay_s)
+    raise RuntimeError(
+        f"Unable to replace {label} at {destination}. Close Rocket League, RLBot GUI, "
+        "and any bot/training windows, then run the installer again."
+    ) from last_error
+
+
+def stop_rlbot_stack_processes() -> None:
+    """Best-effort cleanup for processes that commonly lock RLBotPack bot folders."""
+    if os.name != "nt":
+        return
+    try:
+        current_pid = os.getpid()
+        ps_script = (
+            "$ErrorActionPreference = 'SilentlyContinue'; "
+            f"$currentPid = {current_pid}; "
+            "$names = @('RocketLeague','RLBot','RLBotGUI','RLBotGUIX'); "
+            "Get-Process | Where-Object { ($names -contains $_.ProcessName) -and $_.Id -ne $currentPid } | "
+            "ForEach-Object { "
+            "  Write-Output ('killing process=' + $_.ProcessName + ' pid=' + $_.Id); "
+            "  Stop-Process -Id $_.Id -Force "
+            "}; "
+            "Get-CimInstance Win32_Process | "
+            "Where-Object { "
+            "  ($_.Name -eq 'python.exe' -or $_.Name -eq 'pythonw.exe') -and "
+            "  $_.ProcessId -ne $currentPid -and "
+            "  ($_.CommandLine -like '*RLBotPack*' -or $_.CommandLine -like '*rlbot*' -or $_.CommandLine -like '*rocketcoach.training.launcher_server*') "
+            "} | "
+            "ForEach-Object { "
+            "  Write-Output ('killing python pid=' + $_.ProcessId + ' cmd=' + $_.CommandLine); "
+            "  Stop-Process -Id $_.ProcessId -Force "
+            "}"
+        )
+        result = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script], check=False)
+        if result.stdout:
+            for line in str(result.stdout).splitlines():
+                if line.strip():
+                    log(f"Stopped RLBot stack process: {line.strip()}")
+    except Exception as exc:
+        log(f"Warning: could not stop all RLBot stack processes: {exc}")
+    time.sleep(0.75)
 
 
 def stop_running_bridge_processes(install_root: Path | None = None) -> None:
@@ -414,8 +466,7 @@ def stop_running_bridge_processes(install_root: Path | None = None) -> None:
         pass
 
     # Give Windows a moment to release file handles before overwrites.
-    import time as _time
-    _time.sleep(0.5)
+    time.sleep(0.5)
 
 
 def download_file(url: str, destination: Path) -> Path:
@@ -554,11 +605,11 @@ def ensure_project_venv(install_root: Path, host_python: Path) -> Path:
             probe = run([str(venv_python), "-m", "pip", "--version"], check=False)
             if probe.returncode != 0:
                 log(f"Removing virtual environment with broken pip at {venv_root}")
-                shutil.rmtree(venv_root, ignore_errors=True)
+                remove_tree_with_retries(venv_root, label="project virtual environment", attempts=6, delay_s=0.75)
                 recreate = True
         except FileNotFoundError:
             log(f"Removing incomplete virtual environment at {venv_root}")
-            shutil.rmtree(venv_root, ignore_errors=True)
+            remove_tree_with_retries(venv_root, label="incomplete project virtual environment", attempts=6, delay_s=0.75)
             recreate = True
     else:
         recreate = True
@@ -575,7 +626,7 @@ def rebuild_project_venv(install_root: Path, host_python: Path) -> Path:
     venv_root = install_root / "venv"
     if venv_root.exists():
         log(f"Rebuilding project virtual environment at {venv_root}")
-        shutil.rmtree(venv_root, ignore_errors=True)
+        remove_tree_with_retries(venv_root, label="project virtual environment", attempts=6, delay_s=0.75)
     log(f"Creating project virtual environment at {venv_root}")
     run([str(host_python), "-m", "venv", str(venv_root)])
     return resolve_venv_python(venv_root)
@@ -997,7 +1048,10 @@ def default_botpack_dir() -> Path:
 def download_and_extract_botpack(destination: Path, zip_url: str) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix="rlbotpack_") as temp_dir_str:
+    # TemporaryDirectory can raise on Windows if antivirus/search indexing briefly
+    # holds a file from the extracted pack. Use mkdtemp so cleanup is best-effort.
+    temp_dir_str = tempfile.mkdtemp(prefix="rlbotpack_")
+    try:
         temp_dir = Path(temp_dir_str)
         archive_path = temp_dir / "RLBotPack.zip"
         download_file(zip_url, archive_path)
@@ -1018,8 +1072,24 @@ def download_and_extract_botpack(destination: Path, zip_url: str) -> Path:
             raise RuntimeError("Unable to locate extracted RLBotPack contents.")
 
         if destination.exists():
-            shutil.rmtree(destination)
+            stop_rlbot_stack_processes()
+            try:
+                remove_tree_with_retries(destination, label="RLBotPack")
+            except RuntimeError as exc:
+                log(f"Warning: {exc}")
+                log(
+                    "Keeping the existing RLBotPack because Windows still reports it is in use. "
+                    "The installer will continue and use the already-installed bot files."
+                )
+                return destination
         shutil.copytree(pack_root, destination)
+    finally:
+        try:
+            shutil.rmtree(temp_dir_str, ignore_errors=True)
+            if Path(temp_dir_str).exists():
+                log(f"Warning: temporary RLBotPack extraction folder is still locked and will be left for Windows cleanup: {temp_dir_str}")
+        except Exception as exc:
+            log(f"Warning: could not clean temporary RLBotPack extraction folder {temp_dir_str}: {exc}")
 
     return destination
 

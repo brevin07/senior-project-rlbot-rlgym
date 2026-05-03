@@ -2,6 +2,10 @@
 
 RocketCoach is a Rocket League coaching platform that combines replay parsing, mechanic grading, replay-backed coaching feedback, progress tracking, and RLBot/RLDojo-based training scenarios.
 
+## License
+
+RocketCoach is proprietary software. The source code is visible for evaluation, security review, feedback, and project review only. Copying, modifying, redistributing, hosting, or using this code in another project requires prior written permission from the copyright holder. See [LICENSE](LICENSE).
+
 The product goal is to help a player move through one continuous loop:
 
 1. Create an account and verify it with AWS Cognito.
